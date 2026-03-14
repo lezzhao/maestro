@@ -1,0 +1,322 @@
+export type EngineProfile = {
+  id: string;
+  display_name: string;
+  command: string;
+  model?: string;
+  args: string[];
+  env: Record<string, string>;
+  supports_headless: boolean;
+  headless_args: string[];
+  ready_signal?: string | null;
+};
+
+export type EngineConfig = {
+  id: string;
+  display_name: string;
+  profiles?: Record<string, EngineProfile>;
+  active_profile_id?: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  exit_command: string;
+  exit_timeout_ms: number;
+  supports_headless: boolean;
+  headless_args: string[];
+  ready_signal?: string | null;
+  icon: string;
+};
+
+export type EnginePreflightResult = {
+  engine_id: string;
+  profile_id?: string;
+  command_exists: boolean;
+  auth_ok: boolean;
+  supports_headless: boolean;
+  notes: string;
+  cached?: boolean;
+  checked_at_ms?: number;
+};
+
+export type EngineModelListResult = {
+  engine_id: string;
+  profile_id: string;
+  models: string[];
+  source: "cli" | "builtin";
+  notes: string;
+};
+
+export type EngineModelListState = EngineModelListResult & {
+  cached: boolean;
+  fetched_at_ms: number;
+};
+
+export type PtySessionInfo = {
+  session_id: number;
+  os_pid?: number | null;
+};
+
+export type ProcessStats = {
+  session_id?: number | null;
+  os_pid?: number | null;
+  cpu_percent: number;
+  memory_mb: number;
+  running: boolean;
+};
+
+export type WorkflowStep = {
+  engine: string;
+  profile_id?: string;
+  prompt: string;
+  completion_signal?: string;
+  timeout_ms?: number;
+};
+
+export type WorkflowRunRequest = {
+  name: string;
+  steps: WorkflowStep[];
+};
+
+export type WorkflowProgressEvent = {
+  workflow_name: string;
+  step_index: number;
+  total_steps: number;
+  engine: string;
+  status: string;
+  message: string;
+  token_estimate?: TokenEstimate | null;
+};
+
+export type WorkflowStepResult = {
+  engine: string;
+  mode: string;
+  fallback: boolean;
+  success: boolean;
+  completion_matched: boolean;
+  failure_reason?: string | null;
+  duration_ms: number;
+  output: string;
+};
+
+export type WorkflowRunResult = {
+  workflow_name: string;
+  used_fallback: boolean;
+  completed: boolean;
+  archive_path: string;
+  step_results: WorkflowStepResult[];
+};
+
+export type TokenEstimate = {
+  input_chars: number;
+  output_chars: number;
+  approx_input_tokens: number;
+  approx_output_tokens: number;
+};
+
+export type ChatAttachment = {
+  name: string;
+  path: string;
+  snippet?: string;
+};
+
+export type ChatMessage = {
+  id: string;
+  role: "user" | "assistant" | "system" | "plan";
+  content: string;
+  timestamp: number;
+  attachments?: ChatAttachment[];
+  status?: "streaming" | "done" | "error";
+  tokenEstimate?: TokenEstimate;
+  durationMs?: number;
+  meta?: {
+    auto?: boolean;
+    engineId?: string;
+    profileId?: string;
+    eventType?: "status" | "tool" | "notice";
+    eventStatus?: "pending" | "done" | "error";
+    toolName?: string;
+  };
+};
+
+export type ChatSpawnRequest = {
+  engine_id: string;
+  profile_id?: string | null;
+  cols?: number;
+  rows?: number;
+};
+
+export type ChatSendRequest = {
+  session_id: number;
+  content: string;
+  append_newline?: boolean;
+};
+
+export type ChatStopRequest = {
+  session_id: number;
+};
+
+export type ChatSessionMeta = {
+  session_id: number;
+  engine_id: string;
+  profile_id: string;
+  ready_signal?: string | null;
+};
+
+export type StepRunRequest = {
+  workflow_name: string;
+  step: WorkflowStep;
+  step_index: number;
+  total_steps: number;
+};
+
+export type StepRunResult = WorkflowStepResult & {
+  token_estimate: TokenEstimate;
+};
+
+export type WorkflowArchiveEntry = {
+  name: string;
+  path: string;
+  modified_ts: number;
+  completed: boolean;
+  workflow_name: string;
+  failed_count: number;
+};
+
+export type WorkflowArchiveFailedStep = {
+  index: number;
+  engine: string;
+  mode: string;
+  status: "failed" | "not-matched";
+  reason: string;
+};
+
+export type WorkflowArchiveDetail = {
+  name: string;
+  path: string;
+  modified_ts: number;
+  workflow_name: string;
+  completed: boolean;
+  used_fallback: boolean;
+  step_count: number;
+  failed_count: number;
+  failed_steps: WorkflowArchiveFailedStep[];
+};
+
+export type WorkflowArchiveExportResult = {
+  path: string;
+  count: number;
+};
+
+export type FileChangeStatus =
+  | "added"
+  | "modified"
+  | "deleted"
+  | "renamed"
+  | "conflict"
+  | "ignored"
+  | "unknown";
+
+export type FileChange = {
+  status: FileChangeStatus;
+  path: string;
+};
+
+export type WorkflowFullArchive = {
+  request?: {
+    name?: string;
+    steps?: Array<{
+      engine?: string;
+      profile_id?: string;
+      prompt?: string;
+      completion_signal?: string;
+      timeout_ms?: number;
+    }>;
+  };
+  result?: {
+    workflow_name?: string;
+    completed?: boolean;
+    archive_path?: string;
+    step_results?: Array<{
+      engine?: string;
+      mode?: string;
+      output?: string;
+      success?: boolean;
+      completion_matched?: boolean;
+      failure_reason?: string | null;
+    }>;
+  };
+};
+
+export type EngineHistoryEntry = {
+  id: string;
+  engine_id: string;
+  profile_id: string;
+  workflow_name: string;
+  step_index: number;
+  mode: string;
+  success: boolean;
+  completion_matched: boolean;
+  failure_reason?: string | null;
+  duration_ms: number;
+  summary: string;
+  created_ts: number;
+  detail_path: string;
+};
+
+export type EngineHistoryDetail = {
+  id: string;
+  engine_id: string;
+  profile_id: string;
+  workflow_name: string;
+  step_index: number;
+  mode: string;
+  created_ts: number;
+  prompt: string;
+  output: string;
+};
+
+export type EngineHistoryPage = {
+  entries: EngineHistoryEntry[];
+  total: number;
+  page: number;
+  page_size: number;
+};
+
+export type ProjectStackResult = {
+  path: string;
+  stacks: string[];
+};
+
+export type ProjectSetResult = {
+  path: string;
+  stacks: string[];
+};
+
+export type TaskStats = {
+  cpu_percent: number;
+  memory_mb: number;
+  approx_input_tokens: number;
+  approx_output_tokens: number;
+};
+
+export type AppTask = {
+  id: string;
+  name: string;
+  sessionId: number | null;
+  status: "idle" | "running" | "error" | "completed";
+  gitChanges: FileChange[];
+  stats: TaskStats;
+  created_at: number;
+  updated_at: number;
+};
+
+export type FileTreeNode = {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  children: FileTreeNode[];
+};
+
+export type EngineRecommendation = {
+  engine_id: string;
+  reason: string;
+};
