@@ -1,0 +1,280 @@
+import { useCallback, useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useAppStore } from "../stores/appStore";
+import type {
+  EngineConfig,
+  EngineModelListResult,
+  EngineModelListState,
+  EnginePreflightResult,
+  EngineProfile,
+} from "../types";
+
+function ensureEngineProfiles(engine: EngineConfig): EngineConfig {
+  const profiles = engine.profiles && Object.keys(engine.profiles).length > 0
+    ? engine.profiles
+    : {
+        default: {
+          id: "default",
+          display_name: "Default",
+          command: engine.command,
+          model: "",
+          args: engine.args,
+          env: engine.env,
+          supports_headless: engine.supports_headless,
+          headless_args: engine.headless_args,
+          ready_signal: engine.ready_signal ?? null,
+        },
+      };
+  const active_profile_id =
+    engine.active_profile_id && profiles[engine.active_profile_id]
+      ? engine.active_profile_id
+      : Object.keys(profiles)[0];
+  const active = profiles[active_profile_id];
+  return {
+    ...engine,
+    profiles,
+    active_profile_id,
+    command: active.command,
+    args: active.args,
+    env: active.env,
+    supports_headless: active.supports_headless,
+    headless_args: active.headless_args,
+    ready_signal: active.ready_signal ?? null,
+  };
+}
+
+export function useEngine() {
+  const engines = useAppStore((s) => s.engines);
+  const activeEngineId = useAppStore((s) => s.activeEngineId);
+  const setEngines = useAppStore((s) => s.setEngines);
+  const enginePreflight = useAppStore((s) => s.enginePreflight);
+  const setEnginePreflight = useAppStore((s) => s.setEnginePreflight);
+  const setActiveEngineId = useAppStore((s) => s.setActiveEngineId);
+  
+  const activeTaskId = useAppStore((s) => s.activeTaskId);
+  const activeTask = useAppStore((s) => s.tasks.find(t => t.id === activeTaskId));
+  const updateActiveTask = useAppStore((s) => s.updateActiveTask);
+  const sessionId = activeTask?.sessionId;
+
+  const preflightCacheRef = useRef<
+    Map<string, { result: EnginePreflightResult; ts: number }>
+  >(new Map());
+  const preflightPendingRef = useRef<Map<string, Promise<EnginePreflightResult>>>(
+    new Map(),
+  );
+  const modelListCacheRef = useRef<Map<string, { result: EngineModelListResult; ts: number }>>(
+    new Map(),
+  );
+
+  const getActiveProfileId = useCallback(
+    (engineId: string) => {
+      const engine = engines[engineId];
+      if (!engine?.profiles) return "default";
+      return (
+        (engine.active_profile_id && engine.profiles[engine.active_profile_id]
+          ? engine.active_profile_id
+          : Object.keys(engine.profiles)[0]) || "default"
+      );
+    },
+    [engines],
+  );
+
+  const clearModelCacheForEngine = useCallback((engineId: string) => {
+    for (const key of Array.from(modelListCacheRef.current.keys())) {
+      if (key.startsWith(`${engineId}::`)) {
+        modelListCacheRef.current.delete(key);
+      }
+    }
+  }, []);
+
+  const refreshEngines = useCallback(async () => {
+    const result = await invoke<Record<string, EngineConfig>>("engine_list");
+    const normalized = Object.fromEntries(
+      Object.entries(result).map(([id, cfg]) => [id, ensureEngineProfiles(cfg)]),
+    );
+    setEngines(normalized);
+    const active = await invoke<string | null>("engine_get_active");
+    if (active) {
+      setActiveEngineId(active);
+    } else if (Object.keys(normalized).length > 0) {
+      setActiveEngineId(Object.keys(normalized)[0]);
+    }
+  }, [setActiveEngineId, setEngines]);
+
+  const preflightEngine = useCallback(
+    async (engineId: string, options?: { force?: boolean }) => {
+      const force = options?.force ?? false;
+      const now = Date.now();
+      const cache = preflightCacheRef.current.get(engineId);
+      const cacheTtlMs = 30_000;
+
+      if (!force && cache && now - cache.ts <= cacheTtlMs) {
+        const cachedResult: EnginePreflightResult = {
+          ...cache.result,
+          cached: true,
+          checked_at_ms: cache.ts,
+        };
+        setEnginePreflight(engineId, cachedResult);
+        return cachedResult;
+      }
+
+      const pending = preflightPendingRef.current.get(engineId);
+      if (!force && pending) {
+        return pending;
+      }
+
+      const timeoutMs = 20_000; // 20s timeout
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Preflight timeout")), timeoutMs)
+      );
+
+      const task = Promise.race([
+        invoke<EnginePreflightResult>("engine_preflight", { engineId }),
+        timeoutPromise
+      ])
+        .then((result) => {
+          const ts = Date.now();
+          preflightCacheRef.current.set(engineId, { result, ts });
+          const liveResult: EnginePreflightResult = {
+            ...result,
+            cached: false,
+            checked_at_ms: ts,
+          };
+          setEnginePreflight(engineId, liveResult);
+          return liveResult;
+        })
+        .catch((err) => {
+          const errorResult: EnginePreflightResult = {
+            engine_id: engineId,
+            command_exists: false,
+            auth_ok: false,
+            supports_headless: false,
+            notes: String(err),
+            cached: false,
+            checked_at_ms: Date.now(),
+          };
+          setEnginePreflight(engineId, errorResult);
+          return errorResult;
+        })
+        .finally(() => {
+          preflightPendingRef.current.delete(engineId);
+        });
+      preflightPendingRef.current.set(engineId, task);
+      return task;
+    },
+    [setEnginePreflight],
+  );
+
+  const switchEngine = useCallback(
+    async (engineId: string) => {
+      await invoke("engine_switch_session", {
+        engineId,
+        sessionId: sessionId ?? null,
+      });
+      setActiveEngineId(engineId);
+      updateActiveTask({ sessionId: null });
+      void preflightEngine(engineId, { force: true });
+    },
+    [preflightEngine, sessionId, setActiveEngineId, updateActiveTask],
+  );
+
+  const upsertEngine = useCallback(
+    async (engineId: string, engine: EngineConfig) => {
+      await invoke("engine_upsert", { id: engineId, engine: ensureEngineProfiles(engine) });
+      await refreshEngines();
+      await preflightEngine(engineId, { force: true });
+    },
+    [preflightEngine, refreshEngines],
+  );
+
+  const preflightAll = useCallback(async () => {
+    const ids = Object.keys(engines);
+    if (ids.length === 0) return;
+    await Promise.allSettled(ids.map((id) => preflightEngine(id)));
+  }, [engines, preflightEngine]);
+
+  const setActiveProfile = useCallback(
+    async (engineId: string, profileId: string) => {
+      await invoke("engine_set_active_profile", { engineId, profileId });
+      clearModelCacheForEngine(engineId);
+      await refreshEngines();
+      await preflightEngine(engineId, { force: true });
+    },
+    [clearModelCacheForEngine, preflightEngine, refreshEngines],
+  );
+
+  const upsertProfile = useCallback(
+    async (engineId: string, profileId: string, profile: EngineProfile) => {
+      await invoke("engine_upsert_profile", { engineId, profileId, profile });
+      clearModelCacheForEngine(engineId);
+      await refreshEngines();
+      await preflightEngine(engineId, { force: true });
+    },
+    [clearModelCacheForEngine, preflightEngine, refreshEngines],
+  );
+
+  const listModels = useCallback(
+    async (engineId: string, options?: { force?: boolean }) => {
+      const force = options?.force ?? false;
+      const now = Date.now();
+      const cacheKey = `${engineId}::${getActiveProfileId(engineId)}`;
+      const cache = modelListCacheRef.current.get(cacheKey);
+      const cacheTtlMs = 60_000;
+      if (!force && cache && now - cache.ts <= cacheTtlMs) {
+        const cachedResult: EngineModelListState = {
+          ...cache.result,
+          cached: true,
+          fetched_at_ms: cache.ts,
+        };
+        return cachedResult;
+      }
+      const result = await invoke<EngineModelListResult>("engine_list_models", { engineId });
+      modelListCacheRef.current.set(cacheKey, { result, ts: now });
+      const liveResult: EngineModelListState = {
+        ...result,
+        cached: false,
+        fetched_at_ms: now,
+      };
+      return liveResult;
+    },
+    [getActiveProfileId],
+  );
+
+  const updateActiveProfileModel = useCallback(
+    async (engineId: string, model: string) => {
+      const engine = engines[engineId];
+      if (!engine?.profiles) return;
+      const profileId =
+        engine.active_profile_id && engine.profiles[engine.active_profile_id]
+          ? engine.active_profile_id
+          : Object.keys(engine.profiles)[0];
+      if (!profileId) return;
+      const profile = engine.profiles[profileId];
+      if (!profile) return;
+      await upsertProfile(engineId, profileId, {
+        ...profile,
+        model,
+      });
+    },
+    [engines, upsertProfile],
+  );
+
+  useEffect(() => {
+    void refreshEngines();
+  }, [refreshEngines]);
+
+  return {
+    engines,
+    enginePreflight,
+    activeEngineId,
+    refreshEngines,
+    preflightEngine,
+    preflightAll,
+    switchEngine,
+    upsertEngine,
+    setActiveProfile,
+    upsertProfile,
+    listModels,
+    updateActiveProfileModel,
+  };
+}
