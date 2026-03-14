@@ -1,0 +1,43 @@
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
+import "./index.css";
+
+class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: any}> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("BMAD Root Error:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '2rem', color: '#ff0000', backgroundColor: '#fff', width: '100vw', height: '100vh', boxSizing: 'border-box', overflow: 'auto', zIndex: 99999, position: 'fixed', top: 0, left: 0 }}>
+          <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '1rem' }}>Application Error (Tauri/WebKit)</h2>
+          <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '14px', fontFamily: 'monospace' }}>
+            {this.state.error?.stack || String(this.state.error)}
+          </pre>
+          <button onClick={() => window.location.reload()} style={{ marginTop: '1rem', padding: '0.5rem 1rem', background: '#ff0000', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+            Reload App
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const Root = import.meta.env.DEV ? React.StrictMode : React.Fragment;
+
+ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+  <Root>
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  </Root>,
+);
