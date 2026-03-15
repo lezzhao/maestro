@@ -26,19 +26,52 @@ AI-Native 开发中枢，基于 `Tauri v2 + React + Rust`，支持：
 安装依赖：
 
 ```bash
-npm install
+pnpm install
 ```
 
 启动开发模式：
 
 ```bash
-npm run tauri dev
+pnpm run tauri dev
 ```
+
+## 命令行排障（最小 CLI）
+
+为了在不打开 UI 的情况下排查“发送了任务但没有输出”，项目提供了最小命令行入口：
+
+```bash
+pnpm bmad doctor
+pnpm bmad doctor --engine opencode --json
+pnpm bmad task run --engine opencode --prompt "请输出 hello"
+pnpm bmad task send --engine opencode --content "继续执行，补充测试"
+pnpm bmad task logs --engine opencode --limit 200
+pnpm bmad task list --engine opencode
+pnpm bmad task prune --status stopped --older-than-hours 24 --yes
+pnpm bmad task stop --engine opencode
+```
+
+支持参数：
+
+- `--engine`: `cursor | claude | gemini | opencode | codex`
+- `--prompt`: 任务指令（`task run` 必填）
+- `--model`: 模型 ID（可选）
+- `--cwd`: 运行目录（可选）
+- `--timeout-ms`: 超时毫秒（可选）
+- `--command`: 覆盖默认可执行命令（可选）
+
+说明：
+
+- `task run/send/stop/logs` 支持所有内置引擎（`cursor/claude/gemini/opencode/codex`）。
+- 其中 `opencode` 会优先使用原生会话 ID；其他引擎使用 CLI 侧“伪会话”状态管理。
+- CLI 会在 `.bmad-cli/state.json` 记录会话状态，在 `.bmad-cli/logs/` 持久化每次 run/send/stop 输出。
+- `send/stop/logs` 未传 `--session` 时会自动复用该引擎最近一次活跃会话。
+- `task list` 用于查看会话状态、日志大小与最近活跃会话。
+- `task prune` 用于按条件批量清理会话与日志（需显式传 `--yes`）。
 
 构建：
 
 ```bash
-npm run build
+pnpm run build
 cd src-tauri && cargo check
 ```
 

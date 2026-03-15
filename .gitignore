@@ -9,8 +9,15 @@ lerna-debug.log*
 
 node_modules
 dist
+package-lock.json
 dist-ssr
 *.local
+
+# Rust
+src-tauri/target/
+
+# TypeScript
+*.tsbuildinfo
 
 # Editor directories and files
 .vscode/*
@@ -22,3 +29,4 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.pnpm-store

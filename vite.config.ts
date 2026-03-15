@@ -1,24 +1,45 @@
+import path from "path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
-// @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
   build: {
     rollupOptions: {
       output: {
         manualChunks(id) {
           if (!id.includes("node_modules")) return undefined;
 
-          if (id.includes("@xterm")) return "vendor-xterm";
           if (id.includes("@tauri-apps")) return "vendor-tauri";
           if (id.includes("framer-motion")) return "vendor-motion";
           if (id.includes("lucide-react")) return "vendor-icons";
           if (id.includes("@radix-ui") || id.includes("cmdk")) return "vendor-ui";
+          if (
+            id.includes("react-markdown") ||
+            id.includes("remark-gfm") ||
+            id.includes("/remark-") ||
+            id.includes("/mdast-") ||
+            id.includes("/micromark-") ||
+            id.includes("/hast-") ||
+            id.includes("/unist-") ||
+            id.includes("/vfile") ||
+            id.includes("/property-information") ||
+            id.includes("/comma-separated-tokens") ||
+            id.includes("/space-separated-tokens") ||
+            id.includes("/decode-named-character-reference") ||
+            id.includes("/character-entities")
+          ) {
+            return "vendor-markdown";
+          }
           if (
             id.includes("react-syntax-highlighter") ||
             id.includes("/refractor/") ||
@@ -26,9 +47,9 @@ export default defineConfig(async () => ({
             id.includes("/highlight.js/") ||
             id.includes("/lowlight/")
           ) {
-            return "vendor-highlighter";
+            return undefined;
           }
-          return "vendor-misc";
+          return undefined;
         },
       },
     },
