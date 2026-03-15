@@ -16,6 +16,9 @@ dist-ssr
 # Rust
 src-tauri/target/
 
+# CLI 运行时状态
+.bmad-cli/
+
 # TypeScript
 *.tsbuildinfo
 
