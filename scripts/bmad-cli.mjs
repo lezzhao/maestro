@@ -14,29 +14,53 @@ const DEFAULT_ENGINE_COMMAND = {
 };
 
 const DEFAULT_MODEL_FLAG = "--model";
-const STATE_DIR = path.join(process.cwd(), ".bmad-cli");
-const STATE_FILE = path.join(STATE_DIR, "state.json");
-const LOG_DIR = path.join(STATE_DIR, "logs");
-const RUN_RECORDS_FILE = path.join(STATE_DIR, "run-records.jsonl");
 
-function ensureStateDir() {
-  if (!fs.existsSync(STATE_DIR)) {
-    fs.mkdirSync(STATE_DIR, { recursive: true });
+/** 获取 run-records 根路径：--project || BMAD_PROJECT || --cwd || process.cwd()，与 Tauri project.path 对齐 */
+function getProjectRoot(options = {}) {
+  const p = options.project || process.env.BMAD_PROJECT || options.cwd;
+  if (typeof p === "string" && p.trim()) {
+    return path.resolve(p.trim());
   }
-  if (!fs.existsSync(LOG_DIR)) {
-    fs.mkdirSync(LOG_DIR, { recursive: true });
+  return process.cwd();
+}
+
+function getStateDir(projectRoot) {
+  return path.join(projectRoot, ".bmad-cli");
+}
+
+function getStateFile(projectRoot) {
+  return path.join(getStateDir(projectRoot), "state.json");
+}
+
+function getLogDir(projectRoot) {
+  return path.join(getStateDir(projectRoot), "logs");
+}
+
+function getRunRecordsFile(projectRoot) {
+  return path.join(getStateDir(projectRoot), "run-records.jsonl");
+}
+
+function ensureStateDir(projectRoot) {
+  const stateDir = getStateDir(projectRoot);
+  const logDir = getLogDir(projectRoot);
+  if (!fs.existsSync(stateDir)) {
+    fs.mkdirSync(stateDir, { recursive: true });
+  }
+  if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir, { recursive: true });
   }
 }
 
-function loadState() {
+function loadState(projectRoot = process.cwd()) {
+  const stateFile = getStateFile(projectRoot);
   try {
-    if (!fs.existsSync(STATE_FILE)) {
+    if (!fs.existsSync(stateFile)) {
       return {
         last_sessions: {},
         sessions: {},
       };
     }
-    const raw = fs.readFileSync(STATE_FILE, "utf8");
+    const raw = fs.readFileSync(stateFile, "utf8");
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") {
       return {
@@ -60,22 +84,23 @@ function loadState() {
   }
 }
 
-function saveState(state) {
-  ensureStateDir();
-  fs.writeFileSync(STATE_FILE, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+function saveState(state, projectRoot = process.cwd()) {
+  ensureStateDir(projectRoot);
+  fs.writeFileSync(getStateFile(projectRoot), `${JSON.stringify(state, null, 2)}\n`, "utf8");
 }
 
-function appendRunRecord(record) {
-  ensureStateDir();
-  fs.appendFileSync(RUN_RECORDS_FILE, `${JSON.stringify(record)}\n`, "utf8");
+function appendRunRecord(record, projectRoot = process.cwd()) {
+  ensureStateDir(projectRoot);
+  fs.appendFileSync(getRunRecordsFile(projectRoot), `${JSON.stringify(record)}\n`, "utf8");
 }
 
-function loadRunRecords() {
+function loadRunRecords(projectRoot = process.cwd()) {
+  const runRecordsFile = getRunRecordsFile(projectRoot);
   try {
-    if (!fs.existsSync(RUN_RECORDS_FILE)) {
+    if (!fs.existsSync(runRecordsFile)) {
       return [];
     }
-    const raw = fs.readFileSync(RUN_RECORDS_FILE, "utf8");
+    const raw = fs.readFileSync(runRecordsFile, "utf8");
     return raw
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -93,10 +118,10 @@ function loadRunRecords() {
   }
 }
 
-function saveRunRecords(records) {
-  ensureStateDir();
+function saveRunRecords(records, projectRoot = process.cwd()) {
+  ensureStateDir(projectRoot);
   const text = records.map((item) => JSON.stringify(item)).join("\n");
-  fs.writeFileSync(RUN_RECORDS_FILE, text ? `${text}\n` : "", "utf8");
+  fs.writeFileSync(getRunRecordsFile(projectRoot), text ? `${text}\n` : "", "utf8");
 }
 
 /**
@@ -138,8 +163,8 @@ function printHelp() {
       "",
       "用法：",
       "  pnpm bmad doctor [--engine <id>] [--json]",
-      "  pnpm bmad task run --engine <id> --prompt <text> [--model <id>] [--cwd <dir>] [--timeout-ms <n>] [--command <bin>]",
-      "  pnpm bmad task send --engine <id> [--session <id>|--id <id>] --content <text> [--model <id>] [--cwd <dir>] [--timeout-ms <n>]",
+      "  pnpm bmad task run --engine <id> --prompt <text> [--model <id>] [--cwd <dir>] [--project <dir>] [--timeout-ms <n>] [--command <bin>]",
+      "  pnpm bmad task send --engine <id> [--session <id>|--id <id>] --content <text> [--model <id>] [--cwd <dir>] [--project <dir>] [--timeout-ms <n>]",
       "  pnpm bmad task stop --engine <id> [--session <id>|--id <id>]",
       "  pnpm bmad task logs --engine <id> [--session <id>|--id <id>] [--limit <n>]",
       "  pnpm bmad task list [--engine <id>] [--json]",
@@ -154,7 +179,7 @@ function printHelp() {
       "  pnpm bmad task logs --engine opencode --limit 200",
       "  pnpm bmad task list --engine opencode",
       "  pnpm bmad task prune --status stopped --older-than-hours 24 --yes",
-      "  pnpm bmad task run --engine gemini --prompt \"解释下当前目录项目\" --cwd /Users/zhaole/code/bmad-client",
+      "  pnpm bmad task run --engine gemini --prompt \"解释下当前目录项目\" --project /Users/zhaole/code/bmad-client",
       "",
     ].join("\n"),
   );
@@ -362,13 +387,13 @@ function normalizeSessionId(sessionId) {
   return String(sessionId).replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
-function getSessionLogPath(sessionId) {
-  return path.join(LOG_DIR, `${normalizeSessionId(sessionId)}.log`);
+function getSessionLogPath(sessionId, projectRoot = process.cwd()) {
+  return path.join(getLogDir(projectRoot), `${normalizeSessionId(sessionId)}.log`);
 }
 
-function appendSessionLog(sessionId, title, content) {
-  ensureStateDir();
-  const file = getSessionLogPath(sessionId);
+function appendSessionLog(sessionId, title, content, projectRoot = process.cwd()) {
+  ensureStateDir(projectRoot);
+  const file = getSessionLogPath(sessionId, projectRoot);
   const now = new Date().toISOString();
   const text = [
     `\n[${now}] ${title}`,
@@ -400,8 +425,46 @@ function resolveSession(state, engineId, sessionArg) {
   return session;
 }
 
-function getSessionLogSize(sessionId) {
-  const file = getSessionLogPath(sessionId);
+/**
+ * 从 run-records 解析会话（主数据源，与 Tauri cli_state 对齐）
+ * @returns 类 CliSessionEntry 对象，或 null
+ */
+function resolveSessionFromRunRecords(projectRoot, engineId, sessionArg) {
+  const records = loadRunRecords(projectRoot);
+  if (records.length === 0) return null;
+  const filtered = records.filter((r) => r.engine_id === engineId);
+  if (filtered.length === 0) return null;
+  const target = (() => {
+    if (typeof sessionArg === "string" && sessionArg.trim()) {
+      return filtered.find((r) => r.run_id === sessionArg.trim());
+    }
+    return filtered.reduce((a, b) =>
+      Number(b.updated_at || 0) > Number(a.updated_at || 0) ? b : a,
+    );
+  })();
+  if (!target) return null;
+  const runId = String(target.run_id || "");
+  const nativeSessionId =
+    engineId === "opencode" && runId.startsWith("opencode:") ? runId.slice(9) : null;
+  return {
+    _fromRunRecords: true,
+    session_id: runId,
+    engine_id: engineId,
+    command: target.command || DEFAULT_ENGINE_COMMAND[engineId] || "",
+    cwd: target.cwd || "",
+    model: target.model || "",
+    native_session_id: nativeSessionId,
+    status: target.status || "unknown",
+    mode: target.mode || "cli",
+    run_count: 1,
+    send_count: 0,
+    created_at: target.created_at || 0,
+    updated_at: target.updated_at || 0,
+  };
+}
+
+function getSessionLogSize(sessionId, projectRoot = process.cwd()) {
+  const file = getSessionLogPath(sessionId, projectRoot);
   if (!fs.existsSync(file)) {
     return 0;
   }
@@ -467,7 +530,7 @@ async function runTaskRun(options) {
   const model = typeof options.model === "string" ? options.model : "";
   const args = buildTaskRunArgs(engineId, prompt, model);
   const runCwd = typeof options.cwd === "string" ? options.cwd : process.cwd();
-  const state = loadState();
+  const projectRoot = getProjectRoot(options);
   let beforeSessionIds = [];
   if (engineId === "opencode") {
     beforeSessionIds = await listOpencodeSessions(command, runCwd);
@@ -483,24 +546,11 @@ async function runTaskRun(options) {
 
   if (result.timeout) {
     const timeoutSessionId = createPseudoSessionId(engineId);
-    setActiveSession(state, engineId, {
-      session_id: timeoutSessionId,
-      engine_id: engineId,
-      command,
-      cwd: runCwd,
-      model,
-      status: "error",
-      native_session_id: null,
-      mode: "pseudo",
-      created_at: Date.now(),
-      run_count: 1,
-      send_count: 0,
-    });
-    saveState(state);
     appendSessionLog(
       timeoutSessionId,
       "run-timeout",
       `args: ${args.join(" ")}\n\nstdout:\n${result.stdout}\n\nstderr:\n${result.stderr}`,
+      projectRoot,
     );
     appendRunRecord({
       run_id: timeoutSessionId,
@@ -516,7 +566,7 @@ async function runTaskRun(options) {
       updated_at: Date.now(),
       output_preview: (result.stderr || result.stdout || "").slice(0, 300),
       verification: null,
-    });
+    }, projectRoot);
     process.stderr.write(`\n任务超时，已尝试终止进程。会话已记录: ${timeoutSessionId}\n`);
     process.exitCode = 124;
     return;
@@ -524,24 +574,11 @@ async function runTaskRun(options) {
 
   if (!result.ok) {
     const failedSessionId = createPseudoSessionId(engineId);
-    setActiveSession(state, engineId, {
-      session_id: failedSessionId,
-      engine_id: engineId,
-      command,
-      cwd: runCwd,
-      model,
-      status: "error",
-      native_session_id: null,
-      mode: "pseudo",
-      created_at: Date.now(),
-      run_count: 1,
-      send_count: 0,
-    });
-    saveState(state);
     appendSessionLog(
       failedSessionId,
       "run-error",
       `args: ${args.join(" ")}\n\nstdout:\n${result.stdout}\n\nstderr:\n${result.stderr}`,
+      projectRoot,
     );
     appendRunRecord({
       run_id: failedSessionId,
@@ -557,7 +594,7 @@ async function runTaskRun(options) {
       updated_at: Date.now(),
       output_preview: (result.stderr || result.stdout || "").slice(0, 300),
       verification: null,
-    });
+    }, projectRoot);
     process.stderr.write("\n任务执行失败。\n");
     process.exitCode = result.code ?? 1;
     return;
@@ -577,24 +614,11 @@ async function runTaskRun(options) {
     }
   }
 
-  setActiveSession(state, engineId, {
-    session_id: sessionId,
-    engine_id: engineId,
-    command,
-    cwd: runCwd,
-    model,
-    status: "active",
-    native_session_id: nativeSessionId,
-    mode,
-    created_at: Date.now(),
-    run_count: 1,
-    send_count: 0,
-  });
-  saveState(state);
   appendSessionLog(
     sessionId,
     "run",
     `args: ${args.join(" ")}\n\nstdout:\n${result.stdout}\n\nstderr:\n${result.stderr}`,
+    projectRoot,
   );
   appendRunRecord({
     run_id: sessionId,
@@ -610,7 +634,7 @@ async function runTaskRun(options) {
     updated_at: Date.now(),
     output_preview: (result.stdout || result.stderr || "").slice(0, 300),
     verification: null,
-  });
+  }, projectRoot);
   process.stdout.write(`会话已记录: ${sessionId}\n`);
   process.stdout.write("\n任务执行完成。\n");
   process.exitCode = 0;
@@ -630,12 +654,17 @@ async function runTaskSend(options) {
     return;
   }
 
-  const state = loadState();
+  const projectRoot = getProjectRoot(options);
   const sessionArg =
     (typeof options.session === "string" && options.session) ||
     (typeof options.id === "string" && options.id) ||
     "";
-  const session = resolveSession(state, engineId, sessionArg);
+  let state = null;
+  let session = resolveSessionFromRunRecords(projectRoot, engineId, sessionArg);
+  if (!session) {
+    state = loadState(projectRoot);
+    session = resolveSession(state, engineId, sessionArg);
+  }
   if (!session) {
     process.stderr.write("未找到会话，请先执行 task run 或显式传入 --session。\n");
     process.exitCode = 2;
@@ -682,12 +711,15 @@ async function runTaskSend(options) {
   if (result.timeout) {
     session.status = "error";
     session.updated_at = Date.now();
-    state.sessions[session.session_id] = session;
-    saveState(state);
+    if (state && !session._fromRunRecords) {
+      state.sessions[session.session_id] = session;
+      saveState(state, projectRoot);
+    }
     appendSessionLog(
       session.session_id,
       "send-timeout",
       `args: ${args.join(" ")}\n\nstdout:\n${result.stdout}\n\nstderr:\n${result.stderr}`,
+      projectRoot,
     );
     appendRunRecord({
       run_id: `${session.session_id}-send-${Date.now()}`,
@@ -703,7 +735,7 @@ async function runTaskSend(options) {
       updated_at: Date.now(),
       output_preview: (result.stderr || result.stdout || "").slice(0, 300),
       verification: null,
-    });
+    }, projectRoot);
     process.stderr.write("\n发送超时，已尝试终止进程。\n");
     process.exitCode = 124;
     return;
@@ -711,12 +743,15 @@ async function runTaskSend(options) {
   if (!result.ok) {
     session.status = "error";
     session.updated_at = Date.now();
-    state.sessions[session.session_id] = session;
-    saveState(state);
+    if (state && !session._fromRunRecords) {
+      state.sessions[session.session_id] = session;
+      saveState(state, projectRoot);
+    }
     appendSessionLog(
       session.session_id,
       "send-error",
       `args: ${args.join(" ")}\n\nstdout:\n${result.stdout}\n\nstderr:\n${result.stderr}`,
+      projectRoot,
     );
     appendRunRecord({
       run_id: `${session.session_id}-send-${Date.now()}`,
@@ -732,7 +767,7 @@ async function runTaskSend(options) {
       updated_at: Date.now(),
       output_preview: (result.stderr || result.stdout || "").slice(0, 300),
       verification: null,
-    });
+    }, projectRoot);
     process.stderr.write("\n发送失败。\n");
     process.exitCode = result.code ?? 1;
     return;
@@ -741,13 +776,16 @@ async function runTaskSend(options) {
   session.status = "active";
   session.send_count = Number(session.send_count || 0) + 1;
   session.updated_at = Date.now();
-  state.sessions[session.session_id] = session;
-  state.last_sessions[engineId] = session.session_id;
-  saveState(state);
+  if (state && !session._fromRunRecords) {
+    state.sessions[session.session_id] = session;
+    state.last_sessions[engineId] = session.session_id;
+    saveState(state, projectRoot);
+  }
   appendSessionLog(
     session.session_id,
     "send",
     `args: ${args.join(" ")}\n\nstdout:\n${result.stdout}\n\nstderr:\n${result.stderr}`,
+    projectRoot,
   );
   appendRunRecord({
     run_id: `${session.session_id}-send-${Date.now()}`,
@@ -763,7 +801,7 @@ async function runTaskSend(options) {
     updated_at: Date.now(),
     output_preview: (result.stdout || result.stderr || "").slice(0, 300),
     verification: null,
-  });
+  }, projectRoot);
   process.stdout.write("\n发送完成。\n");
   process.exitCode = 0;
 }
@@ -775,12 +813,17 @@ async function runTaskStop(options) {
     process.exitCode = 2;
     return;
   }
-  const state = loadState();
+  const projectRoot = getProjectRoot(options);
   const sessionArg =
     (typeof options.session === "string" && options.session) ||
     (typeof options.id === "string" && options.id) ||
     "";
-  const session = resolveSession(state, engineId, sessionArg);
+  let state = null;
+  let session = resolveSessionFromRunRecords(projectRoot, engineId, sessionArg);
+  if (!session) {
+    state = loadState(projectRoot);
+    session = resolveSession(state, engineId, sessionArg);
+  }
   if (!session) {
     process.stderr.write("未找到会话，请显式传入 --session。\n");
     process.exitCode = 2;
@@ -815,6 +858,7 @@ async function runTaskStop(options) {
         session.session_id,
         "stop-error",
         `stdout:\n${result.stdout}\n\nstderr:\n${result.stderr}`,
+        projectRoot,
       );
       process.stderr.write("\n停止（删除会话）失败。\n");
       process.exitCode = result.code ?? 1;
@@ -824,22 +868,26 @@ async function runTaskStop(options) {
       session.session_id,
       "stop",
       `native_session_id=${session.native_session_id}\nstdout:\n${result.stdout}\n\nstderr:\n${result.stderr}`,
+      projectRoot,
     );
   } else {
     appendSessionLog(
       session.session_id,
       "stop",
       "当前引擎不支持原生命令会话中断，已在 CLI 状态中标记为 stopped。",
+      projectRoot,
     );
   }
 
   session.status = "stopped";
   session.updated_at = Date.now();
-  state.sessions[session.session_id] = session;
-  if (state.last_sessions[engineId] === session.session_id) {
-    delete state.last_sessions[engineId];
+  if (state && !session._fromRunRecords) {
+    state.sessions[session.session_id] = session;
+    if (state.last_sessions[engineId] === session.session_id) {
+      delete state.last_sessions[engineId];
+    }
+    saveState(state, projectRoot);
   }
-  saveState(state);
   appendRunRecord({
     run_id: `${session.session_id}-stop-${Date.now()}`,
     engine_id: engineId,
@@ -854,7 +902,7 @@ async function runTaskStop(options) {
     updated_at: Date.now(),
     output_preview: "会话已停止",
     verification: null,
-  });
+  }, projectRoot);
   process.stdout.write(`\n会话已停止: ${session.session_id}\n`);
   process.exitCode = 0;
 }
@@ -913,21 +961,25 @@ async function runTaskLogs(options) {
     process.exitCode = 2;
     return;
   }
-  const state = loadState();
+  const projectRoot = getProjectRoot(options);
   const sessionArg =
     (typeof options.session === "string" && options.session) ||
     (typeof options.id === "string" && options.id) ||
     "";
-  const session = resolveSession(state, engineId, sessionArg);
+  let session = resolveSessionFromRunRecords(projectRoot, engineId, sessionArg);
+  if (!session) {
+    const state = loadState(projectRoot);
+    session = resolveSession(state, engineId, sessionArg);
+  }
   if (!session) {
     process.stderr.write("未找到会话，请先执行 task run 或显式传入 --session。\n");
     process.exitCode = 2;
     return;
   }
 
-  const logPath = getSessionLogPath(session.session_id);
+  const logPath = getSessionLogPath(session.session_id, projectRoot);
   if (!fs.existsSync(logPath)) {
-    const records = loadRunRecords();
+    const records = loadRunRecords(projectRoot);
     const matched = records.find((item) => item.run_id === session.session_id);
     if (matched && matched.output_preview) {
       process.stdout.write(`${matched.output_preview}\n`);
@@ -948,7 +1000,8 @@ async function runTaskLogs(options) {
 
 async function runTaskList(options) {
   const engineFilter = typeof options.engine === "string" ? options.engine : "";
-  const runRecords = loadRunRecords();
+  const projectRoot = getProjectRoot(options);
+  const runRecords = loadRunRecords(projectRoot);
   if (runRecords.length > 0) {
     const rows = runRecords
       .filter((item) => (engineFilter ? item.engine_id === engineFilter : true))
@@ -966,7 +1019,7 @@ async function runTaskList(options) {
         send_count: 0,
         created_at: Number(item.created_at || 0),
         updated_at: Number(item.updated_at || 0),
-        log_size: getSessionLogSize(String(item.run_id || "")),
+        log_size: getSessionLogSize(String(item.run_id || ""), projectRoot),
       }));
     if (options.json) {
       process.stdout.write(`${JSON.stringify({ sessions: rows }, null, 2)}\n`);
@@ -994,7 +1047,7 @@ async function runTaskList(options) {
     process.exitCode = 0;
     return;
   }
-  const state = loadState();
+  const state = loadState(projectRoot);
   const rows = Object.values(state.sessions)
     .filter((session) => {
       if (!engineFilter) return true;
@@ -1013,7 +1066,7 @@ async function runTaskList(options) {
       send_count: Number(session.send_count || 0),
       created_at: Number(session.created_at || 0),
       updated_at: Number(session.updated_at || 0),
-      log_size: getSessionLogSize(session.session_id),
+      log_size: getSessionLogSize(session.session_id, projectRoot),
       is_last:
         state.last_sessions &&
         session.engine_id &&
@@ -1042,7 +1095,8 @@ async function runTaskList(options) {
 }
 
 async function runTaskPrune(options) {
-  const runRecords = loadRunRecords();
+  const projectRoot = getProjectRoot(options);
+  const runRecords = loadRunRecords(projectRoot);
   if (runRecords.length > 0) {
     const engineFilter = typeof options.engine === "string" ? options.engine : "";
     const statusFilter = typeof options.status === "string" ? options.status : "";
@@ -1070,10 +1124,10 @@ async function runTaskPrune(options) {
         keep.push(item);
       }
     }
-    saveRunRecords(keep);
+    saveRunRecords(keep, projectRoot);
     let deletedLogs = 0;
     for (const item of remove) {
-      const logPath = getSessionLogPath(String(item.run_id || ""));
+      const logPath = getSessionLogPath(String(item.run_id || ""), projectRoot);
       if (fs.existsSync(logPath)) {
         try {
           fs.unlinkSync(logPath);
@@ -1097,7 +1151,7 @@ async function runTaskPrune(options) {
     return;
   }
 
-  const state = loadState();
+  const state = loadState(projectRoot);
   const now = Date.now();
   const threshold =
     Number.isFinite(olderThanHours) && olderThanHours > 0
@@ -1126,7 +1180,7 @@ async function runTaskPrune(options) {
 
   let deletedLogs = 0;
   for (const session of toDelete) {
-    const logPath = getSessionLogPath(session.session_id);
+    const logPath = getSessionLogPath(session.session_id, projectRoot);
     if (fs.existsSync(logPath)) {
       try {
         fs.unlinkSync(logPath);
@@ -1144,7 +1198,7 @@ async function runTaskPrune(options) {
       delete state.last_sessions[session.engine_id];
     }
   }
-  saveState(state);
+  saveState(state, projectRoot);
   process.stdout.write(
     `已清理会话 ${toDelete.length} 条，删除日志 ${deletedLogs} 个。\n`,
   );
