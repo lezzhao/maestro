@@ -624,12 +624,13 @@ pub async fn workflow_run(
     let workflow_name_for_record = run_result.workflow_name.clone();
     if let Ok(root) = resolve_root_dir_from_project_path(&cfg.project.path) {
         if let Ok(now_ms) = current_time_ms() {
+            let task_id = request.task_id.clone().unwrap_or_default();
             let _ = append_run_record(
                 &root,
                 &UnifiedRunRecord {
                     run_id: format!("workflow-{workflow_name_for_record}-{now_ms}"),
                     engine_id: "workflow".to_string(),
-                    task_id: String::new(),
+                    task_id,
                     source: "workflow_run".to_string(),
                     mode: "workflow".to_string(),
                     status: if run_result.completed {

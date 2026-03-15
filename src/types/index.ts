@@ -82,6 +82,7 @@ export type WorkflowStep = {
 export type WorkflowRunRequest = {
   name: string;
   steps: WorkflowStep[];
+  task_id?: string | null;
 };
 
 export type WorkflowProgressEvent = {

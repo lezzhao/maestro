@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 pub struct WorkflowRunRequest {
     pub name: String,
     pub steps: Vec<WorkflowRunStep>,
+    #[serde(default)]
+    pub task_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
