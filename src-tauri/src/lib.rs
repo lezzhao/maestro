@@ -1,17 +1,23 @@
+mod api_provider;
 mod config;
+mod cli_state;
 mod engine;
+mod headless;
 mod process;
 mod project;
 mod pty;
+mod run_persistence;
 mod spec;
 mod workflow;
 
 use config::{load_or_create_config, save_config, AppConfigState};
+use cli_state::{cli_list_sessions, cli_prune_sessions, cli_read_session_logs};
 use engine::{
     engine_get_active, engine_list, engine_list_models, engine_preflight, engine_set_active, engine_set_active_profile,
     engine_switch_session, engine_upsert, engine_upsert_profile,
     EngineRuntimeState,
 };
+use headless::HeadlessProcessState;
 use process::{process_get_stats, process_start_monitor, process_stop_monitor, ProcessMonitorState};
 use project::{
     project_detect_stack, project_git_diff, project_git_status, project_list_files, project_recommend_engine,
@@ -23,6 +29,7 @@ use pty::{
 use spec::{spec_detect, spec_inject, spec_list, spec_remove};
 use tauri::Manager;
 use workflow::{
+    chat_execute_api, chat_execute_api_stop, chat_execute_cli, chat_execute_cli_stop,
     chat_load_last_conversation, chat_save_last_conversation, chat_send, chat_spawn, chat_stop,
     workflow_export_archives, workflow_get_archive, workflow_get_engine_history_detail,
     workflow_get_full_archive, workflow_list_archives, workflow_list_engine_history, workflow_run,
@@ -33,13 +40,13 @@ use workflow::{
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let config = load_or_create_config(app.handle().clone())?;
             app.manage(AppConfigState::new(config));
             app.manage(PtyManagerState::default());
             app.manage(EngineRuntimeState::default());
             app.manage(ProcessMonitorState::default());
+            app.manage(HeadlessProcessState::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -85,8 +92,15 @@ pub fn run() {
             chat_spawn,
             chat_send,
             chat_stop,
+            chat_execute_api,
+            chat_execute_api_stop,
+            chat_execute_cli,
+            chat_execute_cli_stop,
             chat_save_last_conversation,
             chat_load_last_conversation,
+            cli_list_sessions,
+            cli_read_session_logs,
+            cli_prune_sessions,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri app")

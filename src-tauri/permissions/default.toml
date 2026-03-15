@@ -44,6 +44,13 @@ commands.allow = [
   "chat_spawn",
   "chat_send",
   "chat_stop",
+  "chat_execute_api",
+  "chat_execute_api_stop",
+  "chat_execute_cli",
+  "chat_execute_cli_stop",
   "chat_save_last_conversation",
-  "chat_load_last_conversation"
+  "chat_load_last_conversation",
+  "cli_list_sessions",
+  "cli_read_session_logs",
+  "cli_prune_sessions"
 ]

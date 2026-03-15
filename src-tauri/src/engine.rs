@@ -465,10 +465,64 @@ pub async fn engine_preflight(
             &format!("{} auth status", shell_single_quote(&profile.command)),
             8000,
         ).await,
-        _ => StatusCheckResult {
-            ok: true,
-            detail: "ready".to_string(),
-        },
+        "opencode" => run_status_check_shell(
+            &format!("{} auth", shell_single_quote(&profile.command)),
+            8000,
+        )
+        .await,
+        "gemini" => {
+            let probe = run_status_check_shell(
+                &format!("{} -p {}", shell_single_quote(&profile.command), shell_single_quote("ping")),
+                8000,
+            )
+            .await;
+            if probe.ok {
+                probe
+            } else {
+                let help_probe = run_status_check_shell(
+                    &format!("{} --help", shell_single_quote(&profile.command)),
+                    5000,
+                )
+                .await;
+                if help_probe.ok {
+                    StatusCheckResult {
+                        ok: false,
+                        detail: format!("prompt probe failed: {}", probe.detail),
+                    }
+                } else {
+                    probe
+                }
+            }
+        }
+        "codex" => {
+            let probe = run_status_check_shell(
+                &format!("{} exec {}", shell_single_quote(&profile.command), shell_single_quote("ping")),
+                8000,
+            )
+            .await;
+            if probe.ok {
+                probe
+            } else {
+                let help_probe = run_status_check_shell(
+                    &format!("{} --help", shell_single_quote(&profile.command)),
+                    5000,
+                )
+                .await;
+                if help_probe.ok {
+                    StatusCheckResult {
+                        ok: false,
+                        detail: format!("exec probe failed: {}", probe.detail),
+                    }
+                } else {
+                    probe
+                }
+            }
+        }
+        _ => run_status_check_shell(
+            &format!("{} --help", shell_single_quote(&profile.command)),
+            5000,
+        )
+        .await,
     };
     let auth_ok = auth_check.ok;
 

@@ -30,6 +30,14 @@ pub struct EngineProfile {
     pub supports_headless: bool,
     pub headless_args: Vec<String>,
     pub ready_signal: Option<String>,
+    #[serde(default = "default_execution_mode")]
+    pub execution_mode: String,
+    #[serde(default)]
+    pub api_provider: Option<String>,
+    #[serde(default)]
+    pub api_base_url: Option<String>,
+    #[serde(default)]
+    pub api_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +62,14 @@ pub struct EngineConfig {
     pub headless_args: Vec<String>,
     #[serde(default)]
     pub ready_signal: Option<String>,
+    #[serde(default = "default_execution_mode")]
+    pub execution_mode: String,
+    #[serde(default)]
+    pub api_provider: Option<String>,
+    #[serde(default)]
+    pub api_base_url: Option<String>,
+    #[serde(default)]
+    pub api_key: Option<String>,
     pub icon: String,
 }
 
@@ -131,181 +147,38 @@ impl Default for SpecSection {
 impl Default for AppConfig {
     fn default() -> Self {
         let mut engines = BTreeMap::new();
-        engines.insert(
-            "cursor".to_string(),
-            EngineConfig {
-                id: "cursor".to_string(),
-                display_name: "Cursor Agent".to_string(),
-                profiles: {
-                    let mut m = BTreeMap::new();
-                    m.insert(
-                        "default".to_string(),
-                        EngineProfile {
-                            id: "default".to_string(),
-                            display_name: "Default".to_string(),
-                            command: "cursor".to_string(),
-                            model: String::new(),
-                            args: vec!["agent".to_string()],
-                            env: BTreeMap::new(),
-                            supports_headless: true,
-                            headless_args: vec!["agent".to_string(), "--print".to_string()],
-                            ready_signal: Some(">".to_string()),
-                        },
-                    );
-                    m
-                },
-                active_profile_id: "default".to_string(),
-                command: "cursor".to_string(),
-                args: vec!["agent".to_string()],
-                env: BTreeMap::new(),
-                exit_command: "ctrl-c".to_string(),
-                exit_timeout_ms: 3000,
-                supports_headless: true,
-                headless_args: vec!["agent".to_string(), "--print".to_string()],
-                ready_signal: Some(">".to_string()),
-                icon: "terminal-square".to_string(),
-            },
+
+        // Cursor Agent: 有自定义 args 和 headless_args
+        let mut cursor = EngineConfig::new(
+            "cursor", "Cursor Agent", "cursor", "ctrl-c",
+            true, vec!["agent".to_string(), "--print".to_string()], ">", "terminal-square",
         );
-        engines.insert(
-            "claude".to_string(),
-            EngineConfig {
-                id: "claude".to_string(),
-                display_name: "Claude Code".to_string(),
-                profiles: {
-                    let mut m = BTreeMap::new();
-                    m.insert(
-                        "default".to_string(),
-                        EngineProfile {
-                            id: "default".to_string(),
-                            display_name: "Default".to_string(),
-                            command: "claude".to_string(),
-                            model: String::new(),
-                            args: vec![],
-                            env: BTreeMap::new(),
-                            supports_headless: true,
-                            headless_args: vec!["-p".to_string()],
-                            ready_signal: Some(">".to_string()),
-                        },
-                    );
-                    m
-                },
-                active_profile_id: "default".to_string(),
-                command: "claude".to_string(),
-                args: vec![],
-                env: BTreeMap::new(),
-                exit_command: "/exit".to_string(),
-                exit_timeout_ms: 3000,
-                supports_headless: true,
-                headless_args: vec!["-p".to_string()],
-                ready_signal: Some(">".to_string()),
-                icon: "bot".to_string(),
-            },
-        );
-        engines.insert(
-            "gemini".to_string(),
-            EngineConfig {
-                id: "gemini".to_string(),
-                display_name: "Gemini CLI".to_string(),
-                profiles: {
-                    let mut m = BTreeMap::new();
-                    m.insert(
-                        "default".to_string(),
-                        EngineProfile {
-                            id: "default".to_string(),
-                            display_name: "Default".to_string(),
-                            command: "gemini".to_string(),
-                            model: String::new(),
-                            args: vec![],
-                            env: BTreeMap::new(),
-                            supports_headless: false,
-                            headless_args: vec![],
-                            ready_signal: Some(">".to_string()),
-                        },
-                    );
-                    m
-                },
-                active_profile_id: "default".to_string(),
-                command: "gemini".to_string(),
-                args: vec![],
-                env: BTreeMap::new(),
-                exit_command: "/exit".to_string(),
-                exit_timeout_ms: 3000,
-                supports_headless: false,
-                headless_args: vec![],
-                ready_signal: Some(">".to_string()),
-                icon: "sparkles".to_string(),
-            },
-        );
-        engines.insert(
-            "opencode".to_string(),
-            EngineConfig {
-                id: "opencode".to_string(),
-                display_name: "OpenCode".to_string(),
-                profiles: {
-                    let mut m = BTreeMap::new();
-                    m.insert(
-                        "default".to_string(),
-                        EngineProfile {
-                            id: "default".to_string(),
-                            display_name: "Default".to_string(),
-                            command: "opencode".to_string(),
-                            model: String::new(),
-                            args: vec![],
-                            env: BTreeMap::new(),
-                            supports_headless: false,
-                            headless_args: vec![],
-                            ready_signal: Some(">".to_string()),
-                        },
-                    );
-                    m
-                },
-                active_profile_id: "default".to_string(),
-                command: "opencode".to_string(),
-                args: vec![],
-                env: BTreeMap::new(),
-                exit_command: "ctrl-c".to_string(),
-                exit_timeout_ms: 3000,
-                supports_headless: false,
-                headless_args: vec![],
-                ready_signal: Some(">".to_string()),
-                icon: "code".to_string(),
-            },
-        );
-        engines.insert(
-            "codex".to_string(),
-            EngineConfig {
-                id: "codex".to_string(),
-                display_name: "Codex".to_string(),
-                profiles: {
-                    let mut m = BTreeMap::new();
-                    m.insert(
-                        "default".to_string(),
-                        EngineProfile {
-                            id: "default".to_string(),
-                            display_name: "Default".to_string(),
-                            command: "codex".to_string(),
-                            model: String::new(),
-                            args: vec![],
-                            env: BTreeMap::new(),
-                            supports_headless: false,
-                            headless_args: vec![],
-                            ready_signal: Some(">".to_string()),
-                        },
-                    );
-                    m
-                },
-                active_profile_id: "default".to_string(),
-                command: "codex".to_string(),
-                args: vec![],
-                env: BTreeMap::new(),
-                exit_command: "/exit".to_string(),
-                exit_timeout_ms: 3000,
-                supports_headless: false,
-                headless_args: vec![],
-                ready_signal: Some(">".to_string()),
-                icon: "zap".to_string(),
-            },
-        );
+        // Cursor 默认 args 不是空的，需要覆盖
+        cursor.args = vec!["agent".to_string()];
+        if let Some(p) = cursor.profiles.get_mut("default") {
+            p.args = vec!["agent".to_string()];
+        }
+        engines.insert("cursor".to_string(), cursor);
+
+        engines.insert("claude".to_string(), EngineConfig::new(
+            "claude", "Claude Code", "claude", "/exit",
+            true, vec!["-p".to_string()], ">", "bot",
+        ));
+
+        engines.insert("gemini".to_string(), EngineConfig::new(
+            "gemini", "Gemini CLI", "gemini", "/exit",
+            true, vec!["-p".to_string()], ">", "sparkles",
+        ));
+
+        engines.insert("opencode".to_string(), EngineConfig::new(
+            "opencode", "OpenCode", "opencode", "ctrl-c",
+            true, vec!["run".to_string()], ">", "code",
+        ));
+
+        engines.insert("codex".to_string(), EngineConfig::new(
+            "codex", "Codex", "codex", "/exit",
+            true, vec!["exec".to_string()], ">", "zap",
+        ));
 
         Self {
             app: AppSection::default(),
@@ -353,6 +226,55 @@ impl AppConfigState {
 }
 
 impl EngineConfig {
+    pub fn new(
+        id: &str,
+        display_name: &str,
+        command: &str,
+        exit_command: &str,
+        supports_headless: bool,
+        headless_args: Vec<String>,
+        ready_signal: &str,
+        icon: &str,
+    ) -> Self {
+        let profile = EngineProfile {
+            id: "default".to_string(),
+            display_name: "Default".to_string(),
+            command: command.to_string(),
+            model: String::new(),
+            args: vec![],
+            env: BTreeMap::new(),
+            supports_headless,
+            headless_args: headless_args.clone(),
+            ready_signal: Some(ready_signal.to_string()),
+            execution_mode: default_execution_mode(),
+            api_provider: None,
+            api_base_url: None,
+            api_key: None,
+        };
+        let mut profiles = BTreeMap::new();
+        profiles.insert("default".to_string(), profile);
+
+        Self {
+            id: id.to_string(),
+            display_name: display_name.to_string(),
+            profiles,
+            active_profile_id: "default".to_string(),
+            command: command.to_string(),
+            args: vec![],
+            env: BTreeMap::new(),
+            exit_command: exit_command.to_string(),
+            exit_timeout_ms: 3000,
+            supports_headless,
+            headless_args,
+            ready_signal: Some(ready_signal.to_string()),
+            execution_mode: default_execution_mode(),
+            api_provider: None,
+            api_base_url: None,
+            api_key: None,
+            icon: icon.to_string(),
+        }
+    }
+
     pub fn active_profile(&self) -> EngineProfile {
         if let Some(profile) = self.profiles.get(&self.active_profile_id) {
             return profile.clone();
@@ -370,12 +292,48 @@ impl EngineConfig {
             supports_headless: self.supports_headless,
             headless_args: self.headless_args.clone(),
             ready_signal: self.ready_signal.clone(),
+            execution_mode: self.execution_mode.clone(),
+            api_provider: self.api_provider.clone(),
+            api_base_url: self.api_base_url.clone(),
+            api_key: self.api_key.clone(),
         }
     }
 }
 
+fn is_valid_execution_mode(mode: &str) -> bool {
+    matches!(mode, "cli" | "api")
+}
+
+fn normalize_execution_mode(mode: &str) -> String {
+    if is_valid_execution_mode(mode) {
+        mode.to_string()
+    } else {
+        default_execution_mode()
+    }
+}
+
+fn builtin_headless_defaults(engine_id: &str) -> Option<(bool, Vec<String>)> {
+    match engine_id {
+        "cursor" => Some((true, vec!["agent".to_string(), "--print".to_string()])),
+        "claude" => Some((true, vec!["-p".to_string()])),
+        "gemini" => Some((true, vec!["-p".to_string()])),
+        "opencode" => Some((true, vec!["run".to_string()])),
+        "codex" => Some((true, vec!["exec".to_string()])),
+        _ => None,
+    }
+}
+
 fn migrate_engine_profiles(config: &mut AppConfig) {
-    for engine in config.engines.values_mut() {
+    for (engine_id, engine) in config.engines.iter_mut() {
+        engine.execution_mode = normalize_execution_mode(&engine.execution_mode);
+        if let Some((supports_headless, default_headless_args)) =
+            builtin_headless_defaults(engine_id.as_str())
+        {
+            engine.supports_headless = supports_headless;
+            if engine.headless_args.is_empty() {
+                engine.headless_args = default_headless_args;
+            }
+        }
         if engine.profiles.is_empty() {
             let profile_id = "default".to_string();
             engine.profiles.insert(
@@ -390,9 +348,45 @@ fn migrate_engine_profiles(config: &mut AppConfig) {
                     supports_headless: engine.supports_headless,
                     headless_args: engine.headless_args.clone(),
                     ready_signal: engine.ready_signal.clone(),
+                    execution_mode: engine.execution_mode.clone(),
+                    api_provider: engine.api_provider.clone(),
+                    api_base_url: engine.api_base_url.clone(),
+                    api_key: engine.api_key.clone(),
                 },
             );
             engine.active_profile_id = profile_id;
+        }
+        for (profile_id, profile) in engine.profiles.iter_mut() {
+            if profile.id.trim().is_empty() {
+                profile.id = profile_id.clone();
+            }
+            if profile.display_name.trim().is_empty() {
+                profile.display_name = profile_id.clone();
+            }
+            if profile.command.trim().is_empty() {
+                profile.command = engine.command.clone();
+            }
+            if profile.args.is_empty() && !engine.args.is_empty() {
+                profile.args = engine.args.clone();
+            }
+            if profile.env.is_empty() && !engine.env.is_empty() {
+                profile.env = engine.env.clone();
+            }
+            if profile.ready_signal.is_none() && engine.ready_signal.is_some() {
+                profile.ready_signal = engine.ready_signal.clone();
+            }
+            profile.execution_mode = normalize_execution_mode(&profile.execution_mode);
+
+            if let Some((supports_headless, default_headless_args)) =
+                builtin_headless_defaults(engine_id.as_str())
+            {
+                profile.supports_headless = supports_headless;
+                if profile.headless_args.is_empty() {
+                    profile.headless_args = default_headless_args;
+                }
+            } else if profile.headless_args.is_empty() && !engine.headless_args.is_empty() {
+                profile.headless_args = engine.headless_args.clone();
+            }
         }
         if engine.active_profile_id.trim().is_empty()
             || !engine.profiles.contains_key(&engine.active_profile_id)
@@ -401,7 +395,23 @@ fn migrate_engine_profiles(config: &mut AppConfig) {
                 engine.active_profile_id = first_key;
             }
         }
+        if let Some(active_profile) = engine.profiles.get(&engine.active_profile_id).cloned() {
+            engine.command = active_profile.command;
+            engine.args = active_profile.args;
+            engine.env = active_profile.env;
+            engine.supports_headless = active_profile.supports_headless;
+            engine.headless_args = active_profile.headless_args;
+            engine.ready_signal = active_profile.ready_signal;
+            engine.execution_mode = normalize_execution_mode(&active_profile.execution_mode);
+            engine.api_provider = active_profile.api_provider;
+            engine.api_base_url = active_profile.api_base_url;
+            engine.api_key = active_profile.api_key;
+        }
     }
+}
+
+fn default_execution_mode() -> String {
+    "cli".to_string()
 }
 
 fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
