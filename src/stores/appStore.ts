@@ -1,9 +1,7 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
 import type {
   EngineConfig,
   EnginePreflightResult,
-  FileTreeNode,
   AppTask,
 } from "../types";
 
@@ -13,7 +11,6 @@ type AppStore = {
   sidebarCollapsed: boolean;
   autoRetry: boolean;
   projectPath: string;
-  fileTree: FileTreeNode[] | null;
   engines: Record<string, EngineConfig>;
   enginePreflight: Record<string, EnginePreflightResult>;
   activeEngineId: string;
@@ -32,7 +29,6 @@ type AppStore = {
   setSidebarCollapsed: (collapsed: boolean) => void;
   setAutoRetry: (enabled: boolean) => void;
   setProjectPath: (path: string) => void;
-  setFileTree: (tree: FileTreeNode[] | null) => void;
   setEngines: (engines: Record<string, EngineConfig>) => void;
   setEnginePreflight: (engineId: string, result: EnginePreflightResult) => void;
   setActiveEngineId: (id: string) => void;
@@ -56,14 +52,27 @@ export const useAppStore = create<AppStore>()(
     sidebarCollapsed: false,
     autoRetry: true,
     projectPath: "",
-    fileTree: null,
     engines: {},
     enginePreflight: {},
     activeEngineId: "cursor",
     specProvider: "none",
     errorMessage: null,
-    theme: (localStorage.getItem("theme") as any) || "system",
-    lang: (localStorage.getItem("lang") as any) || (navigator.language.startsWith("zh") ? "zh" : "en"),
+    theme: (() => {
+      try {
+        return (localStorage.getItem("theme") as "light" | "dark" | "system") || "system";
+      } catch {
+        return "system";
+      }
+    })(),
+    lang: (() => {
+      try {
+        const stored = localStorage.getItem("lang");
+        if (stored === "zh" || stored === "en") return stored;
+        return typeof navigator?.language === "string" && navigator.language.startsWith("zh") ? "zh" : "en";
+      } catch {
+        return "en";
+      }
+    })(),
 
     tasks: [],
     activeTaskId: null,
@@ -73,7 +82,6 @@ export const useAppStore = create<AppStore>()(
     setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
     setAutoRetry: (autoRetry) => set({ autoRetry }),
     setProjectPath: (projectPath) => set({ projectPath }),
-    setFileTree: (fileTree) => set({ fileTree }),
     setEngines: (engines) => set({ engines }),
     setEnginePreflight: (engineId, result) =>
       set((state) => ({
@@ -104,6 +112,8 @@ export const useAppStore = create<AppStore>()(
         id: generateId(),
         name: name || `Task ${get().tasks.length + 1}`,
         sessionId: null,
+        activeExecId: null,
+        activeRunId: null,
         status: "idle",
         gitChanges: [],
         stats: {

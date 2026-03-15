@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useAppStore } from "../stores/appStore";
 
 export function useTheme() {
-  const { theme } = useAppStore();
+  const theme = useAppStore((s) => s.theme);
 
   useEffect(() => {
     const root = window.document.documentElement;

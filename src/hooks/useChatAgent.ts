@@ -1,6 +1,16 @@
 import { useCallback } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
-import type { ChatSendRequest, ChatSessionMeta, ChatSpawnRequest, ChatStopRequest } from "../types";
+import type {
+  ChatApiRequest,
+  ChatExecuteApiResult,
+  ChatExecuteCliRequest,
+  ChatExecuteCliResult,
+  ChatExecuteStopRequest,
+  ChatSendRequest,
+  ChatSessionMeta,
+  ChatSpawnRequest,
+  ChatStopRequest,
+} from "../types";
 
 export function useChatAgent() {
   const spawnSession = useCallback(
@@ -24,6 +34,38 @@ export function useChatAgent() {
     await invoke("chat_stop", { request });
   }, []);
 
+  const executeApi = useCallback(
+    async (
+      request: ChatApiRequest,
+      onChunk: (chunk: string) => void,
+    ): Promise<ChatExecuteApiResult> => {
+      const onData = new Channel<string>();
+      onData.onmessage = (chunk) => onChunk(chunk);
+      return invoke<ChatExecuteApiResult>("chat_execute_api", { request, onData });
+    },
+    [],
+  );
+
+  const stopApi = useCallback(async (request: ChatExecuteStopRequest) => {
+    await invoke("chat_execute_api_stop", { request });
+  }, []);
+
+  const executeCli = useCallback(
+    async (
+      request: ChatExecuteCliRequest,
+      onChunk: (chunk: string) => void,
+    ): Promise<ChatExecuteCliResult> => {
+      const onData = new Channel<string>();
+      onData.onmessage = (chunk) => onChunk(chunk);
+      return invoke<ChatExecuteCliResult>("chat_execute_cli", { request, onData });
+    },
+    [],
+  );
+
+  const stopCli = useCallback(async (request: ChatExecuteStopRequest) => {
+    await invoke("chat_execute_cli_stop", { request });
+  }, []);
+
   const saveLastConversation = useCallback(async (payload: unknown) => {
     await invoke("chat_save_last_conversation", { payload });
   }, []);
@@ -36,6 +78,10 @@ export function useChatAgent() {
     spawnSession,
     sendMessage,
     stopSession,
+    executeApi,
+    stopApi,
+    executeCli,
+    stopCli,
     saveLastConversation,
     loadLastConversation,
   };

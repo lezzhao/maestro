@@ -8,6 +8,10 @@ export type EngineProfile = {
   supports_headless: boolean;
   headless_args: string[];
   ready_signal?: string | null;
+  execution_mode?: "cli" | "api";
+  api_provider?: "openai-compatible" | "anthropic" | null;
+  api_base_url?: string | null;
+  api_key?: string | null;
 };
 
 export type EngineConfig = {
@@ -23,6 +27,10 @@ export type EngineConfig = {
   supports_headless: boolean;
   headless_args: string[];
   ready_signal?: string | null;
+  execution_mode?: "cli" | "api";
+  api_provider?: "openai-compatible" | "anthropic" | null;
+  api_base_url?: string | null;
+  api_key?: string | null;
   icon: string;
 };
 
@@ -95,6 +103,7 @@ export type WorkflowStepResult = {
   failure_reason?: string | null;
   duration_ms: number;
   output: string;
+  verification?: VerificationSummary | null;
 };
 
 export type WorkflowRunResult = {
@@ -103,6 +112,7 @@ export type WorkflowRunResult = {
   completed: boolean;
   archive_path: string;
   step_results: WorkflowStepResult[];
+  verification?: VerificationSummary | null;
 };
 
 export type TokenEstimate = {
@@ -137,6 +147,95 @@ export type ChatMessage = {
   };
 };
 
+export type TestCaseResult = {
+  name: string;
+  status: "passed" | "failed" | "skipped";
+  duration_ms?: number | null;
+  error?: string | null;
+};
+
+export type TestSuiteResult = {
+  name: string;
+  total_cases: number;
+  passed_cases: number;
+  failed_cases: number;
+  skipped_cases: number;
+  duration_ms?: number | null;
+  cases: TestCaseResult[];
+};
+
+export type TestRunSummary = {
+  framework: "vitest" | "jest" | "playwright" | "cypress" | "unknown";
+  success: boolean;
+  total_suites: number;
+  passed_suites: number;
+  failed_suites: number;
+  total_cases: number;
+  passed_cases: number;
+  failed_cases: number;
+  skipped_cases: number;
+  duration_ms?: number | null;
+  suites: TestSuiteResult[];
+  raw_summary?: string | null;
+};
+
+export type VerificationSummary = {
+  has_verification: boolean;
+  test_run?: TestRunSummary | null;
+  source?: string | null;
+  notes?: string | null;
+};
+
+export type TaskRunStatus = "pending" | "running" | "done" | "error" | "stopped";
+
+export type RunEvent = {
+  id: string;
+  taskId: string;
+  runId: string;
+  kind: "status" | "notice" | "error";
+  status: "pending" | "done" | "error" | "stopped";
+  message: string;
+  createdAt: number;
+  engineId?: string;
+  mode?: "api" | "cli";
+};
+
+export type RunTranscriptChunk = {
+  id: string;
+  runId: string;
+  content: string;
+  createdAt: number;
+};
+
+export type RunArtifact = {
+  id: string;
+  runId: string;
+  kind: "log" | "diff" | "file" | "note";
+  label: string;
+  value: string;
+  createdAt: number;
+};
+
+export type RunVerificationRef = {
+  runId: string;
+  verification: VerificationSummary;
+  updatedAt: number;
+};
+
+export type TaskRun = {
+  id: string;
+  taskId: string;
+  engineId: string;
+  mode: "api" | "cli";
+  status: TaskRunStatus;
+  createdAt: number;
+  startedAt: number;
+  endedAt?: number;
+  error?: string | null;
+};
+
+export type TaskRunEvent = RunEvent;
+
 export type ChatSpawnRequest = {
   engine_id: string;
   profile_id?: string | null;
@@ -159,6 +258,45 @@ export type ChatSessionMeta = {
   engine_id: string;
   profile_id: string;
   ready_signal?: string | null;
+};
+
+export type ChatApiMessage = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
+
+export type ChatApiRequest = {
+  engine_id: string;
+  profile_id?: string | null;
+  task_id?: string | null;
+  messages: ChatApiMessage[];
+};
+
+export type ChatExecuteApiResult = {
+  exec_id: number;
+  run_id: string;
+  engine_id: string;
+  profile_id: string;
+};
+
+export type ChatExecuteCliRequest = {
+  engine_id: string;
+  profile_id?: string | null;
+  task_id?: string | null;
+  prompt: string;
+  is_continuation: boolean;
+};
+
+export type ChatExecuteCliResult = {
+  exec_id: number;
+  run_id: string;
+  pid?: number | null;
+  engine_id: string;
+  profile_id: string;
+};
+
+export type ChatExecuteStopRequest = {
+  exec_id: number;
 };
 
 export type StepRunRequest = {
@@ -199,6 +337,7 @@ export type WorkflowArchiveDetail = {
   step_count: number;
   failed_count: number;
   failed_steps: WorkflowArchiveFailedStep[];
+  verification?: VerificationSummary | null;
 };
 
 export type WorkflowArchiveExportResult = {
@@ -242,7 +381,9 @@ export type WorkflowFullArchive = {
       success?: boolean;
       completion_matched?: boolean;
       failure_reason?: string | null;
+      verification?: VerificationSummary | null;
     }>;
+    verification?: VerificationSummary | null;
   };
 };
 
@@ -302,21 +443,39 @@ export type AppTask = {
   id: string;
   name: string;
   sessionId: number | null;
-  status: "idle" | "running" | "error" | "completed";
+  activeExecId?: number | null;
+  activeRunId?: string | null;
+  status: "idle" | "running" | "error" | "completed" | "needs_review" | "verified";
   gitChanges: FileChange[];
   stats: TaskStats;
   created_at: number;
   updated_at: number;
 };
 
-export type FileTreeNode = {
-  name: string;
-  path: string;
-  is_dir: boolean;
-  children: FileTreeNode[];
-};
-
 export type EngineRecommendation = {
   engine_id: string;
   reason: string;
+};
+
+export type CliSessionListItem = {
+  session_id: string;
+  engine_id: string;
+  task_id?: string;
+  source?: string;
+  status: string;
+  mode: string;
+  command: string;
+  cwd: string;
+  model: string;
+  run_count: number;
+  send_count: number;
+  created_at: number;
+  updated_at: number;
+  log_size: number;
+  is_last: boolean;
+};
+
+export type CliPruneResult = {
+  deleted_sessions: number;
+  deleted_logs: number;
 };

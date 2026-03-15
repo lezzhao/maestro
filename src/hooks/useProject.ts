@@ -4,7 +4,6 @@ import { useAppStore } from "../stores/appStore";
 import type {
   EngineRecommendation,
   FileChange,
-  FileTreeNode,
   ProjectSetResult,
   ProjectStackResult,
 } from "../types";
@@ -17,7 +16,6 @@ export function useProject() {
     new Map(),
   );
   const gitDiffCacheRef = useRef<Map<string, { value: string; ts: number }>>(new Map());
-  const fileTreeCacheRef = useRef<Map<string, { value: FileTreeNode[]; ts: number }>>(new Map());
 
   const detectAndRecommend = useCallback(
     async (path: string) => {
@@ -75,25 +73,6 @@ export function useProject() {
     [projectPath],
   );
 
-  const listFiles = useCallback(
-    async (path = projectPath, options?: { force?: boolean }) => {
-      if (!path) return [];
-      const cacheKey = path;
-      const ttlMs = 30_000;
-      const now = Date.now();
-      const cached = fileTreeCacheRef.current.get(cacheKey);
-      if (!options?.force && cached && now - cached.ts <= ttlMs) {
-        return cached.value;
-      }
-      const value = await invoke<FileTreeNode[]>("project_list_files", {
-        projectPath: path,
-      });
-      fileTreeCacheRef.current.set(cacheKey, { value, ts: now });
-      return value;
-    },
-    [projectPath],
-  );
-
   const readProjectFile = useCallback(
     async (filePath: string, path = projectPath, maxChars = 20_000) => {
       if (!path) return "";
@@ -112,7 +91,6 @@ export function useProject() {
     detectAndRecommend,
     gitStatus,
     gitDiff,
-    listFiles,
     readProjectFile,
   };
 }

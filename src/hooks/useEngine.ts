@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../stores/appStore";
+import { useActiveTask } from "./useActiveTask";
 import type {
   EngineConfig,
   EngineModelListResult,
@@ -23,6 +24,10 @@ function ensureEngineProfiles(engine: EngineConfig): EngineConfig {
           supports_headless: engine.supports_headless,
           headless_args: engine.headless_args,
           ready_signal: engine.ready_signal ?? null,
+          execution_mode: engine.execution_mode || "cli",
+          api_provider: engine.api_provider ?? null,
+          api_base_url: engine.api_base_url ?? null,
+          api_key: engine.api_key ?? null,
         },
       };
   const active_profile_id =
@@ -40,6 +45,10 @@ function ensureEngineProfiles(engine: EngineConfig): EngineConfig {
     supports_headless: active.supports_headless,
     headless_args: active.headless_args,
     ready_signal: active.ready_signal ?? null,
+    execution_mode: active.execution_mode || "cli",
+    api_provider: active.api_provider ?? null,
+    api_base_url: active.api_base_url ?? null,
+    api_key: active.api_key ?? null,
   };
 }
 
@@ -51,9 +60,7 @@ export function useEngine() {
   const setEnginePreflight = useAppStore((s) => s.setEnginePreflight);
   const setActiveEngineId = useAppStore((s) => s.setActiveEngineId);
   
-  const activeTaskId = useAppStore((s) => s.activeTaskId);
-  const activeTask = useAppStore((s) => s.tasks.find(t => t.id === activeTaskId));
-  const updateActiveTask = useAppStore((s) => s.updateActiveTask);
+  const { activeTask, updateActiveTask } = useActiveTask();
   const sessionId = activeTask?.sessionId;
 
   const preflightCacheRef = useRef<
