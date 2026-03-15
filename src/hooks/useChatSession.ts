@@ -9,6 +9,18 @@ import {
   extractReadableTerminalChunk,
   normalizeTerminalChunk,
 } from "../lib/utils/terminal";
+import {
+  CTRL_DONE,
+  CTRL_ERROR,
+  CTRL_EXIT,
+  CTRL_RUN_ID,
+  CTRL_VERIFICATION,
+  isControlChunk,
+  parseErrorChunk,
+  parseExitCodeChunk,
+  parseRunIdChunk,
+  parseVerificationChunk,
+} from "../lib/utils/controlChunks";
 import type {
   ChatApiMessage,
   EngineConfig,
@@ -33,31 +45,6 @@ type RunningExec = {
   execId: number;
   mode: "api" | "cli";
 };
-
-function isControlChunk(chunk: string): boolean {
-  return chunk.startsWith("\u0000");
-}
-
-function parseExitCode(chunk: string): number | null {
-  const raw = chunk.replace("\u0000EXIT:", "").trim();
-  const code = Number(raw);
-  return Number.isFinite(code) ? code : null;
-}
-
-function parseVerificationChunk(chunk: string): VerificationSummary | null {
-  const raw = chunk.replace("\u0000VERIFICATION:", "").trim();
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as VerificationSummary;
-  } catch {
-    return null;
-  }
-}
-
-function parseRunIdChunk(chunk: string): string | null {
-  const raw = chunk.replace("\u0000RUN_ID:", "").trim();
-  return raw || null;
-}
 
 export function useChatSession({
   activeTaskId,
@@ -305,19 +292,19 @@ export function useChatSession({
     (chunk: string) => {
       if (!activeTaskId || !activeAssistantIdRef.current) return;
       if (isControlChunk(chunk)) {
-        if (chunk.startsWith("\u0000RUN_ID:")) {
+        if (chunk.startsWith(CTRL_RUN_ID)) {
           const parsedRunId = parseRunIdChunk(chunk);
           if (parsedRunId) {
             currentRunIdRef.current = parsedRunId;
           }
           return;
         }
-        if (chunk.startsWith("\u0000DONE")) {
+        if (chunk.startsWith(CTRL_DONE)) {
           finalizeRound();
           return;
         }
-        if (chunk.startsWith("\u0000EXIT:")) {
-          const exitCode = parseExitCode(chunk);
+        if (chunk.startsWith(CTRL_EXIT)) {
+          const exitCode = parseExitCodeChunk(chunk);
           if (exitCode === 0) {
             finalizeRound();
           } else {
@@ -329,15 +316,14 @@ export function useChatSession({
           }
           return;
         }
-        if (chunk.startsWith("\u0000ERROR:")) {
-          const text = chunk.replace("\u0000ERROR:", "").trim() || "unknown error";
-          failRound(text);
+        if (chunk.startsWith(CTRL_ERROR)) {
+          failRound(parseErrorChunk(chunk));
           return;
         }
-        if (chunk.startsWith("\u0000VERIFICATION:")) {
+        if (chunk.startsWith(CTRL_VERIFICATION)) {
           const runId = currentRunIdRef.current;
           if (!runId) return;
-          const verification = parseVerificationChunk(chunk);
+          const verification = parseVerificationChunk<VerificationSummary>(chunk);
           if (verification) {
             setRunVerification(runId, verification);
           }
