@@ -1,4 +1,4 @@
-import { memo, Suspense, useMemo } from "react";
+import { lazy, memo, Suspense, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
@@ -11,7 +11,10 @@ type Props = {
   className?: string;
 };
 
-import { MarkdownCodeBlock as LazyMarkdownCodeBlock } from "./MarkdownCodeBlock";
+const LazyMarkdownCodeBlock = lazy(async () => {
+  const mod = await import("./MarkdownCodeBlock");
+  return { default: mod.MarkdownCodeBlock };
+});
 
 export const ChatMessageContent = memo(function ChatMessageContent({
   content,

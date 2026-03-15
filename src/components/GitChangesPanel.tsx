@@ -9,11 +9,12 @@ import type { FileChange } from "../types";
 interface Props {
   gitChanges: FileChange[];
   activeFile: string;
+  activeDiff: string;
   onFileSelect: (path: string) => void;
   onRefresh: () => Promise<void>;
 }
 
-export function GitChangesPanel({ gitChanges, activeFile, onFileSelect, onRefresh }: Props) {
+export function GitChangesPanel({ gitChanges, activeFile, activeDiff, onFileSelect, onRefresh }: Props) {
   const { t } = useTranslation();
   const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(1);
@@ -54,7 +55,7 @@ export function GitChangesPanel({ gitChanges, activeFile, onFileSelect, onRefres
         </Button>
       </div>
 
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
+      <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-2 space-y-1">
         {gitChanges.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center opacity-40 grayscale py-8">
             <FileCode2 size={24} className="mb-2" />
@@ -92,6 +93,21 @@ export function GitChangesPanel({ gitChanges, activeFile, onFileSelect, onRefres
             </button>
           ))
         )}
+      </div>
+
+      <div className="h-44 border-t border-border-muted/30 bg-bg-base/40 p-2">
+        <div className="text-[10px] font-semibold text-text-muted mb-1.5">Diff 预览</div>
+        <div className="h-[calc(100%-18px)] overflow-auto custom-scrollbar rounded border border-border-muted/20 bg-bg-surface/20 p-2">
+          {activeFile && activeDiff ? (
+            <pre className="whitespace-pre-wrap break-all text-[10px] text-text-main leading-relaxed font-mono">
+              {activeDiff}
+            </pre>
+          ) : (
+            <div className="text-[10px] text-text-muted">
+              请选择文件查看 diff 预览。
+            </div>
+          )}
+        </div>
       </div>
 
       {totalPages > 1 && (

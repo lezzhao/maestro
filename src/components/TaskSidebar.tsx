@@ -66,6 +66,8 @@ export function TaskSidebar() {
                       "w-1.5 h-1.5 rounded-full mt-0.5 shrink-0",
                       task.status === "running" ? "bg-emerald-500 animate-pulse" : 
                       task.status === "error" ? "bg-rose-500" :
+                      task.status === "verified" ? "bg-sky-500" :
+                      task.status === "needs_review" ? "bg-amber-500" :
                       task.status === "completed" ? "bg-primary-500" : "bg-text-muted/30"
                     )} />
                     <span className={cn(
@@ -97,6 +99,7 @@ export function TaskSidebar() {
                     <PlayCircle size={10} />
                     {(task.stats?.approx_input_tokens || 0) + (task.stats?.approx_output_tokens || 0)} T
                   </div>
+                  <div>{task.status === "verified" ? "已验证" : task.status === "needs_review" ? "待审阅" : task.status}</div>
                 </div>
 
                 {activeTaskId === task.id && (

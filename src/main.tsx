@@ -2,16 +2,28 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import { markPerf } from "./lib/utils/perf";
 
-class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: any}> {
-  constructor(props: any) {
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
   }
-  static getDerivedStateFromError(error: any) {
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
   }
-  componentDidCatch(error: any, errorInfo: any) {
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
     console.error("BMAD Root Error:", error, errorInfo);
   }
   render() {
@@ -32,7 +44,10 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
   }
 }
 
-const Root = import.meta.env.DEV ? React.StrictMode : React.Fragment;
+// Tauri/WebKit 下 StrictMode 的双重 effect 执行可能与部分依赖冲突，暂时禁用
+const Root = React.Fragment;
+
+markPerf("app_bootstrap_start");
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <Root>

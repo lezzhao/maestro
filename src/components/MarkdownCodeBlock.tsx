@@ -1,18 +1,15 @@
 import { useState } from "react";
 import SyntaxHighlighter from "react-syntax-highlighter/dist/esm/prism-async-light";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import oneDark from "react-syntax-highlighter/dist/esm/styles/prism/one-dark";
 import { Clipboard, Check } from "lucide-react";
 import bash from "react-syntax-highlighter/dist/esm/languages/prism/bash";
-import go from "react-syntax-highlighter/dist/esm/languages/prism/go";
 import javascript from "react-syntax-highlighter/dist/esm/languages/prism/javascript";
 import json from "react-syntax-highlighter/dist/esm/languages/prism/json";
 import markdown from "react-syntax-highlighter/dist/esm/languages/prism/markdown";
 import python from "react-syntax-highlighter/dist/esm/languages/prism/python";
 import rust from "react-syntax-highlighter/dist/esm/languages/prism/rust";
-import sql from "react-syntax-highlighter/dist/esm/languages/prism/sql";
 import typescript from "react-syntax-highlighter/dist/esm/languages/prism/typescript";
 import tsx from "react-syntax-highlighter/dist/esm/languages/prism/tsx";
-import yaml from "react-syntax-highlighter/dist/esm/languages/prism/yaml";
 
 type Props = {
   language: string;
@@ -20,16 +17,13 @@ type Props = {
 };
 
 SyntaxHighlighter.registerLanguage("bash", bash);
-SyntaxHighlighter.registerLanguage("go", go);
 SyntaxHighlighter.registerLanguage("javascript", javascript);
 SyntaxHighlighter.registerLanguage("json", json);
 SyntaxHighlighter.registerLanguage("markdown", markdown);
 SyntaxHighlighter.registerLanguage("python", python);
 SyntaxHighlighter.registerLanguage("rust", rust);
-SyntaxHighlighter.registerLanguage("sql", sql);
 SyntaxHighlighter.registerLanguage("typescript", typescript);
 SyntaxHighlighter.registerLanguage("tsx", tsx);
-SyntaxHighlighter.registerLanguage("yaml", yaml);
 
 export function MarkdownCodeBlock({ language, code }: Props) {
   const [copied, setCopied] = useState(false);

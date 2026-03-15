@@ -1,5 +1,6 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useShallow } from "zustand/react/shallow";
 import { Toaster } from "./components/ui/sonner";
 import { ErrorBanner } from "./components/ErrorBanner";
 import { TaskSidebar } from "./components/TaskSidebar";
@@ -7,7 +8,9 @@ import { useEngine } from "./hooks/useEngine";
 import { useProject } from "./hooks/useProject";
 import { usePerformance } from "./hooks/usePerformance";
 import { useTheme } from "./hooks/useTheme";
+import { useActiveTask } from "./hooks/useActiveTask";
 import { useAppStore } from "./stores/appStore";
+import { useChatStore } from "./stores/chatStore";
 import { useTranslation } from "./i18n";
 import {
   Monitor,
@@ -21,13 +24,15 @@ import { Group, Panel, Separator, type PanelImperativeHandle } from "react-resiz
 import { Button } from "./components/ui/button";
 import { Select } from "./components/ui/select";
 import { cn } from "./lib/utils";
+import { markPerf, measurePerf, recordPerf } from "./lib/utils/perf";
 
 import { SetupPanel } from "./components/SetupPanel";
-import { ChatPanel } from "./components/ChatPanel";
+import { TaskWorkspace } from "./components/TaskWorkspace";
 import { CommandPalette } from "./components/CommandPalette";
+import { DevPerfPanel } from "./components/DevPerfPanel";
 
 import { GitChangesPanel } from "./components/GitChangesPanel";
-import { ResourceStats } from "./components/ResourceStats";
+import { CliSessionPanel } from "./components/CliSessionPanel";
 
 function PanelFallback({ label }: { label: string }) {
   const { t } = useTranslation();
@@ -57,8 +62,6 @@ function runWhenIdle(task: () => void, timeout = 1200) {
 }
 
 function App() {
-  console.log("[App] Body Render Start.");
-
   useTheme();
   usePerformance();
   const { t } = useTranslation();
@@ -77,33 +80,91 @@ function App() {
   } = useEngine();
   const { projectPath, detectAndRecommend, gitStatus, gitDiff } = useProject();
 
-  const setCurrentStep = useAppStore((s) => s.setCurrentStep);
-  const showSettings = useAppStore((s) => s.showSettings);
-  const setShowSettings = useAppStore((s) => s.setShowSettings);
-  const setSidebarCollapsed = useAppStore((s) => s.setSidebarCollapsed);
-  
-  const tasks = useAppStore((s) => s.tasks);
-  const activeTaskId = useAppStore((s) => s.activeTaskId);
-  const updateActiveTask = useAppStore((s) => s.updateActiveTask);
+  const {
+    showSettings, setShowSettings,
+    setCurrentStep, setSidebarCollapsed,
+    errorMessage: errorMessageStore, setErrorMessage: setErrorMessageStore,
+    theme, setTheme,
+    lang, setLang,
+  } = useAppStore(useShallow((s) => ({
+    showSettings: s.showSettings,
+    setShowSettings: s.setShowSettings,
+    setCurrentStep: s.setCurrentStep,
+    setSidebarCollapsed: s.setSidebarCollapsed,
+    errorMessage: s.errorMessage,
+    setErrorMessage: s.setErrorMessage,
+    theme: s.theme,
+    setTheme: s.setTheme,
+    lang: s.lang,
+    setLang: s.setLang,
+  })));
 
-  console.log("[App] Body Render Start. tasks:", tasks.length, "activeTaskId:", activeTaskId);
-  const activeTask = useMemo(() => tasks.find((t) => t.id === activeTaskId), [tasks, activeTaskId]);
+  const { activeTaskId, activeTask } = useActiveTask();
+  const updateTask = useAppStore((s) => s.updateTask);
   const gitChanges = activeTask?.gitChanges || [];
-
-  const errorMessageStore = useAppStore((s) => s.errorMessage);
-  const setErrorMessageStore = useAppStore((s) => s.setErrorMessage);
-  const theme = useAppStore((s) => s.theme);
-  const setTheme = useAppStore((s) => s.setTheme);
-  const lang = useAppStore((s) => s.lang);
-  const setLang = useAppStore((s) => s.setLang);
 
   const [commandOpen, setCommandOpen] = useState(false);
   const [activeFile, setActiveFile] = useState<string>("");
+  const [activeDiff, setActiveDiff] = useState<string>("");
+  const [rightPanelTab, setRightPanelTab] = useState<"changes" | "verification" | "runs" | "conclusion">("runs");
+  const taskSwitchStartRef = useRef<number>(performance.now());
 
   const sidebarPanelRef = useRef<PanelImperativeHandle | null>(null);
   const bootPreflightStartedRef = useRef(false);
   const autoSelectDoneRef = useRef(false);
   const autoSelectingRef = useRef(false);
+  const activeProfile = useMemo(() => {
+    const engine = engines[activeEngineId];
+    if (!engine?.profiles) return null;
+    const profileId =
+      engine.active_profile_id && engine.profiles[engine.active_profile_id]
+        ? engine.active_profile_id
+        : Object.keys(engine.profiles)[0];
+    if (!profileId) return null;
+    return engine.profiles[profileId] || null;
+  }, [activeEngineId, engines]);
+  const activeExecutionMode = ((activeProfile?.execution_mode || "cli") as "api" | "cli");
+  const activeTaskMessages = useChatStore((s) => s.getTaskMessages(activeTaskId));
+  const latestRun = useChatStore((s) => s.getLatestRun(activeTaskId));
+  const latestVerification = useChatStore((s) => s.getRunVerification(latestRun?.id || null));
+  const outputSummary = useMemo(() => {
+    const assistantMessages = activeTaskMessages.filter((msg) => msg.role === "assistant");
+    const lastAssistant = [...assistantMessages].reverse().find((msg) => msg.content.trim());
+    if (!lastAssistant) {
+      return "暂无产出摘要";
+    }
+    return lastAssistant.content.length > 800
+      ? `${lastAssistant.content.slice(0, 800)}...`
+      : lastAssistant.content;
+  }, [activeTaskMessages]);
+  const conclusionSummary = useMemo(() => {
+    const runStatus = latestRun?.status || "pending";
+    const verification = latestVerification?.test_run;
+    const hasVerification = Boolean(latestVerification?.has_verification && verification);
+    const riskList: string[] = [];
+    if (runStatus === "error") {
+      riskList.push("本轮执行失败，需要先处理错误后再继续。");
+    }
+    if (runStatus === "stopped") {
+      riskList.push("本轮被手动停止，产出可能不完整。");
+    }
+    if (hasVerification && verification && !verification.success) {
+      riskList.push("验证未通过，存在失败用例。");
+    }
+    return {
+      done: runStatus === "done" && hasVerification && Boolean(verification?.success),
+      risks: riskList,
+      pending: runStatus === "running" ? ["执行仍在进行中。"] : [],
+      next:
+        runStatus === "done" && hasVerification
+          ? "可进入下一轮任务，或先审查 diff 后提交。"
+          : runStatus === "done"
+            ? "当前缺少验证证据，建议先补一次可验证执行。"
+          : runStatus === "running"
+            ? "等待当前轮次结束，期间可继续排队补充约束。"
+            : "建议补充约束后重新执行一轮。"
+    };
+  }, [latestRun?.status, latestVerification]);
 
   const handleImport = useCallback(
     async (path: string) => {
@@ -121,37 +182,46 @@ function App() {
   );
 
   const handleOpenProjectPicker = useCallback(async () => {
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const selected = await open({
-      directory: true,
-      multiple: false,
-      title: t("select_project_title"),
-    });
-    if (typeof selected === "string") {
-      await handleImport(selected);
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: t("select_project_title"),
+      });
+      if (typeof selected === "string") {
+        await handleImport(selected);
+      }
+    } catch (e) {
+      const msg = String(e);
+      if (!/user cancelled|canceled|aborted/i.test(msg)) {
+        setErrorMessageStore(`${t("picker_error")}: ${msg}`);
+      }
     }
-  }, [handleImport, t]);
+  }, [handleImport, setErrorMessageStore, t]);
 
   const refreshGitStatus = useCallback(async (options?: { force?: boolean }) => {
     if (!projectPath || !activeTaskId) return;
     try {
       const status = await gitStatus(projectPath, options);
-      updateActiveTask({ gitChanges: status });
+      updateTask(activeTaskId, { gitChanges: status });
     } catch (e) {
       const msg = String(e);
-      updateActiveTask({ gitChanges: [] });
+      updateTask(activeTaskId, { gitChanges: [] });
       if (!/不是 git 仓库|not a git repository/i.test(msg)) {
         setErrorMessageStore(`${t("read_git_status_fail")}: ${msg}`);
       }
     }
-  }, [gitStatus, projectPath, activeTaskId, updateActiveTask, setErrorMessageStore, t]);
+  }, [gitStatus, projectPath, activeTaskId, setErrorMessageStore, t, updateTask]);
 
   const loadGitDiff = useCallback(
     async (filePath?: string, options?: { force?: boolean }) => {
       if (!projectPath) return;
       try {
-        await gitDiff(filePath, projectPath, options);
+        const diff = await gitDiff(filePath, projectPath, options);
+        setActiveDiff(diff);
       } catch (e) {
+        setActiveDiff("");
         const msg = String(e);
         if (!/不是 git 仓库|not a git repository/i.test(msg)) {
           setErrorMessageStore(`${t("read_git_diff_fail")}: ${msg}`);
@@ -170,6 +240,43 @@ function App() {
       setErrorMessageStore(`${t("switch_engine_fail")}: ${String(e)}`);
     }
   };
+
+  const handleSetExecutionMode = useCallback(
+    async (mode: "api" | "cli") => {
+      const engine = engines[activeEngineId];
+      if (!engine?.profiles) return;
+      const profileId =
+        engine.active_profile_id && engine.profiles[engine.active_profile_id]
+          ? engine.active_profile_id
+          : Object.keys(engine.profiles)[0];
+      if (!profileId) return;
+      const profile = engine.profiles[profileId];
+      if (!profile) return;
+      if ((profile.execution_mode || "cli") === mode) return;
+      await upsertProfile(activeEngineId, profileId, {
+        ...profile,
+        execution_mode: mode,
+      });
+    },
+    [activeEngineId, engines, upsertProfile],
+  );
+
+  useEffect(() => {
+    markPerf("app_first_committed");
+    measurePerf("app_first_screen", "app_bootstrap_start", "app_first_committed");
+  }, []);
+
+  useEffect(() => {
+    taskSwitchStartRef.current = performance.now();
+  }, [activeTaskId]);
+
+  useEffect(() => {
+    const duration = performance.now() - taskSwitchStartRef.current;
+    recordPerf("workspace_task_switch", duration, {
+      taskId: activeTaskId || "none",
+      messageCount: activeTaskMessages.length,
+    });
+  }, [activeTaskId, activeTaskMessages.length]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -211,6 +318,10 @@ function App() {
 
   useEffect(() => {
     if (autoSelectDoneRef.current || Object.keys(engines).length === 0) return;
+    if (activeExecutionMode === "api") {
+      autoSelectDoneRef.current = true;
+      return;
+    }
     const readyEngineId = Object.entries(enginePreflight).find(
       ([, value]) => value.command_exists && value.auth_ok,
     )?.[0];
@@ -232,7 +343,25 @@ function App() {
     if (checked >= Object.keys(engines).length) {
       autoSelectDoneRef.current = true;
     }
-  }, [activeEngineId, enginePreflight, engines, switchEngine]);
+  }, [activeEngineId, activeExecutionMode, enginePreflight, engines, switchEngine]);
+
+  useEffect(() => {
+    setActiveFile("");
+    setActiveDiff("");
+  }, [activeTaskId]);
+
+  useEffect(() => {
+    if (!projectPath || !activeTaskId) return;
+    void refreshGitStatus({ force: true });
+  }, [activeTaskId, projectPath, refreshGitStatus]);
+
+  useEffect(() => {
+    const status = latestRun?.status;
+    if (!projectPath || !activeTaskId || !status) return;
+    if (status === "done" || status === "error" || status === "stopped") {
+      void refreshGitStatus({ force: true });
+    }
+  }, [activeTaskId, latestRun?.id, latestRun?.status, projectPath, refreshGitStatus]);
 
   useEffect(() => {
     if (showSettings) {
@@ -259,17 +388,20 @@ function App() {
 
   const activePreflight = enginePreflight[activeEngineId];
   const isCliReady = Boolean(activePreflight?.command_exists) && Boolean(activePreflight?.auth_ok);
+  const isApiReady = Boolean(activeProfile?.api_key && activeProfile?.api_base_url && activeProfile?.model);
+  const isEngineReady = activeExecutionMode === "api" ? isApiReady : isCliReady;
   const availableEngineOptions = useMemo(
     () =>
       Object.entries(engines)
-        .filter(([id]) => {
+        .map(([id, engine]) => {
           const pf = enginePreflight[id];
-          return Boolean(pf?.command_exists) && Boolean(pf?.auth_ok);
-        })
-        .map(([id, engine]) => ({
+          const cliReady = Boolean(pf?.command_exists) && Boolean(pf?.auth_ok);
+          const suffix = cliReady ? "" : "（CLI未就绪）";
+          return {
           value: id,
-          label: engine.display_name || id,
-        })),
+          label: `${engine.display_name || id}${suffix}`,
+          };
+        }),
     [enginePreflight, engines],
   );
   const selectedEngineValue = useMemo(() => {
@@ -463,9 +595,9 @@ function App() {
                  <div className="h-14 border-b border-border-muted/30 flex items-center justify-between px-4 bg-bg-surface/40 backdrop-blur-md z-10 shrink-0">
                     <div className="flex items-center gap-3">
                       <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-elevated rounded-lg border border-border-muted">
-                        <div className={cn("h-1.5 w-1.5 rounded-full", isCliReady ? "bg-emerald-500" : "bg-warning-500")} />
+                        <div className={cn("h-1.5 w-1.5 rounded-full", isEngineReady ? "bg-emerald-500" : "bg-warning-500")} />
                         <span className="text-[10px] font-semibold text-text-muted">
-                          {isCliReady ? t("ready") : t("check_req")}
+                          {isEngineReady ? t("ready") : t("check_req")}
                         </span>
                       </div>
                       <div className="h-4 w-px bg-border-muted/30" />
@@ -492,11 +624,13 @@ function App() {
                  </div>
 
                  <div className="flex-1 min-h-0 bg-bg-base/20">
-                    <Suspense fallback={<PanelFallback label="Chat" />}>
-                      <ChatPanel
+                    <Suspense fallback={<PanelFallback label="Workspace" />}>
+                      <TaskWorkspace
                         projectPath={projectPath}
                         engines={engines}
                         activeEngineId={activeEngineId}
+                        activeTask={activeTask || null}
+                        onSetExecutionMode={handleSetExecutionMode}
                       />
                     </Suspense>
                  </div>
@@ -513,24 +647,172 @@ function App() {
           )}
           {activeTaskId && (
             <Panel id="resource-panel" defaultSize={320} minSize={200} className="flex flex-col gap-2 p-2 bg-bg-elevated/5">
-              <div className="flex-1 min-h-0">
-                <GitChangesPanel 
-                  gitChanges={gitChanges}
-                  activeFile={activeFile}
-                  onFileSelect={(path) => {
-                    setActiveFile(path);
-                    void loadGitDiff(path);
-                  }}
-                  onRefresh={() => refreshGitStatus({ force: true })}
-                />
+              <div className="h-10 shrink-0 rounded-lg border border-border-muted/30 bg-bg-surface/50 px-2 flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant={rightPanelTab === "runs" ? "default" : "outline"}
+                  className="h-7 px-2 text-[10px] font-semibold"
+                  onClick={() => setRightPanelTab("runs")}
+                >
+                  运行
+                </Button>
+                <Button
+                  size="sm"
+                  variant={rightPanelTab === "verification" ? "default" : "outline"}
+                  className="h-7 px-2 text-[10px] font-semibold"
+                  onClick={() => setRightPanelTab("verification")}
+                >
+                  验证
+                </Button>
+                <Button
+                  size="sm"
+                  variant={rightPanelTab === "changes" ? "default" : "outline"}
+                  className="h-7 px-2 text-[10px] font-semibold"
+                  onClick={() => setRightPanelTab("changes")}
+                >
+                  变更
+                </Button>
+                <Button
+                  size="sm"
+                  variant={rightPanelTab === "conclusion" ? "default" : "outline"}
+                  className="h-7 px-2 text-[10px] font-semibold"
+                  onClick={() => setRightPanelTab("conclusion")}
+                >
+                  结论
+                </Button>
               </div>
-              <div className="h-[210px] shrink-0">
-                <ResourceStats />
-              </div>
+              {rightPanelTab === "runs" ? (
+                <div className="flex-1 min-h-0">
+                  <CliSessionPanel activeEngineId={activeEngineId} activeTaskId={activeTaskId} />
+                </div>
+              ) : rightPanelTab === "verification" ? (
+                <div className="flex-1 min-h-0 rounded-xl border border-border-muted/30 bg-bg-surface/30 p-3 overflow-y-auto custom-scrollbar">
+                  <div className="text-[11px] font-semibold mb-2">结构化验证结果</div>
+                  {!latestVerification?.has_verification || !latestVerification.test_run ? (
+                    <div className="text-xs text-text-muted">本轮暂无结构化验证数据。</div>
+                  ) : (
+                    <div className="space-y-2 text-xs">
+                      <div className="rounded-md border border-border-muted/20 px-2 py-1.5">
+                        <div className="text-text-muted">框架</div>
+                        <div className="text-text-main font-semibold uppercase">
+                          {latestVerification.test_run.framework}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-md border border-border-muted/20 px-2 py-1.5">
+                          <div className="text-text-muted">用例通过</div>
+                          <div className="text-emerald-500 font-semibold">
+                            {latestVerification.test_run.passed_cases} / {latestVerification.test_run.total_cases}
+                          </div>
+                        </div>
+                        <div className="rounded-md border border-border-muted/20 px-2 py-1.5">
+                          <div className="text-text-muted">用例失败</div>
+                          <div className="text-rose-500 font-semibold">
+                            {latestVerification.test_run.failed_cases}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="rounded-md border border-border-muted/20 px-2 py-1.5">
+                        <div className="text-text-muted">套件</div>
+                        <div className="text-text-main">
+                          {latestVerification.test_run.passed_suites} 通过 / {latestVerification.test_run.failed_suites} 失败
+                        </div>
+                      </div>
+                      <div className="rounded-md border border-border-muted/20 px-2 py-1.5">
+                        <div className="text-text-muted">数据来源</div>
+                        <div className="text-text-main">{latestVerification.source || "unknown"}</div>
+                      </div>
+                      {latestVerification.test_run.raw_summary ? (
+                        <div className="rounded-md border border-border-muted/20 px-2 py-1.5">
+                          <div className="text-text-muted mb-1">原始摘要</div>
+                          <pre className="whitespace-pre-wrap wrap-break-word text-[11px] text-text-main leading-relaxed">
+                            {latestVerification.test_run.raw_summary}
+                          </pre>
+                        </div>
+                      ) : null}
+                      {latestVerification.test_run.suites.length > 0 ? (
+                        <div className="rounded-md border border-border-muted/20 px-2 py-1.5">
+                          <div className="text-text-muted mb-1">Suite 明细</div>
+                          <div className="space-y-1">
+                            {latestVerification.test_run.suites.map((suite, index) => (
+                              <div key={`${suite.name}-${index}`} className="text-[11px] border border-border-muted/15 rounded px-2 py-1">
+                                <div className="font-semibold text-text-main">{suite.name}</div>
+                                <div className="text-text-muted">
+                                  {suite.passed_cases} 通过 / {suite.failed_cases} 失败 / {suite.skipped_cases} 跳过
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+              ) : rightPanelTab === "changes" ? (
+                <div className="flex-1 min-h-0">
+                  <GitChangesPanel
+                    gitChanges={gitChanges}
+                    activeFile={activeFile}
+                    activeDiff={activeDiff}
+                    onFileSelect={(path) => {
+                      setActiveFile(path);
+                      void loadGitDiff(path);
+                    }}
+                    onRefresh={() => refreshGitStatus({ force: true })}
+                  />
+                </div>
+              ) : (
+                <div className="flex-1 min-h-0 rounded-xl border border-border-muted/30 bg-bg-surface/30 p-3 overflow-y-auto custom-scrollbar">
+                  <div className="text-[11px] font-semibold mb-2">结论</div>
+                  <div className="space-y-3 text-xs">
+                    <div>
+                      <div className="text-text-muted mb-1">已完成</div>
+                      <div className={cn("font-semibold", conclusionSummary.done ? "text-emerald-500" : "text-amber-500")}>
+                        {conclusionSummary.done ? "本轮结果可进入下一步" : "本轮结果仍需审查"}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-text-muted mb-1">风险</div>
+                      {conclusionSummary.risks.length === 0 ? (
+                        <div className="text-emerald-500">未检测到高风险信号</div>
+                      ) : (
+                        <div className="space-y-1">
+                          {conclusionSummary.risks.map((risk) => (
+                            <div key={risk} className="text-rose-400">{risk}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-text-muted mb-1">待确认</div>
+                      {conclusionSummary.pending.length === 0 ? (
+                        <div className="text-text-main">无</div>
+                      ) : (
+                        <div className="space-y-1">
+                          {conclusionSummary.pending.map((item) => (
+                            <div key={item} className="text-amber-400">{item}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-text-muted mb-1">下一步</div>
+                      <div className="text-text-main">{conclusionSummary.next}</div>
+                    </div>
+                    <div>
+                      <div className="text-text-muted mb-1">最新产出摘要</div>
+                      <pre className="whitespace-pre-wrap wrap-break-word text-xs text-text-main leading-relaxed">
+                        {outputSummary}
+                      </pre>
+                    </div>
+                  </div>
+                </div>
+              )}
             </Panel>
           )}
         </Group>
       </div>
+      {import.meta.env.DEV ? <DevPerfPanel /> : null}
     </div>
   );
 }

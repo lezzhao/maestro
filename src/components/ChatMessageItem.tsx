@@ -37,6 +37,49 @@ type Props = {
   onCopy?: (content: string) => void;
 };
 
+type ThoughtExtractResult = {
+  thought: string | null;
+  main: string;
+};
+
+function extractThoughtBlock(content: string): ThoughtExtractResult {
+  const lines = content.split("\n");
+  const thoughtLines: string[] = [];
+  const mainLines: string[] = [];
+  let inThought = false;
+
+  const thoughtStartRe = /^\s*(?:#{1,6}\s*)?(?:thinking|thought|analysis|plan|思考|推理|分析|计划)\s*[:：]?\s*$/i;
+  const answerStartRe = /^\s*(?:#{1,6}\s*)?(?:final|answer|result|结论|结果|回复)\s*[:：]?\s*$/i;
+
+  for (const line of lines) {
+    if (!inThought && thoughtStartRe.test(line)) {
+      inThought = true;
+      continue;
+    }
+    if (inThought && answerStartRe.test(line)) {
+      inThought = false;
+      continue;
+    }
+    if (inThought) {
+      thoughtLines.push(line);
+    } else {
+      mainLines.push(line);
+    }
+  }
+
+  const thought = thoughtLines.join("\n").trim();
+  const main = mainLines.join("\n").trim();
+
+  if (!thought) {
+    return { thought: null, main: content };
+  }
+  if (!main) {
+    // 避免误判导致正文完全丢失，保留原文本。
+    return { thought: null, main: content };
+  }
+  return { thought, main };
+}
+
 function ChatMessageItemBase({ message, minimalMode, labels, isRunning, onRetry, onCopy }: Props) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
@@ -45,12 +88,18 @@ function ChatMessageItemBase({ message, minimalMode, labels, isRunning, onRetry,
   const cleanContent = useMemo(() => stripAnsi(message.content || ""), [message.content]);
   const isCollapsible = isAssistant && message.status !== "streaming" && cleanContent.length > 1400;
   const [expanded, setExpanded] = useState(!isCollapsible);
+  const [showThought, setShowThought] = useState(false);
 
   const renderedAssistantContent = useMemo(() => {
     if (!isAssistant) return "";
     if (expanded || !isCollapsible) return cleanContent;
     return `${cleanContent.slice(0, 900)}\n\n...`;
   }, [cleanContent, expanded, isAssistant, isCollapsible]);
+
+  const extractedThought = useMemo(
+    () => (isAssistant ? extractThoughtBlock(renderedAssistantContent) : { thought: null, main: renderedAssistantContent }),
+    [isAssistant, renderedAssistantContent],
+  );
 
   if (isSystem) {
     const isTool = message.meta?.eventType === "tool";
@@ -145,8 +194,25 @@ function ChatMessageItemBase({ message, minimalMode, labels, isRunning, onRetry,
               </div>
             ) : isAssistant ? (
               <>
+                {extractedThought.thought && (
+                  <div className="mb-2 rounded-md border border-border-muted bg-bg-base/70 px-3 py-2">
+                    <button
+                      type="button"
+                      className="w-full flex items-center justify-between text-left text-[11px] font-semibold text-text-muted"
+                      onClick={() => setShowThought((v) => !v)}
+                    >
+                      <span>{labels.thinking}</span>
+                      <span className="text-[10px]">{showThought ? "收起" : "展开"}</span>
+                    </button>
+                    {showThought && (
+                      <div className="mt-2 text-[12px] leading-relaxed whitespace-pre-wrap wrap-break-word text-text-main/85">
+                        {extractedThought.thought}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <ChatMessageContent
-                  content={renderedAssistantContent || (message.status === "done" ? "" : labels.noOutputYet)}
+                  content={extractedThought.main || labels.noOutputYet}
                   isStreaming={message.status === "streaming"}
                 />
                 {isCollapsible && (
