@@ -47,7 +47,7 @@ pub fn resolve_root_dir_from_project_path(project_path: &str) -> Result<PathBuf,
 }
 
 pub fn run_records_path(root: &PathBuf) -> PathBuf {
-    root.join(".bmad-cli").join("run-records.jsonl")
+    root.join(".maestro-cli").join("run-records.jsonl")
 }
 
 pub fn append_run_record(root: &PathBuf, record: &UnifiedRunRecord) -> Result<(), String> {

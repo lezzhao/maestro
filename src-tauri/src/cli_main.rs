@@ -7,7 +7,7 @@ use tauri_app_lib::workflow::run::{workflow_run_core, workflow_run_step_core};
 use tauri_app_lib::core::events::{MpscEventStream, MpscStringStream};
 
 #[derive(Parser, Debug)]
-#[command(name = "bmad", about = "CLI orchestrator for Maestro Daemon")]
+#[command(name = "maestro", about = "CLI orchestrator for Maestro Daemon")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,

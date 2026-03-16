@@ -75,7 +75,7 @@ fn resolve_root_dir(config_state: &AppConfigState) -> Result<PathBuf, String> {
 }
 
 fn cli_state_paths(root: &PathBuf) -> (PathBuf, PathBuf) {
-    let base = root.join(".bmad-cli");
+    let base = root.join(".maestro-cli");
     (base.join("state.json"), base.join("logs"))
 }
 
@@ -379,3 +379,57 @@ pub fn cli_prune_sessions(
         deleted_logs,
     })
 }
+
+#[command]
+pub fn cli_reconcile_active_sessions(
+    config_state: State<'_, AppConfigState>,
+) -> Result<usize, String> {
+    let root = resolve_root_dir(&config_state)?;
+    let (state_path, _log_dir) = cli_state_paths(&root);
+    let mut reconciled = 0;
+
+    let run_records = read_run_records(&root).unwrap_or_default();
+    if !run_records.is_empty() {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| format!("read system time failed: {e}"))?
+            .as_millis() as i64;
+        let mut updated = Vec::new();
+        for mut item in run_records {
+            if item.status == "active" {
+                if now_ms - item.updated_at > 12 * 60 * 60 * 1000 {
+                    item.status = "error".to_string();
+                    item.updated_at = now_ms;
+                    reconciled += 1;
+                }
+            }
+            updated.push(item);
+        }
+        if reconciled > 0 {
+            rewrite_run_records(&root, &updated)?;
+        }
+    }
+
+    let mut state = load_cli_state(&state_path)?;
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("read system time failed: {e}"))?
+        .as_millis() as i64;
+    let mut changed = false;
+    for session in state.sessions.values_mut() {
+        if session.status == "active" {
+            if now_ms - session.updated_at > 12 * 60 * 60 * 1000 {
+                session.status = "error".to_string();
+                session.updated_at = now_ms;
+                reconciled += 1;
+                changed = true;
+            }
+        }
+    }
+    if changed {
+        save_cli_state(&state_path, &state)?;
+    }
+
+    Ok(reconciled)
+}
+
