@@ -290,10 +290,10 @@ export function WorkspaceLayout() {
           <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-12 bg-primary-500/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
         </Separator>
 
-        <Panel id="panel-main" defaultSize={800} minSize={400} className="flex flex-col min-h-0 bg-bg-base">
+        <Panel id="panel-main" defaultSize={800} minSize={400} className="flex flex-col min-h-0 bg-bg-surface">
           {showSettings ? (
             <Suspense fallback={<PanelFallback label={t("nav_setup")} />}>
-              <div className="h-full flex flex-col p-4 bg-bg-surface/20">
+              <div className="h-full flex flex-col p-4 bg-bg-surface">
                  <div className="flex items-center justify-between mb-6 px-2">
                     <div className="flex flex-col">
                        <h2 className="text-xl font-black uppercase tracking-tighter">{t("nav_setup")}</h2>
@@ -303,7 +303,7 @@ export function WorkspaceLayout() {
                        {t("back_to_workspace")}
                     </Button>
                  </div>
-                 <div className="flex-1 overflow-y-auto custom-scrollbar rounded-2xl border border-border-muted/30 bg-bg-surface/50 p-4 shadow-sm">
+                 <div className="flex-1 overflow-y-auto custom-scrollbar rounded-2xl border border-border-muted bg-bg-base p-4 shadow-sm">
                      <SetupPanel
                        engines={engines}
                        enginePreflight={enginePreflight}
@@ -347,7 +347,7 @@ export function WorkspaceLayout() {
             </div>
           ) : (
             <div className="h-full flex flex-col min-h-0 relative">
-               <div className="h-14 border-b border-border-muted/30 flex items-center justify-between px-4 bg-bg-surface/40 backdrop-blur-md z-10 shrink-0">
+               <div className="h-14 border-b border-border-muted flex items-center justify-between px-4 bg-bg-surface z-10 shrink-0">
                   <div className="flex items-center gap-3">
                     <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-elevated rounded-lg border border-border-muted">
                       <div className={cn("h-1.5 w-1.5 rounded-full", isEngineReady ? "bg-emerald-500" : "bg-warning-500")} />
@@ -378,7 +378,7 @@ export function WorkspaceLayout() {
                   </div>
                </div>
 
-               <div className="flex-1 min-h-0 bg-bg-base/20">
+               <div className="flex-1 min-h-0 bg-bg-base">
                   <Suspense fallback={<PanelFallback label="Workspace" />}>
                     <TaskWorkspace
                       projectPath={projectPath}

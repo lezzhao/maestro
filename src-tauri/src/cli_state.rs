@@ -95,7 +95,8 @@ fn save_cli_state(state_path: &PathBuf, state: &CliStateFile) -> Result<(), Stri
     }
     let content = serde_json::to_string_pretty(state)
         .map_err(|e| format!("serialize cli state failed: {e}"))?;
-    fs::write(state_path, format!("{content}\n")).map_err(|e| format!("write cli state failed: {e}"))
+    fs::write(state_path, format!("{content}\n"))
+        .map_err(|e| format!("write cli state failed: {e}"))
 }
 
 fn session_log_path(log_dir: &PathBuf, session_id: &str) -> PathBuf {
@@ -119,7 +120,11 @@ fn map_run_records(
 ) -> Vec<CliSessionListItem> {
     let mut items: Vec<CliSessionListItem> = records
         .iter()
-        .filter(|record| engine_filter.map(|id| id == record.engine_id).unwrap_or(true))
+        .filter(|record| {
+            engine_filter
+                .map(|id| id == record.engine_id)
+                .unwrap_or(true)
+        })
         .map(|record| {
             let log_path = session_log_path(log_dir, &record.run_id);
             let log_size = fs::metadata(log_path).map(|m| m.len()).unwrap_or(0);
@@ -167,7 +172,11 @@ pub fn cli_list_sessions(
     let (state_path, log_dir) = cli_state_paths(&root);
     let run_records = read_run_records(&root).unwrap_or_default();
     if !run_records.is_empty() {
-        return Ok(map_run_records(&run_records, &log_dir, engine_id.as_deref()));
+        return Ok(map_run_records(
+            &run_records,
+            &log_dir,
+            engine_id.as_deref(),
+        ));
     }
     let state = load_cli_state(&state_path)?;
     let mut items = Vec::new();

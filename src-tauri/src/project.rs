@@ -88,7 +88,9 @@ fn ensure_git_repo(project_path: &str) -> Result<(), String> {
         .map_err(|e| format!("execute git failed: {e}"))?;
 
     let is_work_tree = output.status.success()
-        && String::from_utf8_lossy(&output.stdout).trim().eq_ignore_ascii_case("true");
+        && String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .eq_ignore_ascii_case("true");
     if is_work_tree {
         Ok(())
     } else {
@@ -141,18 +143,18 @@ async fn list_files_via_git(project_path: &str) -> Result<Vec<String>, String> {
         .output()
         .await
         .map_err(|e| format!("execute git ls-files failed: {e}"))?;
-    
+
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
-    
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut files: Vec<String> = stdout
         .lines()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect();
-        
+
     files.sort();
     files.dedup();
     if files.len() > FILE_TREE_MAX_FILES {
@@ -170,16 +172,25 @@ async fn collect_files_fallback(
     if out.len() >= FILE_TREE_MAX_FILES || depth > FILE_TREE_MAX_DEPTH {
         return Ok(());
     }
-    let mut entries = tokio::fs::read_dir(current).await.map_err(|e| format!("read dir failed: {e}"))?;
-    while let Some(entry) = entries.next_entry().await.map_err(|e| format!("read dir entry failed: {e}"))? {
+    let mut entries = tokio::fs::read_dir(current)
+        .await
+        .map_err(|e| format!("read dir failed: {e}"))?;
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|e| format!("read dir entry failed: {e}"))?
+    {
         if out.len() >= FILE_TREE_MAX_FILES {
             break;
         }
         let path = entry.path();
         let name_os = entry.file_name();
         let name = name_os.to_string_lossy();
-        
-        let metadata = entry.metadata().await.map_err(|e| format!("get metadata failed: {e}"))?;
+
+        let metadata = entry
+            .metadata()
+            .await
+            .map_err(|e| format!("get metadata failed: {e}"))?;
         if metadata.is_dir() {
             if should_skip_dir(&name) || depth >= FILE_TREE_MAX_DEPTH {
                 continue;
@@ -255,7 +266,10 @@ fn sort_tree(nodes: &mut Vec<FileTreeNode>) {
 fn build_file_tree(files: Vec<String>) -> Vec<FileTreeNode> {
     let mut roots = Vec::new();
     for file in files {
-        let parts = file.split('/').filter(|p| !p.is_empty()).collect::<Vec<_>>();
+        let parts = file
+            .split('/')
+            .filter(|p| !p.is_empty())
+            .collect::<Vec<_>>();
         if parts.is_empty() {
             continue;
         }
@@ -265,7 +279,10 @@ fn build_file_tree(files: Vec<String>) -> Vec<FileTreeNode> {
     roots
 }
 
-fn resolve_project_file_path(project_root: &Path, relative_or_abs: &str) -> Result<PathBuf, String> {
+fn resolve_project_file_path(
+    project_root: &Path,
+    relative_or_abs: &str,
+) -> Result<PathBuf, String> {
     let requested = PathBuf::from(relative_or_abs);
     let candidate = if requested.is_absolute() {
         requested
@@ -361,14 +378,18 @@ pub async fn project_read_file(
     }
 
     let max = max_chars.unwrap_or(20_000).clamp(1_000, 200_000);
-    
+
     // Efficiency: Use Metadata to check size before reading
-    let metadata = tokio::fs::metadata(&canonical).await.map_err(|e| format!("get metadata failed: {e}"))?;
+    let metadata = tokio::fs::metadata(&canonical)
+        .await
+        .map_err(|e| format!("get metadata failed: {e}"))?;
     let file_size = metadata.len();
-    
+
     // Only read fully if it's reasonably small, otherwise stream-read
     if file_size < (max * 4) as u64 {
-        let text = tokio::fs::read_to_string(&canonical).await.map_err(|e| format!("read file failed: {e}"))?;
+        let text = tokio::fs::read_to_string(&canonical)
+            .await
+            .map_err(|e| format!("read file failed: {e}"))?;
         if text.chars().count() <= max {
             return Ok(text);
         }
@@ -377,13 +398,19 @@ pub async fn project_read_file(
         Ok(out)
     } else {
         use tokio::io::{AsyncBufReadExt, BufReader};
-        let file = tokio::fs::File::open(&canonical).await.map_err(|e| format!("open file failed: {e}"))?;
+        let file = tokio::fs::File::open(&canonical)
+            .await
+            .map_err(|e| format!("open file failed: {e}"))?;
         let reader = BufReader::new(file);
         let mut lines = reader.lines();
         let mut out = String::new();
         let mut count = 0;
-        
-        while let Some(line) = lines.next_line().await.map_err(|e| format!("read line failed: {e}"))? {
+
+        while let Some(line) = lines
+            .next_line()
+            .await
+            .map_err(|e| format!("read line failed: {e}"))?
+        {
             let line_chars = line.chars().count();
             if count + line_chars > max {
                 let remaining = max - count;
@@ -487,11 +514,18 @@ pub async fn project_git_status(project_path: String) -> Result<Vec<FileChange>,
 }
 
 #[command]
-pub async fn project_git_diff(project_path: String, file_path: Option<String>) -> Result<String, String> {
+pub async fn project_git_diff(
+    project_path: String,
+    file_path: Option<String>,
+) -> Result<String, String> {
     ensure_git_repo(&project_path)?;
     let mut command = tokio::process::Command::new("git");
     command.arg("-C").arg(&project_path).arg("diff");
-    if let Some(path) = file_path.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+    if let Some(path) = file_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+    {
         command.arg("--").arg(path);
     }
 
@@ -499,11 +533,11 @@ pub async fn project_git_diff(project_path: String, file_path: Option<String>) -
         .output()
         .await
         .map_err(|e| format!("execute git diff failed: {e}"))?;
-        
+
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
-    
+
     let text = String::from_utf8_lossy(&output.stdout).to_string();
     let max_chars = 300_000usize;
     if text.chars().count() > max_chars {

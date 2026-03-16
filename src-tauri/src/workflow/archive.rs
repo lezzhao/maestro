@@ -28,7 +28,10 @@ pub(crate) fn save_archive(
     let path = dir.join(format!("{stem}-{now}-{random_suffix}.json"));
     let mut payload_result = result.clone();
     payload_result.archive_path = path.display().to_string();
-    let payload = ArchivePayload { request, result: &payload_result };
+    let payload = ArchivePayload {
+        request,
+        result: &payload_result,
+    };
     let text = serde_json::to_string_pretty(&payload)
         .map_err(|e| format!("serialize archive payload failed: {e}"))?;
     fs::write(&path, text).map_err(|e| format!("write archive file failed: {e}"))?;
@@ -62,47 +65,81 @@ fn resolve_archive_path(app: &AppHandle, archive_path: &str) -> Result<PathBuf, 
 #[command]
 pub async fn workflow_list_archives(app: AppHandle) -> Result<Vec<WorkflowArchiveEntry>, String> {
     let dir = archive_dir(&app)?;
-    let mut read_dir = tokio::fs::read_dir(&dir).await.map_err(|e| format!("read archive dir failed: {e}"))?;
+    let mut read_dir = tokio::fs::read_dir(&dir)
+        .await
+        .map_err(|e| format!("read archive dir failed: {e}"))?;
     let mut tasks = Vec::new();
 
-    while let Some(item) = read_dir.next_entry().await.map_err(|e| format!("read archive item failed: {e}"))? {
+    while let Some(item) = read_dir
+        .next_entry()
+        .await
+        .map_err(|e| format!("read archive item failed: {e}"))?
+    {
         let path = item.path();
         if path.extension().and_then(|s| s.to_str()) != Some("json") {
             continue;
         }
-        
+
         tasks.push(tokio::spawn(async move {
             let metadata = tokio::fs::metadata(&path).await.ok()?;
-            let modified_ts = metadata.modified().ok()
+            let modified_ts = metadata
+                .modified()
+                .ok()
                 .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
-            
-            let json_data = tokio::fs::read_to_string(&path).await.ok()
+
+            let json_data = tokio::fs::read_to_string(&path)
+                .await
+                .ok()
                 .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
-            
+
             let (completed, workflow_name, failed_count) = if let Some(json) = json_data {
                 let res = json.get("result");
-                let completed = res.and_then(|r| r.get("completed")).and_then(|c| c.as_bool()).unwrap_or(false);
-                let name = res.and_then(|r| r.get("workflow_name")).and_then(|n| n.as_str())
-                    .or_else(|| json.get("request").and_then(|r| r.get("name")).and_then(|n| n.as_str()))
+                let completed = res
+                    .and_then(|r| r.get("completed"))
+                    .and_then(|c| c.as_bool())
+                    .unwrap_or(false);
+                let name = res
+                    .and_then(|r| r.get("workflow_name"))
+                    .and_then(|n| n.as_str())
+                    .or_else(|| {
+                        json.get("request")
+                            .and_then(|r| r.get("name"))
+                            .and_then(|n| n.as_str())
+                    })
                     .unwrap_or_default()
                     .to_string();
-                let fc = res.and_then(|r| r.get("step_results")).and_then(|x| x.as_array())
+                let fc = res
+                    .and_then(|r| r.get("step_results"))
+                    .and_then(|x| x.as_array())
                     .map(|arr| {
-                        arr.iter().filter(|step| {
-                            let ok = step.get("success").and_then(|x| x.as_bool()).unwrap_or(false);
-                            let matched = step.get("completion_matched").and_then(|x| x.as_bool()).unwrap_or(false);
-                            !(ok && matched)
-                        }).count()
-                    }).unwrap_or(0);
+                        arr.iter()
+                            .filter(|step| {
+                                let ok = step
+                                    .get("success")
+                                    .and_then(|x| x.as_bool())
+                                    .unwrap_or(false);
+                                let matched = step
+                                    .get("completion_matched")
+                                    .and_then(|x| x.as_bool())
+                                    .unwrap_or(false);
+                                !(ok && matched)
+                            })
+                            .count()
+                    })
+                    .unwrap_or(0);
                 (completed, name, fc)
             } else {
                 (false, String::new(), 0)
             };
 
             Some(WorkflowArchiveEntry {
-                name: path.file_name().and_then(|s| s.to_str()).unwrap_or_default().to_string(),
+                name: path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or_default()
+                    .to_string(),
                 path: path.display().to_string(),
                 modified_ts,
                 completed,
@@ -113,10 +150,13 @@ pub async fn workflow_list_archives(app: AppHandle) -> Result<Vec<WorkflowArchiv
     }
 
     let results = futures::future::join_all(tasks).await;
-    let mut entries: Vec<WorkflowArchiveEntry> = results.into_iter()
-        .filter_map(|r: Result<Option<WorkflowArchiveEntry>, tokio::task::JoinError>| r.ok().flatten())
+    let mut entries: Vec<WorkflowArchiveEntry> = results
+        .into_iter()
+        .filter_map(
+            |r: Result<Option<WorkflowArchiveEntry>, tokio::task::JoinError>| r.ok().flatten(),
+        )
         .collect();
-        
+
     entries.sort_by(|a, b| b.modified_ts.cmp(&a.modified_ts));
     Ok(entries)
 }
@@ -127,7 +167,9 @@ pub async fn workflow_get_archive(
     archive_path: String,
 ) -> Result<WorkflowArchiveDetail, String> {
     let canonical = resolve_archive_path(&app, &archive_path)?;
-    let text = tokio::fs::read_to_string(&canonical).await.map_err(|e| format!("read archive failed: {e}"))?;
+    let text = tokio::fs::read_to_string(&canonical)
+        .await
+        .map_err(|e| format!("read archive failed: {e}"))?;
     let v: serde_json::Value =
         serde_json::from_str(&text).map_err(|e| format!("parse archive json failed: {e}"))?;
     let result = v
@@ -284,5 +326,8 @@ pub async fn workflow_export_archives(
     let text = serde_json::to_string_pretty(&payload)
         .map_err(|e| format!("serialize export payload failed: {e}"))?;
     fs::write(&path, text).map_err(|e| format!("write export file failed: {e}"))?;
-    Ok(WorkflowArchiveExportResult { path: path.display().to_string(), count })
+    Ok(WorkflowArchiveExportResult {
+        path: path.display().to_string(),
+        count,
+    })
 }

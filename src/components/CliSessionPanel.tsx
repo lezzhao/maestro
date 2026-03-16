@@ -116,99 +116,111 @@ export function CliSessionPanel({ activeEngineId, activeTaskId = null }: CliSess
   }, [selectedSessionId, visibleSessions]);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-bg-surface/30 rounded-xl border border-border-muted/20">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border-muted/30 bg-bg-elevated/20">
+    <div className="flex flex-col h-full overflow-hidden bg-bg-surface">
+      {/* Header Area */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border-muted/30">
         <div className="flex items-center gap-2">
-          <FileText size={14} className="text-primary-500" />
-          <span className="text-[11px] font-black uppercase tracking-wider text-text-muted">
+          <FileText size={15} className="text-primary-500" />
+          <span className="text-[12px] font-bold text-text-main">
             Run Records
           </span>
-          <Badge variant="secondary" className="h-4 px-1.5 text-[9px] font-bold">
+          <Badge variant="secondary" className="h-5 px-1.5 text-[10px] font-bold opacity-80">
             {visibleSessions.length}
           </Badge>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 text-text-muted">
           <Button
             size="icon"
             variant="ghost"
-            className="h-6 w-6 text-text-muted hover:text-text-main"
+            className="h-7 w-7 hover:text-text-main"
+            title="Refresh"
             disabled={loadingSessions}
             onClick={() => void loadSessions()}
           >
-            <RefreshCcw size={12} className={loadingSessions ? "animate-spin" : ""} />
+            <RefreshCcw size={14} className={loadingSessions ? "animate-spin" : ""} />
           </Button>
           <Button
             size="icon"
             variant="ghost"
-            className="h-6 w-6 text-text-muted hover:text-rose-500"
+            className="h-7 w-7 hover:text-rose-500 hover:bg-rose-500/10"
+            title="Prune stopped sessions"
             disabled={pruning}
             onClick={() => void pruneStoppedSessions()}
           >
-            <Trash2 size={12} className={pruning ? "animate-pulse" : ""} />
+            <Trash2 size={14} className={pruning ? "animate-pulse" : ""} />
           </Button>
         </div>
       </div>
 
-      <div className="p-2 space-y-2 border-b border-border-muted/20">
-        <div className="flex items-center gap-1">
-          <Button
-            size="sm"
-            variant={scope === "task" ? "default" : "outline"}
-            className="h-6 px-2 text-[10px] font-semibold flex-1"
-            disabled={!activeTaskId}
-            onClick={() => setScope("task")}
+      {/* Controls Area */}
+      <div className="px-4 py-3 space-y-3 border-b border-border-muted/20 bg-bg-base/30">
+        <div className="flex bg-bg-elevated/40 p-1 rounded-lg">
+          <button
+            className={`flex-1 text-[11px] font-semibold py-1.5 rounded-md transition-colors ${
+              scope === "task" 
+                ? "bg-bg-surface text-text-main shadow-sm" 
+                : "text-text-muted hover:text-text-main"
+            }`}
+             disabled={!activeTaskId}
+             onClick={() => setScope("task")}
           >
             当前任务
-          </Button>
-          <Button
-            size="sm"
-            variant={scope === "engine" ? "default" : "outline"}
-            className="h-6 px-2 text-[10px] font-semibold flex-1"
-            onClick={() => setScope("engine")}
+          </button>
+           <button
+            className={`flex-1 text-[11px] font-semibold py-1.5 rounded-md transition-colors ${
+              scope === "engine" 
+                ? "bg-bg-surface text-text-main shadow-sm" 
+                : "text-text-muted hover:text-text-main"
+            }`}
+             onClick={() => setScope("engine")}
           >
             当前引擎
+          </button>
+        </div>
+        
+        <div className="flex gap-2">
+          <select
+            className="flex-1 h-8 rounded-md border-0 bg-bg-elevated/50 px-3 text-[12px] text-text-main outline-none focus:ring-1 focus:ring-primary-500/50 appearance-none cursor-pointer"
+            value={selectedSessionId}
+            onChange={(event) => setSelectedSessionId(event.target.value)}
+          >
+            {visibleSessions.length === 0 ? (
+              <option value="" disabled>
+                {scope === "task" ? "暂无任务记录" : "暂无会话"}
+              </option>
+            ) : (
+              visibleSessions.map((item) => (
+                <option key={item.session_id} value={item.session_id}>
+                  {item.session_id.substring(0,8)}... ({item.mode}/{item.status})
+                </option>
+              ))
+            )}
+          </select>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-8 px-3 text-[11px] font-semibold bg-bg-elevated hover:bg-bg-surface hover:text-primary-500 transition-colors"
+            disabled={!selectedSessionId || loadingLogs}
+            onClick={() => void loadLogs()}
+          >
+            刷新日志
           </Button>
         </div>
-        <select
-          className="w-full h-8 rounded-md border border-border-subtle bg-bg-base px-2 text-[11px]"
-          value={selectedSessionId}
-          onChange={(event) => setSelectedSessionId(event.target.value)}
-        >
-          {visibleSessions.length === 0 ? (
-            <option value="">
-              {scope === "task" ? "当前任务暂无运行记录（可切到当前引擎）" : "暂无会话"}
-            </option>
-          ) : (
-            visibleSessions.map((item) => (
-              <option key={item.session_id} value={item.session_id}>
-                {item.session_id} ({item.source || "unknown"}/{item.mode}/{item.status})
-              </option>
-            ))
-          )}
-        </select>
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 text-[10px] font-semibold w-full"
-          disabled={!selectedSessionId || loadingLogs}
-          onClick={() => void loadLogs()}
-        >
-          读取输出
-        </Button>
       </div>
 
-      {message && <div className="px-2 py-1 text-[10px] text-amber-500 break-all">{message}</div>}
+      {message && <div className="px-4 py-2 text-[11px] text-amber-500 bg-amber-500/10 border-b border-amber-500/20">{message}</div>}
 
-      <div className="flex-1 min-h-0 p-2">
-        <pre className="h-full overflow-auto custom-scrollbar rounded-md border border-border-subtle bg-bg-code p-2 text-[10px] whitespace-pre-wrap wrap-break-word">
-          {sessionLogs || "暂无日志"}
+      <div className="flex-1 min-h-0 bg-bg-base relative">
+        <pre className="h-full w-full overflow-auto custom-scrollbar p-4 text-[11px] leading-relaxed text-text-muted whitespace-pre-wrap wrap-break-word font-mono">
+          {sessionLogs || "Waiting for logs..."}
         </pre>
       </div>
 
+      {/* Footer Meta */}
       {selectedSession && (
-        <div className="px-2 py-1 border-t border-border-muted/20 text-[9px] text-text-muted flex items-center justify-between">
-          <span>{selectedSession.engine_id} · {selectedSession.source || "unknown"}</span>
-          <span>{selectedSession.mode} / {selectedSession.status}</span>
+        <div className="px-4 py-2 border-t border-border-muted/20 bg-bg-surface/50 text-[10px] text-text-muted flex items-center justify-between font-mono">
+           <span>Engine: {selectedSession.engine_id || "None"}</span>
+           <span className="opacity-70">{selectedSession.source || "CLI"} · {selectedSession.status}</span>
         </div>
       )}
     </div>

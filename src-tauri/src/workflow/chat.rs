@@ -1,3 +1,5 @@
+use super::types::*;
+use super::util::{completion_matched, with_model_args};
 use crate::config::AppConfigState;
 use crate::engine::EngineRuntimeState;
 use crate::headless::HeadlessProcessState;
@@ -5,8 +7,6 @@ use crate::pty::{PtyManagerState, PtySessionInfo};
 use crate::run_persistence::{
     append_run_record, current_time_ms, resolve_root_dir_from_project_path, UnifiedRunRecord,
 };
-use super::types::*;
-use super::util::{completion_matched, with_model_args};
 use regex::Regex;
 
 use std::path::PathBuf;
@@ -25,7 +25,9 @@ async fn last_conversation_path(app: &AppHandle) -> Result<PathBuf, String> {
         .path()
         .app_config_dir()
         .map_err(|e| format!("resolve app config dir failed: {e}"))?;
-    tokio::fs::create_dir_all(&dir).await.map_err(|e| format!("create app config dir failed: {e}"))?;
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(|e| format!("create app config dir failed: {e}"))?;
     dir.push("last-conversation.json");
     Ok(dir)
 }
@@ -69,7 +71,8 @@ fn builtin_headless_defaults(engine_id: &str) -> Option<Vec<String>> {
 fn parse_case_counts(output: &str) -> (usize, usize, usize, usize) {
     let passed_re = Regex::new(r"(?i)\b(\d+)\s+passed\b").expect("regex must compile");
     let failed_re = Regex::new(r"(?i)\b(\d+)\s+failed\b").expect("regex must compile");
-    let skipped_re = Regex::new(r"(?i)\b(\d+)\s+(skipped|todo|pending)\b").expect("regex must compile");
+    let skipped_re =
+        Regex::new(r"(?i)\b(\d+)\s+(skipped|todo|pending)\b").expect("regex must compile");
     let total_re = Regex::new(r"(?i)\b(\d+)\s+total\b").expect("regex must compile");
     let passed = passed_re
         .captures_iter(output)
@@ -181,16 +184,22 @@ pub async fn chat_save_last_conversation(
     let path = last_conversation_path(&app).await?;
     let text = serde_json::to_string_pretty(&payload)
         .map_err(|e| format!("serialize last conversation failed: {e}"))?;
-    tokio::fs::write(path, text).await.map_err(|e| format!("write last conversation failed: {e}"))
+    tokio::fs::write(path, text)
+        .await
+        .map_err(|e| format!("write last conversation failed: {e}"))
 }
 
 #[command]
-pub async fn chat_load_last_conversation(app: AppHandle) -> Result<Option<serde_json::Value>, String> {
+pub async fn chat_load_last_conversation(
+    app: AppHandle,
+) -> Result<Option<serde_json::Value>, String> {
     let path = last_conversation_path(&app).await?;
     if !path.exists() {
         return Ok(None);
     }
-    let text = tokio::fs::read_to_string(path).await.map_err(|e| format!("read last conversation failed: {e}"))?;
+    let text = tokio::fs::read_to_string(path)
+        .await
+        .map_err(|e| format!("read last conversation failed: {e}"))?;
     let payload = serde_json::from_str::<serde_json::Value>(&text)
         .map_err(|e| format!("parse last conversation failed: {e}"))?;
     Ok(Some(payload))
@@ -206,12 +215,11 @@ pub async fn chat_execute_api(
     let cfg = config_state.get();
     let profile = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
     let provider = profile
-        .api_provider
-        .clone()
+        .api_provider()
         .unwrap_or_else(|| "openai-compatible".to_string());
-    let base_url = profile.api_base_url.clone().unwrap_or_default();
-    let api_key = profile.api_key.clone().unwrap_or_default();
-    let model = profile.model.clone();
+    let base_url = profile.api_base_url().unwrap_or_default();
+    let api_key = profile.api_key().unwrap_or_default();
+    let model = profile.model().clone();
     let messages = request.messages.clone();
     let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
     let exec_id = headless_state.register(cancel_tx);
@@ -222,8 +230,8 @@ pub async fn chat_execute_api(
     let on_data_clone = on_data.clone();
     let root_dir = resolve_root_dir_from_project_path(&cfg.project.path).ok();
     let engine_id = request.engine_id.clone();
-    let profile_command = profile.command.clone();
-    let profile_model = profile.model.clone();
+    let profile_command = profile.command().clone();
+    let profile_model = profile.model().clone();
     let cwd = cfg.project.path.clone();
     let _ = on_data.send(format!("\u{0}RUN_ID:{run_id_for_return}"));
 
@@ -318,37 +326,38 @@ pub async fn chat_execute_cli(
     let cfg = config_state.get();
     let profile = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
     let fallback_headless_args = builtin_headless_defaults(&request.engine_id);
-    let supports_headless = profile.supports_headless || fallback_headless_args.is_some();
+    let supports_headless = profile.supports_headless() || fallback_headless_args.is_some();
     if !supports_headless {
-        return Err(format!("engine {} does not support headless mode", request.engine_id));
+        return Err(format!(
+            "engine {} does not support headless mode",
+            request.engine_id
+        ));
     }
 
-    let mut args = if !profile.headless_args.is_empty() {
-        profile.headless_args.clone()
+    let mut args = if !profile.headless_args().is_empty() {
+        profile.headless_args().clone()
     } else if let Some(default_headless_args) = fallback_headless_args {
         default_headless_args
     } else {
-        profile.args.clone()
+        profile.args().clone()
     };
-    args = with_model_args(args, &request.engine_id, &profile.model);
+    args = with_model_args(args, &request.engine_id, &profile.model());
     if request.is_continuation && engine_supports_continue(&request.engine_id) {
         args.push("--continue".to_string());
     }
     args.push(request.prompt.clone());
 
-    let mut command = tokio::process::Command::new(&profile.command);
+    let mut command = tokio::process::Command::new(&profile.command());
     command.args(args);
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
     if !cfg.project.path.trim().is_empty() {
         command.current_dir(&cfg.project.path);
     }
-    for (k, v) in &profile.env {
+    for (k, v) in &profile.env() {
         command.env(k, v);
     }
 
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("spawn failed: {e}"))?;
+    let mut child = command.spawn().map_err(|e| format!("spawn failed: {e}"))?;
     let pid = child.id();
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -362,8 +371,8 @@ pub async fn chat_execute_cli(
     let aggregate = Arc::new(Mutex::new(String::new()));
     let root_dir = resolve_root_dir_from_project_path(&cfg.project.path).ok();
     let engine_id = request.engine_id.clone();
-    let profile_command = profile.command.clone();
-    let profile_model = profile.model.clone();
+    let profile_command = profile.command().clone();
+    let profile_model = profile.model().clone();
     let cwd = cfg.project.path.clone();
     let _ = on_data.send(format!("\u{0}RUN_ID:{run_id_for_return}"));
 
@@ -493,11 +502,12 @@ pub async fn chat_spawn(
         .ok_or_else(|| format!("engine not found: {}", request.engine_id))?
         .clone();
     let profile = if let Some(profile_id) = request.profile_id.as_deref() {
-        engine
-            .profiles
-            .get(profile_id)
-            .cloned()
-            .ok_or_else(|| format!("profile not found for engine {}: {profile_id}", request.engine_id))?
+        engine.profiles.get(profile_id).cloned().ok_or_else(|| {
+            format!(
+                "profile not found for engine {}: {profile_id}",
+                request.engine_id
+            )
+        })?
     } else {
         engine.active_profile()
     };
@@ -527,24 +537,27 @@ pub async fn chat_spawn(
     });
 
     let spawn: PtySessionInfo = pty_state.spawn_session(
-        profile.command.clone(),
-        with_model_args(profile.args.clone(), &request.engine_id, &profile.model),
+        profile.command().clone(),
+        with_model_args(profile.args().clone(), &request.engine_id, &profile.model()),
         if cfg.project.path.trim().is_empty() {
             None
         } else {
             Some(cfg.project.path.clone())
         },
-        profile.env.clone().into_iter().collect(),
+        profile.env().clone().into_iter().collect(),
         request.cols.unwrap_or(120).clamp(60, 240),
         request.rows.unwrap_or(36).clamp(20, 80),
         bridge,
     )?;
 
-    if let Some(ready_signal) = profile.ready_signal.as_deref() {
+    if let Some(ready_signal) = profile.ready_signal().as_deref() {
         if !ready_signal.trim().is_empty() {
             let deadline = Instant::now() + Duration::from_millis(10_000);
             while Instant::now() < deadline {
-                let snap = output_buf.lock().expect("chat output lock poisoned").clone();
+                let snap = output_buf
+                    .lock()
+                    .expect("chat output lock poisoned")
+                    .clone();
                 if completion_matched(Some(ready_signal), &snap) {
                     break;
                 }
@@ -556,8 +569,8 @@ pub async fn chat_spawn(
     Ok(ChatSessionMeta {
         session_id: spawn.session_id,
         engine_id: request.engine_id,
-        profile_id: profile.id,
-        ready_signal: profile.ready_signal,
+        profile_id: profile.id.clone(),
+        ready_signal: profile.ready_signal(),
     })
 }
 

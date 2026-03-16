@@ -41,7 +41,8 @@ pub fn process_get_stats(
     let os_pid = active_os_pid(&pty_state, session_id);
     if let Some(pid_u32) = os_pid {
         let mut sys = System::new_with_specifics(
-            RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing().with_cpu().with_memory()),
+            RefreshKind::nothing()
+                .with_processes(ProcessRefreshKind::nothing().with_cpu().with_memory()),
         );
         let pid = Pid::from_u32(pid_u32);
         sys.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
@@ -75,10 +76,7 @@ pub fn process_start_monitor(
     monitor_state.stop_all();
     monitor_state.running.store(true, Ordering::Relaxed);
     let stop_flag = Arc::new(AtomicBool::new(false));
-    *monitor_state
-        .stopper
-        .lock()
-        .expect("stopper lock poisoned") = Some(stop_flag.clone());
+    *monitor_state.stopper.lock().expect("stopper lock poisoned") = Some(stop_flag.clone());
 
     let app_handle = app.clone();
     thread::spawn(move || {
@@ -88,9 +86,8 @@ pub fn process_start_monitor(
                 let os_pid = active_os_pid(&pty, session_id);
                 if let Some(pid_u32) = os_pid {
                     let mut sys = System::new_with_specifics(
-                        RefreshKind::nothing().with_processes(
-                            ProcessRefreshKind::nothing().with_cpu().with_memory(),
-                        ),
+                        RefreshKind::nothing()
+                            .with_processes(ProcessRefreshKind::nothing().with_cpu().with_memory()),
                     );
                     let pid = Pid::from_u32(pid_u32);
                     sys.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);

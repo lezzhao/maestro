@@ -114,7 +114,7 @@ export function ChatPanel({
 
   if (!activeTaskId) {
     return (
-      <div className="h-full flex flex-col items-center justify-center p-8 text-center bg-bg-base/30 backdrop-blur-sm">
+      <div className="h-full flex flex-col items-center justify-center p-8 text-center bg-bg-surface">
         <div className="w-16 h-16 rounded-2xl bg-bg-elevated flex items-center justify-center text-text-muted/20 mb-6">
            <MessageSquare size={32} />
         </div>
@@ -219,7 +219,7 @@ export function ChatPanel({
         showExecutionTrace={showExecutionTrace}
       />
       <div className="px-3">
-        <div className="rounded-md border border-border-muted/20 bg-bg-surface/40 px-2.5 py-1.5 text-[10px] text-text-muted">
+        <div className="rounded-md border border-border-muted bg-bg-elevated px-2.5 py-1.5 text-[10px] text-text-muted">
           聊天区用于追加约束、查看原始转录与人工纠偏，主审阅请在右侧进行。
         </div>
       </div>

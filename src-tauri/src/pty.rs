@@ -234,7 +234,7 @@ impl PtyManagerState {
             let mut buffer = [0_u8; 8192];
             let mut pending = String::new();
             let mut last_send = Instant::now();
-            
+
             loop {
                 // Non-blocking read (with a small sleep if needed or just use blocking read and batch)
                 // Actually, read() is blocking. If it returns fast, we batch.
@@ -243,9 +243,10 @@ impl PtyManagerState {
                     Ok(size) => {
                         let text = String::from_utf8_lossy(&buffer[..size]);
                         pending.push_str(&text);
-                        
+
                         // Batch if either pending buffer is large enough or enough time has passed
-                        if pending.len() > 16384 || last_send.elapsed() >= Duration::from_millis(30) {
+                        if pending.len() > 16384 || last_send.elapsed() >= Duration::from_millis(30)
+                        {
                             if on_data.send(pending.clone()).is_err() {
                                 break;
                             }

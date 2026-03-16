@@ -32,7 +32,7 @@ export function GeneralSettings({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card className="rounded-xl border-border-muted bg-bg-surface shadow-sm overflow-hidden">
+        <Card className="rounded-xl border border-border-muted bg-bg-surface overflow-hidden">
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
               <Palette size={16} className="text-text-muted" />
@@ -74,7 +74,7 @@ export function GeneralSettings({
           </CardContent>
         </Card>
 
-        <Card className="rounded-xl border-border-muted bg-bg-surface shadow-sm overflow-hidden">
+        <Card className="rounded-xl border border-border-muted bg-bg-surface overflow-hidden">
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
               <Languages size={16} className="text-text-muted" />

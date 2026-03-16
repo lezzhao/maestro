@@ -48,22 +48,22 @@ export function MainSidebar({
           </div>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-1">
           <div
-            className="flex items-center justify-between px-3 py-2 bg-bg-elevated/40 rounded-xl border border-border-muted/30 group cursor-pointer hover:border-primary-500/30 transition-colors"
+            className="flex items-center justify-between py-2 group cursor-pointer"
             onClick={onOpenProjectPicker}
           >
             <div className="flex flex-col min-w-0">
-              <span className="text-[10px] font-semibold text-text-muted/60">
+              <span className="text-[10px] font-bold text-text-muted/60 uppercase tracking-wider">
                 {t("active_project")}
               </span>
-              <span className="text-xs font-bold truncate text-text-main pr-2">
+              <span className="text-[13px] font-bold truncate text-text-main pr-2 mt-0.5 group-hover:text-primary-500 transition-colors">
                 {projectName}
               </span>
             </div>
-            <div className="shrink-0 w-6 h-6 rounded-md bg-bg-subtle flex items-center justify-center text-text-muted group-hover:text-primary-500 transition-colors">
+            <button className="shrink-0 w-6 h-6 rounded-md flex items-center justify-center text-text-muted hover:text-text-main hover:bg-bg-elevated transition-colors">
               <Plus size={14} />
-            </div>
+            </button>
           </div>
         </div>
       </div>

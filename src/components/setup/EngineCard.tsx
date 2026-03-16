@@ -206,7 +206,7 @@ export function EngineCard({
   return (
     <Card
       className={cn(
-        "group relative overflow-hidden transition-all duration-200 rounded-xl border-border bg-bg-surface shadow-sm",
+        "group relative overflow-hidden transition-all duration-200 rounded-xl border border-border bg-bg-surface",
         isActive &&
           "ring-1 ring-primary-500 border-primary-500",
       )}
@@ -295,7 +295,7 @@ export function EngineCard({
 
               <div
                 className={cn(
-                  "px-4 py-3 rounded-lg border flex items-start gap-3",
+                  "px-4 py-3 rounded-md border flex items-start gap-3",
                   tone === "ok"
                     ? "bg-bg-elevated border-border text-text-main"
                     : tone === "danger"
@@ -327,12 +327,12 @@ export function EngineCard({
                       label: pid,
                     }))}
                     onChange={(pid) => void onSetActiveProfile(id, pid)}
-                    className="h-10 rounded-xl bg-bg-base/40 border-border-muted/20 focus:ring-primary-500/20"
+                    className="h-10 rounded-md bg-bg-base border-border-muted focus:ring-primary-500/20"
                   />
                 </div>
                 <Button
                   variant="secondary"
-                  className="h-10 px-4 rounded-xl border border-border-muted/20 hover:bg-bg-elevated transition-all"
+                  className="h-10 px-4 rounded-md border border-border-muted hover:bg-bg-elevated transition-all"
                   loading={creatingProfile}
                   onClick={async () => {
                     setCreatingProfile(true);
@@ -409,7 +409,7 @@ export function EngineCard({
                 <Button
                   size="sm"
                   variant="secondary"
-                  className="w-10 h-10 p-0 rounded-xl border border-border-muted/20 hover:bg-bg-elevated transition-all"
+                  className="w-10 h-10 p-0 rounded-md border border-border-muted hover:bg-bg-elevated transition-all"
                   onClick={() => startEdit(activeProfileId)}
                 >
                   <Edit3 size={16} />
@@ -430,7 +430,7 @@ export function EngineCard({
                     prev ? { ...prev, command: e.target.value } : prev,
                   )
                 }
-                className="bg-bg-base/40 border-border-muted/30 rounded-xl h-10 focus:ring-primary-500/20"
+                className="bg-bg-base border-border-muted rounded-md h-10 focus:ring-primary-500/20"
               />
             </div>
 
@@ -459,13 +459,13 @@ export function EngineCard({
                         : prev,
                     )
                   }
-                  className="bg-bg-base/40 border-border-muted/30 rounded-xl h-10 focus:ring-primary-500/20"
+                  className="bg-bg-base border-border-muted rounded-md h-10 focus:ring-primary-500/20"
                 />
               </div>
               <Button
                 size="icon"
                 variant="outline"
-                className="w-10 h-10 rounded-xl border-border-muted/30 hover:border-primary-500/40"
+                className="w-10 h-10 rounded-md border-border-muted hover:border-primary-500/40"
                 loading={loadingModels}
                 onClick={() => void onFetchModels(id, { force: true })}
               >
@@ -485,7 +485,7 @@ export function EngineCard({
                   )
                 }
                 placeholder={t("model_custom_placeholder")}
-                className="bg-bg-base/40 border-border-muted/30 rounded-xl h-10"
+                className="bg-bg-base border-border-muted rounded-md h-10"
               />
             )}
 
@@ -497,7 +497,7 @@ export function EngineCard({
                 <Input
                   value={argText}
                   onChange={(e) => setArgText(e.target.value)}
-                  className="bg-bg-base/40 border-border-muted/30 rounded-xl h-10"
+                  className="bg-bg-base border-border-muted rounded-md h-10"
                 />
               </div>
               <div className="space-y-1.5">
@@ -507,7 +507,7 @@ export function EngineCard({
                 <Input
                   value={headlessArgText}
                   onChange={(e) => setHeadlessArgText(e.target.value)}
-                  className="bg-bg-base/40 border-border-muted/30 rounded-xl h-10"
+                  className="bg-bg-base border-border-muted rounded-md h-10"
                 />
               </div>
             </div>
@@ -520,7 +520,7 @@ export function EngineCard({
                 <Button
                   type="button"
                   variant={(draft.execution_mode || "cli") === "api" ? "default" : "outline"}
-                  className="h-9 rounded-xl text-[10px] font-semibold uppercase"
+                  className="h-9 rounded-md text-[10px] font-semibold uppercase"
                   onClick={() =>
                     setDraft((prev) =>
                       prev
@@ -539,7 +539,7 @@ export function EngineCard({
                 <Button
                   type="button"
                   variant={(draft.execution_mode || "cli") === "cli" ? "default" : "outline"}
-                  className="h-9 rounded-xl text-[10px] font-semibold uppercase"
+                  className="h-9 rounded-md text-[10px] font-semibold uppercase"
                   onClick={() =>
                     setDraft((prev) =>
                       prev
@@ -578,7 +578,7 @@ export function EngineCard({
                           : prev,
                       )
                     }
-                    className="bg-bg-base/40 border-border-muted/30 rounded-xl h-10"
+                    className="bg-bg-base border-border-muted rounded-md h-10"
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -598,7 +598,7 @@ export function EngineCard({
                       )
                     }
                     placeholder="https://api.openai.com/v1"
-                    className="bg-bg-base/40 border-border-muted/30 rounded-xl h-10"
+                    className="bg-bg-base border-border-muted rounded-md h-10"
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -619,7 +619,7 @@ export function EngineCard({
                       )
                     }
                     placeholder="sk-..."
-                    className="bg-bg-base/40 border-border-muted/30 rounded-xl h-10"
+                    className="bg-bg-base border-border-muted rounded-md h-10"
                   />
                 </div>
               </div>
@@ -630,7 +630,7 @@ export function EngineCard({
                 {t("env")}
               </label>
               <textarea
-                className="w-full min-h-[100px] rounded-2xl border border-border-muted/30 bg-bg-base/40 px-4 py-3 text-xs font-mono focus:ring-2 focus:ring-primary-500/20 outline-none transition-all"
+                className="w-full min-h-[100px] rounded-md border border-border-muted bg-bg-base px-4 py-3 text-xs font-mono focus:ring-2 focus:ring-primary-500/20 outline-none transition-all"
                 value={envText}
                 onChange={(e) => setEnvText(e.target.value)}
                 placeholder="KEY=VALUE"

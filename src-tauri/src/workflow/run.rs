@@ -1,13 +1,13 @@
+use super::archive::save_archive;
+use super::history::persist_engine_history;
+use super::types::*;
+use super::util::*;
 use crate::config::AppConfigState;
 use crate::engine::EngineRuntimeState;
 use crate::pty::PtyManagerState;
 use crate::run_persistence::{
     append_run_record, current_time_ms, resolve_root_dir_from_project_path, UnifiedRunRecord,
 };
-use super::types::*;
-use super::util::*;
-use super::archive::save_archive;
-use super::history::persist_engine_history;
 use regex::Regex;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
@@ -21,7 +21,8 @@ use tauri::{
 fn parse_case_counts(output: &str) -> (usize, usize, usize, usize) {
     let passed_re = Regex::new(r"(?i)\b(\d+)\s+passed\b").expect("regex must compile");
     let failed_re = Regex::new(r"(?i)\b(\d+)\s+failed\b").expect("regex must compile");
-    let skipped_re = Regex::new(r"(?i)\b(\d+)\s+(skipped|todo|pending)\b").expect("regex must compile");
+    let skipped_re =
+        Regex::new(r"(?i)\b(\d+)\s+(skipped|todo|pending)\b").expect("regex must compile");
     let total_re = Regex::new(r"(?i)\b(\d+)\s+total\b").expect("regex must compile");
 
     let passed = passed_re
@@ -51,8 +52,10 @@ fn parse_case_counts(output: &str) -> (usize, usize, usize, usize) {
 }
 
 fn parse_suite_counts(output: &str) -> (usize, usize, usize) {
-    let suite_passed_re = Regex::new(r"(?i)test suites?:\s*(\d+)\s+passed(?:,\s*(\d+)\s+failed)?(?:,\s*(\d+)\s+total)?")
-        .expect("regex must compile");
+    let suite_passed_re = Regex::new(
+        r"(?i)test suites?:\s*(\d+)\s+passed(?:,\s*(\d+)\s+failed)?(?:,\s*(\d+)\s+total)?",
+    )
+    .expect("regex must compile");
     if let Some(cap) = suite_passed_re.captures(output) {
         let passed = cap
             .get(1)
@@ -77,7 +80,10 @@ fn parse_suite_counts(output: &str) -> (usize, usize, usize) {
             .get(1)
             .and_then(|m| m.as_str().parse::<usize>().ok())
             .unwrap_or(0);
-        let status = cap.get(2).map(|m| m.as_str().to_lowercase()).unwrap_or_default();
+        let status = cap
+            .get(2)
+            .map(|m| m.as_str().to_lowercase())
+            .unwrap_or_default();
         if status == "passed" {
             passed += value;
         } else if status == "failed" {
@@ -215,15 +221,14 @@ async fn execute_workflow_step(
         .get(&step.engine)
         .ok_or_else(|| format!("engine not found: {}", step.engine))?
         .clone();
-    let profile = if let Some(profile_id) = step.profile_id.as_deref() {
-        engine
-            .profiles
-            .get(profile_id)
-            .cloned()
-            .ok_or_else(|| format!("profile not found for engine {}: {profile_id}", step.engine))?
-    } else {
-        engine.active_profile()
-    };
+    let profile =
+        if let Some(profile_id) = step.profile_id.as_deref() {
+            engine.profiles.get(profile_id).cloned().ok_or_else(|| {
+                format!("profile not found for engine {}: {profile_id}", step.engine)
+            })?
+        } else {
+            engine.active_profile()
+        };
     *runtime_state
         .active_engine_id
         .lock()
@@ -243,7 +248,7 @@ async fn execute_workflow_step(
     )
     .map_err(|e| format!("emit workflow progress failed: {e}"))?;
 
-    let _mode_hint = if profile.supports_headless {
+    let _mode_hint = if profile.supports_headless() {
         "headless"
     } else {
         "pty-fallback"
@@ -262,22 +267,22 @@ async fn execute_workflow_step(
     )
     .map_err(|e| format!("emit workflow progress failed: {e}"))?;
 
-    let result = if profile.supports_headless {
-        let mut args = if profile.headless_args.is_empty() {
-            profile.args.clone()
+    let result = if profile.supports_headless() {
+        let mut args = if profile.headless_args().is_empty() {
+            profile.args().clone()
         } else {
-            profile.headless_args.clone()
+            profile.headless_args().clone()
         };
-        args = with_model_args(args, &step.engine, &profile.model);
+        args = with_model_args(args, &step.engine, &profile.model());
         args.push(step.prompt.clone());
-        
-        let mut command = tokio::process::Command::new(&profile.command);
+
+        let mut command = tokio::process::Command::new(&profile.command());
         command.args(args);
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
         if !cfg.project.path.trim().is_empty() {
             command.current_dir(&cfg.project.path);
         }
-        for (k, v) in &profile.env {
+        for (k, v) in &profile.env() {
             command.env(k, v);
         }
 
@@ -286,7 +291,7 @@ async fn execute_workflow_step(
                 let timeout = step.timeout_ms.unwrap_or(30_000).max(20_000);
                 let deadline = Instant::now() + Duration::from_millis(timeout);
                 let mut timed_out = false;
-                
+
                 let status = loop {
                     match child.try_wait() {
                         Ok(Some(status)) => break Some(status),
@@ -302,10 +307,13 @@ async fn execute_workflow_step(
                     }
                 };
 
-                let output = child.wait_with_output().await.map_err(|e| format!("wait child failed: {e}"))?;
+                let output = child
+                    .wait_with_output()
+                    .await
+                    .map_err(|e| format!("wait child failed: {e}"))?;
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                
+
                 let message = if stderr.trim().is_empty() {
                     stdout
                 } else if stdout.trim().is_empty() {
@@ -313,13 +321,15 @@ async fn execute_workflow_step(
                 } else {
                     format!("{stdout}\n{stderr}")
                 };
-                
-                let exited_ok = status.map(|s| s.success()).unwrap_or(false) || output.status.success();
+
+                let exited_ok =
+                    status.map(|s| s.success()).unwrap_or(false) || output.status.success();
                 let matched = completion_matched(step.completion_signal.as_deref(), &message);
                 let success = exited_ok && !timed_out;
                 let duration_ms = step_started.elapsed().as_millis();
-                let verification = extract_verification_summary(&message, success && matched, duration_ms);
-                
+                let verification =
+                    extract_verification_summary(&message, success && matched, duration_ms);
+
                 WorkflowStepResult {
                     engine: step.engine.clone(),
                     mode: "headless".to_string(),
@@ -370,20 +380,20 @@ async fn execute_workflow_step(
         });
 
         let spawn = pty_state.spawn_session(
-            profile.command.clone(),
-            with_model_args(profile.args.clone(), &step.engine, &profile.model),
+            profile.command().clone(),
+            with_model_args(profile.args().clone(), &step.engine, &profile.model()),
             if cfg.project.path.trim().is_empty() {
                 None
             } else {
                 Some(cfg.project.path.clone())
             },
-            profile.env.clone().into_iter().collect(),
+            profile.env().clone().into_iter().collect(),
             120,
             36,
             on_data,
         )?;
 
-        if let Some(ready_signal) = profile.ready_signal.as_deref() {
+        if let Some(ready_signal) = profile.ready_signal().as_deref() {
             let ready_deadline =
                 Instant::now() + Duration::from_millis(step.timeout_ms.unwrap_or(15_000) / 3);
             while Instant::now() < ready_deadline {
@@ -442,7 +452,11 @@ async fn execute_workflow_step(
                 Some("not-matched".to_string())
             },
             duration_ms: step_started.elapsed().as_millis(),
-            verification: extract_verification_summary(&final_output, matched, step_started.elapsed().as_millis()),
+            verification: extract_verification_summary(
+                &final_output,
+                matched,
+                step_started.elapsed().as_millis(),
+            ),
             output: final_output,
         }
     };
@@ -501,7 +515,9 @@ pub async fn workflow_run_step(
         step_index,
         &request.step.prompt,
         &result,
-    ).await {
+    )
+    .await
+    {
         let _ = app.emit(
             "workflow://progress",
             WorkflowProgressEvent {
@@ -570,7 +586,9 @@ pub async fn workflow_run(
             idx,
             &step.prompt,
             &result,
-        ).await {
+        )
+        .await
+        {
             let _ = app.emit(
                 "workflow://progress",
                 WorkflowProgressEvent {

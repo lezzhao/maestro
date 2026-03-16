@@ -137,7 +137,7 @@ export function TaskWorkspace({
 
   return (
     <div className="h-full flex flex-col min-h-0">
-      <div className="h-12 border-b border-border-muted/30 px-3 flex items-center justify-between gap-3">
+      <div className="h-12 border-b border-border-muted px-3 flex items-center justify-between gap-3 bg-bg-surface">
         <div className="flex items-center gap-2">
           {tabButton("overview", "执行概览", ListChecks)}
           {tabButton("transcript", "辅助转录", MessageSquareText)}
@@ -152,7 +152,7 @@ export function TaskWorkspace({
 
       {tab === "overview" ? (
         <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-3 space-y-3">
-          <div className="rounded-xl border border-border-muted/40 bg-bg-surface/40 p-3">
+          <div className="rounded-xl border border-border-muted bg-bg-surface p-3 shadow-sm">
             <div className="text-[10px] uppercase tracking-widest text-text-muted mb-2">任务状态</div>
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div>
@@ -174,7 +174,7 @@ export function TaskWorkspace({
             </div>
           </div>
 
-          <div className="rounded-xl border border-border-muted/40 bg-bg-surface/40 p-3">
+          <div className="rounded-xl border border-border-muted bg-bg-surface p-3 shadow-sm">
             <div className="flex items-center gap-2 text-[11px] font-semibold mb-2">
               <FolderTree size={14} />
               <span>本轮上下文</span>
@@ -211,7 +211,7 @@ export function TaskWorkspace({
                       currentContext.queuedAttachments.map((name) => (
                         <span
                           key={name}
-                          className="px-2 py-0.5 rounded-md border border-border-muted/40 bg-bg-base/40 text-[10px]"
+                          className="px-2 py-0.5 rounded-md border border-border-muted bg-bg-elevated text-[10px]"
                         >
                           {name}
                         </span>
@@ -228,7 +228,7 @@ export function TaskWorkspace({
                       {currentContext.latestTranscript.map((snippet, index) => (
                         <div
                           key={`${index}-${snippet.slice(0, 16)}`}
-                          className="text-[10px] text-text-main border border-border-muted/20 rounded px-2 py-1"
+                          className="text-[10px] text-text-main border border-border-muted rounded px-2 py-1 bg-bg-elevated"
                         >
                           {snippet.length > 120 ? `${snippet.slice(0, 120)}...` : snippet}
                         </div>
@@ -240,7 +240,7 @@ export function TaskWorkspace({
             )}
           </div>
 
-          <div className="rounded-xl border border-border-muted/40 bg-bg-surface/40 p-3">
+          <div className="rounded-xl border border-border-muted bg-bg-surface p-3 shadow-sm">
             <div className="flex items-center justify-between gap-2 mb-2">
               <div className="text-[11px] font-semibold">执行时间线</div>
               <div className="flex items-center gap-1">
@@ -306,14 +306,14 @@ export function TaskWorkspace({
             )}
           </div>
 
-          <div className="rounded-xl border border-border-muted/40 bg-bg-surface/40 p-3">
+          <div className="rounded-xl border border-border-muted bg-bg-surface p-3 shadow-sm">
             <div className="text-[11px] font-semibold mb-2">运行分组（按 Run）</div>
             {groupedRunEvents.length === 0 ? (
               <div className="text-xs text-text-muted">当前筛选下暂无运行事件。</div>
             ) : (
               <div className="space-y-2">
                 {groupedRunEvents.map((group) => (
-                  <div key={group.runId} className="rounded-md border border-border-muted/30 bg-bg-base/30 p-2">
+                  <div key={group.runId} className="rounded-md border border-border-muted bg-bg-elevated p-2">
                     <div className="text-[10px] text-text-muted mb-1">
                       {group.runId} · {new Date(group.events[0]?.createdAt || 0).toLocaleTimeString()}
                     </div>
@@ -346,7 +346,7 @@ export function TaskWorkspace({
           </div>
         </div>
       ) : (
-        <div className="flex-1 min-h-0 bg-bg-base/20">
+        <div className="flex-1 min-h-0 bg-bg-base">
           <ChatPanel
             projectPath={projectPath}
             engines={engines}

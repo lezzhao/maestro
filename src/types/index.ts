@@ -16,6 +16,7 @@ export type EngineProfile = {
 
 export type EngineConfig = {
   id: string;
+  plugin_type: string;
   display_name: string;
   profiles?: Record<string, EngineProfile>;
   active_profile_id?: string;

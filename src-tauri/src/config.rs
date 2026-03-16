@@ -22,55 +22,23 @@ pub struct ProjectSection {
 pub struct EngineProfile {
     pub id: String,
     pub display_name: String,
-    pub command: String,
-    #[serde(default)]
-    pub model: String,
-    pub args: Vec<String>,
-    pub env: BTreeMap<String, String>,
-    pub supports_headless: bool,
-    pub headless_args: Vec<String>,
-    pub ready_signal: Option<String>,
-    #[serde(default = "default_execution_mode")]
-    pub execution_mode: String,
-    #[serde(default)]
-    pub api_provider: Option<String>,
-    #[serde(default)]
-    pub api_base_url: Option<String>,
-    #[serde(default)]
-    pub api_key: Option<String>,
+    #[serde(flatten)]
+    pub extra: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EngineConfig {
     pub id: String,
+    #[serde(default = "default_plugin_type")]
+    pub plugin_type: String,
     pub display_name: String,
+    pub icon: String,
     #[serde(default)]
     pub profiles: BTreeMap<String, EngineProfile>,
     #[serde(default)]
     pub active_profile_id: String,
-    #[serde(default)]
-    pub command: String,
-    #[serde(default)]
-    pub args: Vec<String>,
-    #[serde(default)]
-    pub env: BTreeMap<String, String>,
-    pub exit_command: String,
-    pub exit_timeout_ms: u64,
-    #[serde(default)]
-    pub supports_headless: bool,
-    #[serde(default)]
-    pub headless_args: Vec<String>,
-    #[serde(default)]
-    pub ready_signal: Option<String>,
-    #[serde(default = "default_execution_mode")]
-    pub execution_mode: String,
-    #[serde(default)]
-    pub api_provider: Option<String>,
-    #[serde(default)]
-    pub api_base_url: Option<String>,
-    #[serde(default)]
-    pub api_key: Option<String>,
-    pub icon: String,
+    #[serde(flatten)]
+    pub extra: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,41 +112,93 @@ impl Default for SpecSection {
     }
 }
 
+fn default_plugin_type() -> String {
+    "cli".to_string()
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         let mut engines = BTreeMap::new();
 
-        // Cursor Agent: 有自定义 args 和 headless_args
-        let mut cursor = EngineConfig::new(
-            "cursor", "Cursor Agent", "cursor", "ctrl-c",
-            true, vec!["agent".to_string(), "--print".to_string()], ">", "terminal-square",
+        engines.insert(
+            "cursor".to_string(),
+            EngineConfig::new(
+                "cursor",
+                "Cursor Agent",
+                "cursor",
+                "ctrl-c",
+                true,
+                vec!["agent".to_string(), "--print".to_string()],
+                ">",
+                "terminal-square",
+                "cli",
+                vec!["agent".to_string()],
+            ),
         );
-        // Cursor 默认 args 不是空的，需要覆盖
-        cursor.args = vec!["agent".to_string()];
-        if let Some(p) = cursor.profiles.get_mut("default") {
-            p.args = vec!["agent".to_string()];
-        }
-        engines.insert("cursor".to_string(), cursor);
 
-        engines.insert("claude".to_string(), EngineConfig::new(
-            "claude", "Claude Code", "claude", "/exit",
-            true, vec!["-p".to_string()], ">", "bot",
-        ));
+        engines.insert(
+            "claude".to_string(),
+            EngineConfig::new(
+                "claude",
+                "Claude Code",
+                "claude",
+                "/exit",
+                true,
+                vec!["-p".to_string()],
+                ">",
+                "bot",
+                "cli",
+                vec![],
+            ),
+        );
 
-        engines.insert("gemini".to_string(), EngineConfig::new(
-            "gemini", "Gemini CLI", "gemini", "/exit",
-            true, vec!["-p".to_string()], ">", "sparkles",
-        ));
+        engines.insert(
+            "gemini".to_string(),
+            EngineConfig::new(
+                "gemini",
+                "Gemini CLI",
+                "gemini",
+                "/exit",
+                true,
+                vec!["-p".to_string()],
+                ">",
+                "sparkles",
+                "cli",
+                vec![],
+            ),
+        );
 
-        engines.insert("opencode".to_string(), EngineConfig::new(
-            "opencode", "OpenCode", "opencode", "ctrl-c",
-            true, vec!["run".to_string()], ">", "code",
-        ));
+        engines.insert(
+            "opencode".to_string(),
+            EngineConfig::new(
+                "opencode",
+                "OpenCode",
+                "opencode",
+                "ctrl-c",
+                true,
+                vec!["run".to_string()],
+                ">",
+                "code",
+                "cli",
+                vec![],
+            ),
+        );
 
-        engines.insert("codex".to_string(), EngineConfig::new(
-            "codex", "Codex", "codex", "/exit",
-            true, vec!["exec".to_string()], ">", "zap",
-        ));
+        engines.insert(
+            "codex".to_string(),
+            EngineConfig::new(
+                "codex",
+                "Codex",
+                "codex",
+                "/exit",
+                true,
+                vec!["exec".to_string()],
+                ">",
+                "zap",
+                "cli",
+                vec![],
+            ),
+        );
 
         Self {
             app: AppSection::default(),
@@ -217,7 +237,10 @@ impl AppConfigState {
     }
 
     pub fn get(&self) -> AppConfig {
-        self.inner.read().expect("config read lock poisoned").clone()
+        self.inner
+            .read()
+            .expect("config read lock poisoned")
+            .clone()
     }
 
     pub fn set(&self, next: AppConfig) {
@@ -226,6 +249,7 @@ impl AppConfigState {
 }
 
 impl EngineConfig {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: &str,
         display_name: &str,
@@ -235,43 +259,43 @@ impl EngineConfig {
         headless_args: Vec<String>,
         ready_signal: &str,
         icon: &str,
+        plugin_type: &str,
+        override_args: Vec<String>,
     ) -> Self {
+        let mut extra = serde_json::Map::new();
+        extra.insert("command".to_string(), serde_json::json!(command));
+        extra.insert("args".to_string(), serde_json::json!(override_args));
+        extra.insert("env".to_string(), serde_json::json!(serde_json::Map::new()));
+        extra.insert("exit_command".to_string(), serde_json::json!(exit_command));
+        extra.insert("exit_timeout_ms".to_string(), serde_json::json!(3000));
+        extra.insert(
+            "supports_headless".to_string(),
+            serde_json::json!(supports_headless),
+        );
+        extra.insert(
+            "headless_args".to_string(),
+            serde_json::json!(headless_args),
+        );
+        extra.insert("ready_signal".to_string(), serde_json::json!(ready_signal));
+        extra.insert("execution_mode".to_string(), serde_json::json!("cli"));
+
+        let profile_extra = extra.clone();
         let profile = EngineProfile {
             id: "default".to_string(),
             display_name: "Default".to_string(),
-            command: command.to_string(),
-            model: String::new(),
-            args: vec![],
-            env: BTreeMap::new(),
-            supports_headless,
-            headless_args: headless_args.clone(),
-            ready_signal: Some(ready_signal.to_string()),
-            execution_mode: default_execution_mode(),
-            api_provider: None,
-            api_base_url: None,
-            api_key: None,
+            extra: serde_json::Value::Object(profile_extra),
         };
         let mut profiles = BTreeMap::new();
         profiles.insert("default".to_string(), profile);
 
         Self {
             id: id.to_string(),
+            plugin_type: plugin_type.to_string(),
             display_name: display_name.to_string(),
+            icon: icon.to_string(),
             profiles,
             active_profile_id: "default".to_string(),
-            command: command.to_string(),
-            args: vec![],
-            env: BTreeMap::new(),
-            exit_command: exit_command.to_string(),
-            exit_timeout_ms: 3000,
-            supports_headless,
-            headless_args,
-            ready_signal: Some(ready_signal.to_string()),
-            execution_mode: default_execution_mode(),
-            api_provider: None,
-            api_base_url: None,
-            api_key: None,
-            icon: icon.to_string(),
+            extra: serde_json::Value::Object(extra),
         }
     }
 
@@ -285,54 +309,116 @@ impl EngineConfig {
         EngineProfile {
             id: "default".to_string(),
             display_name: "Default".to_string(),
-            command: self.command.clone(),
-            model: String::new(),
-            args: self.args.clone(),
-            env: self.env.clone(),
-            supports_headless: self.supports_headless,
-            headless_args: self.headless_args.clone(),
-            ready_signal: self.ready_signal.clone(),
-            execution_mode: self.execution_mode.clone(),
-            api_provider: self.api_provider.clone(),
-            api_base_url: self.api_base_url.clone(),
-            api_key: self.api_key.clone(),
+            extra: self.extra.clone(),
         }
     }
-}
 
-fn is_valid_execution_mode(mode: &str) -> bool {
-    matches!(mode, "cli" | "api")
-}
+    pub fn exit_command(&self) -> String {
+        self.extra
+            .get("exit_command")
+            .and_then(|v| v.as_str())
+            .unwrap_or("ctrl-c")
+            .to_string()
+    }
 
-fn normalize_execution_mode(mode: &str) -> String {
-    if is_valid_execution_mode(mode) {
-        mode.to_string()
-    } else {
-        default_execution_mode()
+    pub fn exit_timeout_ms(&self) -> u64 {
+        self.extra
+            .get("exit_timeout_ms")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(3000)
     }
 }
 
-fn builtin_headless_defaults(engine_id: &str) -> Option<(bool, Vec<String>)> {
-    match engine_id {
-        "cursor" => Some((true, vec!["agent".to_string(), "--print".to_string()])),
-        "claude" => Some((true, vec!["-p".to_string()])),
-        "gemini" => Some((true, vec!["-p".to_string()])),
-        "opencode" => Some((true, vec!["run".to_string()])),
-        "codex" => Some((true, vec!["exec".to_string()])),
-        _ => None,
+impl EngineProfile {
+    pub fn command(&self) -> String {
+        self.extra
+            .get("command")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    }
+
+    pub fn args(&self) -> Vec<String> {
+        self.extra
+            .get("args")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn env(&self) -> BTreeMap<String, String> {
+        self.extra
+            .get("env")
+            .and_then(|v| v.as_object())
+            .map(|o| {
+                o.iter()
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn model(&self) -> String {
+        self.extra
+            .get("model")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    }
+
+    pub fn supports_headless(&self) -> bool {
+        self.extra
+            .get("supports_headless")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    }
+
+    pub fn headless_args(&self) -> Vec<String> {
+        self.extra
+            .get("headless_args")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn ready_signal(&self) -> Option<String> {
+        self.extra
+            .get("ready_signal")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+    }
+
+    pub fn api_provider(&self) -> Option<String> {
+        self.extra
+            .get("api_provider")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+    }
+
+    pub fn api_base_url(&self) -> Option<String> {
+        self.extra
+            .get("api_base_url")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+    }
+
+    pub fn api_key(&self) -> Option<String> {
+        self.extra
+            .get("api_key")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
     }
 }
 
+// Minimal migration pass: ensures we have a default profile and execution_mode.
 fn migrate_engine_profiles(config: &mut AppConfig) {
-    for (engine_id, engine) in config.engines.iter_mut() {
-        engine.execution_mode = normalize_execution_mode(&engine.execution_mode);
-        if let Some((supports_headless, default_headless_args)) =
-            builtin_headless_defaults(engine_id.as_str())
-        {
-            engine.supports_headless = supports_headless;
-            if engine.headless_args.is_empty() {
-                engine.headless_args = default_headless_args;
-            }
+    for (_, engine) in config.engines.iter_mut() {
+        if !engine.extra.is_object() {
+            engine.extra = serde_json::Value::Object(serde_json::Map::new());
         }
         if engine.profiles.is_empty() {
             let profile_id = "default".to_string();
@@ -341,52 +427,10 @@ fn migrate_engine_profiles(config: &mut AppConfig) {
                 EngineProfile {
                     id: profile_id.clone(),
                     display_name: "Default".to_string(),
-                    command: engine.command.clone(),
-                    model: String::new(),
-                    args: engine.args.clone(),
-                    env: engine.env.clone(),
-                    supports_headless: engine.supports_headless,
-                    headless_args: engine.headless_args.clone(),
-                    ready_signal: engine.ready_signal.clone(),
-                    execution_mode: engine.execution_mode.clone(),
-                    api_provider: engine.api_provider.clone(),
-                    api_base_url: engine.api_base_url.clone(),
-                    api_key: engine.api_key.clone(),
+                    extra: engine.extra.clone(),
                 },
             );
             engine.active_profile_id = profile_id;
-        }
-        for (profile_id, profile) in engine.profiles.iter_mut() {
-            if profile.id.trim().is_empty() {
-                profile.id = profile_id.clone();
-            }
-            if profile.display_name.trim().is_empty() {
-                profile.display_name = profile_id.clone();
-            }
-            if profile.command.trim().is_empty() {
-                profile.command = engine.command.clone();
-            }
-            if profile.args.is_empty() && !engine.args.is_empty() {
-                profile.args = engine.args.clone();
-            }
-            if profile.env.is_empty() && !engine.env.is_empty() {
-                profile.env = engine.env.clone();
-            }
-            if profile.ready_signal.is_none() && engine.ready_signal.is_some() {
-                profile.ready_signal = engine.ready_signal.clone();
-            }
-            profile.execution_mode = normalize_execution_mode(&profile.execution_mode);
-
-            if let Some((supports_headless, default_headless_args)) =
-                builtin_headless_defaults(engine_id.as_str())
-            {
-                profile.supports_headless = supports_headless;
-                if profile.headless_args.is_empty() {
-                    profile.headless_args = default_headless_args;
-                }
-            } else if profile.headless_args.is_empty() && !engine.headless_args.is_empty() {
-                profile.headless_args = engine.headless_args.clone();
-            }
         }
         if engine.active_profile_id.trim().is_empty()
             || !engine.profiles.contains_key(&engine.active_profile_id)
@@ -395,39 +439,27 @@ fn migrate_engine_profiles(config: &mut AppConfig) {
                 engine.active_profile_id = first_key;
             }
         }
+        // Sync active profile's extra back to engine's extra for easy access
         if let Some(active_profile) = engine.profiles.get(&engine.active_profile_id).cloned() {
-            engine.command = active_profile.command;
-            engine.args = active_profile.args;
-            engine.env = active_profile.env;
-            engine.supports_headless = active_profile.supports_headless;
-            engine.headless_args = active_profile.headless_args;
-            engine.ready_signal = active_profile.ready_signal;
-            engine.execution_mode = normalize_execution_mode(&active_profile.execution_mode);
-            engine.api_provider = active_profile.api_provider;
-            engine.api_base_url = active_profile.api_base_url;
-            engine.api_key = active_profile.api_key;
+            engine.extra = active_profile.extra;
         }
     }
-}
-
-fn default_execution_mode() -> String {
-    "cli".to_string()
 }
 
 fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app
         .path()
         .app_config_dir()
-        .map_err(|e| format!("failed to resolve app config dir: {e}"))?;
-    fs::create_dir_all(&dir).map_err(|e| format!("failed to create config dir: {e}"))?;
+        .map_err(|e| format!("failed to resolve app config dir: {}", e))?;
+    fs::create_dir_all(&dir).map_err(|e| format!("failed to create config dir: {}", e))?;
     Ok(dir.join("config.toml"))
 }
 
 pub fn write_config_to_disk(app: &AppHandle, config: &AppConfig) -> Result<(), String> {
     let path = config_path(app)?;
     let content =
-        toml::to_string_pretty(config).map_err(|e| format!("toml serialize failed: {e}"))?;
-    fs::write(path, content).map_err(|e| format!("failed to save config: {e}"))?;
+        toml::to_string_pretty(config).map_err(|e| format!("toml serialize failed: {}", e))?;
+    fs::write(path, content).map_err(|e| format!("failed to save config: {}", e))?;
     Ok(())
 }
 
@@ -435,22 +467,26 @@ pub fn write_config_to_disk(app: &AppHandle, config: &AppConfig) -> Result<(), S
 pub fn load_or_create_config(app: AppHandle) -> Result<AppConfig, String> {
     let path = config_path(&app)?;
     if path.exists() {
-        let raw = fs::read_to_string(&path).map_err(|e| format!("failed to read config: {e}"))?;
-        let mut config =
-            toml::from_str::<AppConfig>(&raw).map_err(|e| format!("failed to parse config.toml: {e}"))?;
+        let raw = fs::read_to_string(&path).map_err(|e| format!("failed to read config: {}", e))?;
+        let mut config = toml::from_str::<AppConfig>(&raw)
+            .map_err(|e| format!("failed to parse config.toml: {}", e))?;
         migrate_engine_profiles(&mut config);
         Ok(config)
     } else {
         let default = AppConfig::default();
-        let content =
-            toml::to_string_pretty(&default).map_err(|e| format!("toml serialize failed: {e}"))?;
-        fs::write(path, content).map_err(|e| format!("failed to write default config: {e}"))?;
+        let content = toml::to_string_pretty(&default)
+            .map_err(|e| format!("toml serialize failed: {}", e))?;
+        fs::write(path, content).map_err(|e| format!("failed to write default config: {}", e))?;
         Ok(default)
     }
 }
 
 #[command]
-pub fn save_config(app: AppHandle, config: AppConfig, state: tauri::State<'_, AppConfigState>) -> Result<(), String> {
+pub fn save_config(
+    app: AppHandle,
+    config: AppConfig,
+    state: tauri::State<'_, AppConfigState>,
+) -> Result<(), String> {
     let mut config = config;
     migrate_engine_profiles(&mut config);
     write_config_to_disk(&app, &config)?;

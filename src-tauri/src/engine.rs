@@ -1,14 +1,14 @@
 use crate::config::{write_config_to_disk, AppConfig, AppConfigState, EngineConfig, EngineProfile};
 use crate::pty::{resolve_exit_payload, wait_exit_status, PtyManagerState};
+use regex::Regex;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashSet};
-use regex::Regex;
 use std::process::Stdio;
-use tokio::io::AsyncReadExt;
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 use tauri::{command, AppHandle, State};
+use tokio::io::AsyncReadExt;
 use tokio::process::Command as TokioCommand;
 
 #[derive(Default)]
@@ -80,7 +80,8 @@ async fn cursor_status_check(profile_cmd: &str) -> StatusCheckResult {
     run_status_check_shell(
         &format!("{} agent status", shell_single_quote(profile_cmd)),
         8000,
-    ).await
+    )
+    .await
 }
 
 async fn run_status_check_shell(command_line: &str, timeout_ms: u64) -> StatusCheckResult {
@@ -274,10 +275,7 @@ fn builtin_models(engine_id: &str) -> Vec<String> {
             "claude-opus-4".to_string(),
             "claude-3-5-haiku".to_string(),
         ],
-        "gemini" => vec![
-            "gemini-2.5-pro".to_string(),
-            "gemini-2.5-flash".to_string(),
-        ],
+        "gemini" => vec!["gemini-2.5-pro".to_string(), "gemini-2.5-flash".to_string()],
         "codex" => vec!["gpt-5".to_string(), "gpt-5-mini".to_string()],
         "opencode" => vec!["gpt-5".to_string(), "claude-sonnet-4".to_string()],
         _ => vec![],
@@ -290,7 +288,9 @@ fn parse_models_from_text(text: &str) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
     for m in token_re.find_iter(text) {
-        let token = m.as_str().trim_matches(|c| c == '"' || c == '\'' || c == ',' || c == ';');
+        let token = m
+            .as_str()
+            .trim_matches(|c| c == '"' || c == '\'' || c == ',' || c == ';');
         if token.is_empty() {
             continue;
         }
@@ -447,32 +447,41 @@ pub async fn engine_preflight(
         .ok_or_else(|| format!("engine not found: {engine_id}"))?;
     let profile = engine.active_profile();
 
-    let command_exists = which::which(&profile.command).is_ok();
+    let command_exists = which::which(&profile.command()).is_ok();
     if !command_exists {
         return Ok(EnginePreflightResult {
             engine_id,
             profile_id: profile.id.clone(),
             command_exists: false,
             auth_ok: false,
-            supports_headless: profile.supports_headless,
-            notes: format!("command not found: {}", profile.command),
+            supports_headless: profile.supports_headless(),
+            notes: format!("command not found: {}", profile.command()),
         });
     }
 
     let auth_check = match engine.id.as_str() {
-        "cursor" => cursor_status_check(&profile.command).await,
-        "claude" => run_status_check_shell(
-            &format!("{} auth status", shell_single_quote(&profile.command)),
-            8000,
-        ).await,
-        "opencode" => run_status_check_shell(
-            &format!("{} auth", shell_single_quote(&profile.command)),
-            8000,
-        )
-        .await,
+        "cursor" => cursor_status_check(&profile.command()).await,
+        "claude" => {
+            run_status_check_shell(
+                &format!("{} auth status", shell_single_quote(&profile.command())),
+                8000,
+            )
+            .await
+        }
+        "opencode" => {
+            run_status_check_shell(
+                &format!("{} auth", shell_single_quote(&profile.command())),
+                8000,
+            )
+            .await
+        }
         "gemini" => {
             let probe = run_status_check_shell(
-                &format!("{} -p {}", shell_single_quote(&profile.command), shell_single_quote("ping")),
+                &format!(
+                    "{} -p {}",
+                    shell_single_quote(&profile.command()),
+                    shell_single_quote("ping")
+                ),
                 8000,
             )
             .await;
@@ -480,7 +489,7 @@ pub async fn engine_preflight(
                 probe
             } else {
                 let help_probe = run_status_check_shell(
-                    &format!("{} --help", shell_single_quote(&profile.command)),
+                    &format!("{} --help", shell_single_quote(&profile.command())),
                     5000,
                 )
                 .await;
@@ -496,7 +505,11 @@ pub async fn engine_preflight(
         }
         "codex" => {
             let probe = run_status_check_shell(
-                &format!("{} exec {}", shell_single_quote(&profile.command), shell_single_quote("ping")),
+                &format!(
+                    "{} exec {}",
+                    shell_single_quote(&profile.command()),
+                    shell_single_quote("ping")
+                ),
                 8000,
             )
             .await;
@@ -504,7 +517,7 @@ pub async fn engine_preflight(
                 probe
             } else {
                 let help_probe = run_status_check_shell(
-                    &format!("{} --help", shell_single_quote(&profile.command)),
+                    &format!("{} --help", shell_single_quote(&profile.command())),
                     5000,
                 )
                 .await;
@@ -518,11 +531,13 @@ pub async fn engine_preflight(
                 }
             }
         }
-        _ => run_status_check_shell(
-            &format!("{} --help", shell_single_quote(&profile.command)),
-            5000,
-        )
-        .await,
+        _ => {
+            run_status_check_shell(
+                &format!("{} --help", shell_single_quote(&profile.command())),
+                5000,
+            )
+            .await
+        }
     };
     let auth_ok = auth_check.ok;
 
@@ -534,10 +549,10 @@ pub async fn engine_preflight(
 
     Ok(EnginePreflightResult {
         engine_id,
-        profile_id: profile.id,
+        profile_id: profile.id.clone(),
         command_exists,
         auth_ok,
-        supports_headless: profile.supports_headless,
+        supports_headless: profile.supports_headless(),
         notes,
     })
 }
@@ -556,8 +571,8 @@ pub async fn engine_list_models(
 
     let mut models = Vec::new();
     let mut notes = String::new();
-    if which::which(&profile.command).is_ok() {
-        for cmd in model_list_commands(&engine.id, &profile.command) {
+    if which::which(&profile.command()).is_ok() {
+        for cmd in model_list_commands(&engine.id, &profile.command()) {
             let result = run_capture_shell(&cmd, 10_000).await;
             let parsed = parse_models_from_text(&format!("{}\n{}", result.stdout, result.stderr));
             if !parsed.is_empty() {
@@ -574,13 +589,13 @@ pub async fn engine_list_models(
             }
         }
     } else {
-        notes = format!("command not found: {}", profile.command);
+        notes = format!("command not found: {}", profile.command());
     }
 
     if models.is_empty() {
         models = builtin_models(&engine.id);
-        if !profile.model.trim().is_empty() && !models.iter().any(|m| m == &profile.model) {
-            models.insert(0, profile.model.clone());
+        if !profile.model().trim().is_empty() && !models.iter().any(|m| m == &profile.model()) {
+            models.insert(0, profile.model().clone());
         }
         return Ok(EngineModelListResult {
             engine_id,
@@ -595,8 +610,8 @@ pub async fn engine_list_models(
         });
     }
 
-    if !profile.model.trim().is_empty() && !models.iter().any(|m| m == &profile.model) {
-        models.insert(0, profile.model.clone());
+    if !profile.model().trim().is_empty() && !models.iter().any(|m| m == &profile.model()) {
+        models.insert(0, profile.model().clone());
     }
     Ok(EngineModelListResult {
         engine_id,
@@ -623,10 +638,10 @@ pub fn engine_switch_session(
 
     let mut killed = false;
     if let Some(id) = session_id {
-        let payload = resolve_exit_payload(&engine.exit_command);
+        let payload = resolve_exit_payload(&engine.exit_command());
         let _ = pty_state.write_to_session(Some(id), &payload);
         let start = Instant::now();
-        while start.elapsed() < Duration::from_millis(engine.exit_timeout_ms) {
+        while start.elapsed() < Duration::from_millis(engine.exit_timeout_ms()) {
             if wait_exit_status(&pty_state, id).is_some() {
                 let _ = pty_state.kill_session(id);
                 killed = true;

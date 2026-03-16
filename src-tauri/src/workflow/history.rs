@@ -10,7 +10,9 @@ async fn history_root_dir(app: &AppHandle) -> Result<PathBuf, String> {
         .app_config_dir()
         .map_err(|e| format!("resolve app config dir failed: {e}"))?;
     dir.push("engine-history");
-    tokio::fs::create_dir_all(&dir).await.map_err(|e| format!("create history dir failed: {e}"))?;
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(|e| format!("create history dir failed: {e}"))?;
     Ok(dir)
 }
 
@@ -18,18 +20,25 @@ async fn history_index_dir(app: &AppHandle, engine_id: &str) -> Result<PathBuf, 
     let mut dir = history_root_dir(app).await?;
     dir.push("index");
     dir.push(sanitize_file_stem(engine_id));
-    tokio::fs::create_dir_all(&dir).await.map_err(|e| format!("create history index dir failed: {e}"))?;
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(|e| format!("create history index dir failed: {e}"))?;
     Ok(dir)
 }
 
 async fn history_detail_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let mut dir = history_root_dir(app).await?;
     dir.push("details");
-    tokio::fs::create_dir_all(&dir).await.map_err(|e| format!("create history detail dir failed: {e}"))?;
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(|e| format!("create history detail dir failed: {e}"))?;
     Ok(dir)
 }
 
-async fn resolve_history_detail_path(app: &AppHandle, detail_path: &str) -> Result<PathBuf, String> {
+async fn resolve_history_detail_path(
+    app: &AppHandle,
+    detail_path: &str,
+) -> Result<PathBuf, String> {
     let root = history_root_dir(app).await?;
     let base = tokio::fs::canonicalize(&root)
         .await
@@ -81,9 +90,11 @@ pub(crate) async fn persist_engine_history(
         prompt: prompt.to_string(),
         output: step.output.clone(),
     };
-    let detail_text =
-        serde_json::to_string_pretty(&detail).map_err(|e| format!("serialize history detail failed: {e}"))?;
-    tokio::fs::write(&detail_path, detail_text).await.map_err(|e| format!("write history detail failed: {e}"))?;
+    let detail_text = serde_json::to_string_pretty(&detail)
+        .map_err(|e| format!("serialize history detail failed: {e}"))?;
+    tokio::fs::write(&detail_path, detail_text)
+        .await
+        .map_err(|e| format!("write history detail failed: {e}"))?;
 
     let mut entry_path = history_index_dir(app, engine_id).await?;
     entry_path.push(format!("{id}.json"));
@@ -102,9 +113,11 @@ pub(crate) async fn persist_engine_history(
         created_ts: ts,
         detail_path: detail_path.display().to_string(),
     };
-    let entry_text =
-        serde_json::to_string_pretty(&entry).map_err(|e| format!("serialize history entry failed: {e}"))?;
-    tokio::fs::write(&entry_path, entry_text).await.map_err(|e| format!("write history entry failed: {e}"))?;
+    let entry_text = serde_json::to_string_pretty(&entry)
+        .map_err(|e| format!("serialize history entry failed: {e}"))?;
+    tokio::fs::write(&entry_path, entry_text)
+        .await
+        .map_err(|e| format!("write history entry failed: {e}"))?;
     Ok(())
 }
 
@@ -138,8 +151,14 @@ pub async fn workflow_list_engine_history(
             engine_dirs.push(dir);
         }
     } else {
-        let mut read_dir = tokio::fs::read_dir(&root).await.map_err(|e| format!("read history index root failed: {e}"))?;
-        while let Some(item) = read_dir.next_entry().await.map_err(|e| format!("read history engine dir failed: {e}"))? {
+        let mut read_dir = tokio::fs::read_dir(&root)
+            .await
+            .map_err(|e| format!("read history index root failed: {e}"))?;
+        while let Some(item) = read_dir
+            .next_entry()
+            .await
+            .map_err(|e| format!("read history engine dir failed: {e}"))?
+        {
             if item.path().is_dir() {
                 engine_dirs.push(item.path());
             }
@@ -147,14 +166,21 @@ pub async fn workflow_list_engine_history(
     }
 
     for dir in engine_dirs {
-        let mut read_dir = tokio::fs::read_dir(&dir).await.map_err(|e| format!("read history index dir failed: {e}"))?;
-        while let Some(item) = read_dir.next_entry().await.map_err(|e| format!("read history index item failed: {e}"))? {
+        let mut read_dir = tokio::fs::read_dir(&dir)
+            .await
+            .map_err(|e| format!("read history index dir failed: {e}"))?;
+        while let Some(item) = read_dir
+            .next_entry()
+            .await
+            .map_err(|e| format!("read history index item failed: {e}"))?
+        {
             let path = item.path();
             if path.extension().and_then(|s| s.to_str()) != Some("json") {
                 continue;
             }
-            let text =
-                tokio::fs::read_to_string(&path).await.map_err(|e| format!("read history entry failed: {e}"))?;
+            let text = tokio::fs::read_to_string(&path)
+                .await
+                .map_err(|e| format!("read history entry failed: {e}"))?;
             let entry: EngineHistoryEntry = serde_json::from_str(&text)
                 .map_err(|e| format!("parse history entry failed: {e}"))?;
             entries.push(entry);
@@ -187,7 +213,9 @@ pub async fn workflow_get_engine_history_detail(
     detail_path: String,
 ) -> Result<EngineHistoryDetail, String> {
     let canonical = resolve_history_detail_path(&app, &detail_path).await?;
-    let text = tokio::fs::read_to_string(&canonical).await.map_err(|e| format!("read history detail failed: {e}"))?;
+    let text = tokio::fs::read_to_string(&canonical)
+        .await
+        .map_err(|e| format!("read history detail failed: {e}"))?;
     serde_json::from_str::<EngineHistoryDetail>(&text)
         .map_err(|e| format!("parse history detail failed: {e}"))
 }

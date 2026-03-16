@@ -32,12 +32,10 @@ pub struct UnifiedRunRecord {
 }
 
 pub fn current_time_ms() -> Result<i64, String> {
-    Ok(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|e| format!("read system time failed: {e}"))?
-            .as_millis() as i64,
-    )
+    Ok(std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("read system time failed: {e}"))?
+        .as_millis() as i64)
 }
 
 pub fn resolve_root_dir_from_project_path(project_path: &str) -> Result<PathBuf, String> {
@@ -65,7 +63,8 @@ pub fn append_run_record(root: &PathBuf, record: &UnifiedRunRecord) -> Result<()
         .append(true)
         .open(&path)
         .map_err(|e| format!("open run record file failed: {e}"))?;
-    let text = serde_json::to_string(record).map_err(|e| format!("serialize run record failed: {e}"))?;
+    let text =
+        serde_json::to_string(record).map_err(|e| format!("serialize run record failed: {e}"))?;
     file.write_all(format!("{text}\n").as_bytes())
         .map_err(|e| format!("write run record failed: {e}"))?;
     Ok(())
