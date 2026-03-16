@@ -276,8 +276,27 @@ async fn execute_workflow_step(
         args = with_model_args(args, &step.engine, &profile.model());
         args.push(step.prompt.clone());
 
+        let full_command_str = format!("{} {}", profile.command(), args.join(" "));
+        if let Err(reason) = crate::plugin_engine::action_guard::ActionGuard::unwrap_default().check_command(&full_command_str) {
+            return Ok((WorkflowStepResult {
+                engine: step.engine.clone(),
+                mode: "headless".to_string(),
+                fallback: false,
+                success: false,
+                completion_matched: false,
+                failure_reason: Some("action-guard".to_string()),
+                duration_ms: step_started.elapsed().as_millis(),
+                output: format!("Blocked by ActionGuard: {reason}"),
+                verification: None,
+            }, profile.id));
+        }
+
         let mut command = tokio::process::Command::new(&profile.command());
-        command.args(args);
+        #[cfg(unix)]
+        {
+            command.process_group(0);
+        }
+        command.args(args.clone());
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
         if !cfg.project.path.trim().is_empty() {
             command.current_dir(&cfg.project.path);
@@ -363,6 +382,22 @@ async fn execute_workflow_step(
             },
         }
     } else {
+        let args_for_pty = with_model_args(profile.args().clone(), &step.engine, &profile.model());
+        let full_command_str = format!("{} {} {}", profile.command(), args_for_pty.join(" "), step.prompt);
+        if let Err(reason) = crate::plugin_engine::action_guard::ActionGuard::unwrap_default().check_command(&full_command_str) {
+            return Ok((WorkflowStepResult {
+                engine: step.engine.clone(),
+                mode: "pty-fallback".to_string(),
+                fallback: true,
+                success: false,
+                completion_matched: false,
+                failure_reason: Some("action-guard".to_string()),
+                duration_ms: step_started.elapsed().as_millis(),
+                output: format!("Blocked by ActionGuard: {reason}"),
+                verification: None,
+            }, profile.id));
+        }
+
         let output_buf = Arc::new(Mutex::new(String::new()));
         let output_buf_ch = Arc::clone(&output_buf);
         let on_data = Channel::new(move |chunk: InvokeResponseBody| {
@@ -381,7 +416,7 @@ async fn execute_workflow_step(
 
         let spawn = pty_state.spawn_session(
             profile.command().clone(),
-            with_model_args(profile.args().clone(), &step.engine, &profile.model()),
+            args_for_pty,
             if cfg.project.path.trim().is_empty() {
                 None
             } else {

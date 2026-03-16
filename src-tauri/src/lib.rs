@@ -1,6 +1,7 @@
 mod api_provider;
 mod cli_state;
 pub mod config;
+pub mod core;
 mod engine;
 pub mod engines;
 mod headless;

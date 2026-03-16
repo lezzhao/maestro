@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::RwLock;
-use tauri::{command, AppHandle, Manager};
+use tauri::{command, AppHandle};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSection {
@@ -446,13 +446,33 @@ fn migrate_engine_profiles(config: &mut AppConfig) {
     }
 }
 
-fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| format!("failed to resolve app config dir: {}", e))?;
-    fs::create_dir_all(&dir).map_err(|e| format!("failed to create config dir: {}", e))?;
+fn config_path_core() -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Could not find home directory".to_string())?;
+    let dir = home.join(".maestro");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("failed to create config dir: {}", e))?;
     Ok(dir.join("config.toml"))
+}
+
+fn config_path(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    config_path_core()
+}
+
+pub fn load_or_create_config_headless() -> Result<AppConfig, String> {
+    let path = config_path_core()?;
+    if path.exists() {
+        let raw = std::fs::read_to_string(&path)
+            .map_err(|e| format!("failed to read config: {}", e))?;
+        let mut config = toml::from_str::<AppConfig>(&raw)
+            .map_err(|e| format!("failed to parse config.toml: {}", e))?;
+        migrate_engine_profiles(&mut config);
+        Ok(config)
+    } else {
+        let default = AppConfig::default();
+        let content = toml::to_string_pretty(&default)
+            .map_err(|e| format!("toml serialize failed: {}", e))?;
+        std::fs::write(&path, content).map_err(|e| format!("failed to write default config: {}", e))?;
+        Ok(default)
+    }
 }
 
 pub fn write_config_to_disk(app: &AppHandle, config: &AppConfig) -> Result<(), String> {

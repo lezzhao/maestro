@@ -347,7 +347,18 @@ pub async fn chat_execute_cli(
     }
     args.push(request.prompt.clone());
 
+    let full_command_str = format!("{} {}", profile.command(), args.join(" "));
+    if let Err(reason) = crate::plugin_engine::action_guard::ActionGuard::unwrap_default().check_command(&full_command_str) {
+        return Err(format!("Blocked by ActionGuard: {reason}"));
+    }
+
     let mut command = tokio::process::Command::new(&profile.command());
+    // Assign to a new process group or current daemon's process group so child processes can be managed
+    // In Tauri desktop apps, this isolates the process tree slightly. For daemons, this is very important.
+    #[cfg(unix)]
+    {
+        command.process_group(0);
+    }
     command.args(args);
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
     if !cfg.project.path.trim().is_empty() {

@@ -1,5 +1,51 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::time::Duration;
+use tokio::time::sleep;
+
+pub async fn ensure_daemon_running() -> Result<(), String> {
+    if ping_daemon().await {
+        return Ok(());
+    }
+
+    // Spawn detached daemon
+    let exe = std::env::current_exe().map_err(|e| format!("failed to get current exe: {}", e))?;
+    std::process::Command::new(exe)
+        .arg("cli")
+        .arg("daemon")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("failed to spawn daemon: {}", e))?;
+
+    // Wait until it responds to ping
+    for _ in 0..30 {
+        sleep(Duration::from_millis(100)).await;
+        if ping_daemon().await {
+            return Ok(());
+        }
+    }
+
+    Err("Daemon did not start in time".to_string())
+}
+
+async fn ping_daemon() -> bool {
+    #[cfg(unix)]
+    {
+        let msg = IpcMessage {
+            method: "ping".to_string(),
+            payload: serde_json::Value::Null,
+            id: None,
+        };
+        unix::send_request(msg).await.is_ok()
+    }
+    #[cfg(not(unix))]
+    {
+        // For non-unix, assume true or implement windows named pipes
+        true
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IpcMessage {
