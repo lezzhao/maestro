@@ -2,13 +2,12 @@ use super::types::*;
 use super::util::{sanitize_file_stem, summarize_output};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{command, AppHandle, Manager};
+use tauri::{command, AppHandle};
 
-async fn history_root_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let mut dir: PathBuf = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| format!("resolve app config dir failed: {e}"))?;
+async fn history_root_dir() -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Could not find home directory".to_string())?;
+    let mut dir = home;
+    dir.push(".maestro");
     dir.push("engine-history");
     tokio::fs::create_dir_all(&dir)
         .await
@@ -16,8 +15,8 @@ async fn history_root_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-async fn history_index_dir(app: &AppHandle, engine_id: &str) -> Result<PathBuf, String> {
-    let mut dir = history_root_dir(app).await?;
+async fn history_index_dir(engine_id: &str) -> Result<PathBuf, String> {
+    let mut dir = history_root_dir().await?;
     dir.push("index");
     dir.push(sanitize_file_stem(engine_id));
     tokio::fs::create_dir_all(&dir)
@@ -26,8 +25,8 @@ async fn history_index_dir(app: &AppHandle, engine_id: &str) -> Result<PathBuf, 
     Ok(dir)
 }
 
-async fn history_detail_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let mut dir = history_root_dir(app).await?;
+async fn history_detail_dir() -> Result<PathBuf, String> {
+    let mut dir = history_root_dir().await?;
     dir.push("details");
     tokio::fs::create_dir_all(&dir)
         .await
@@ -36,10 +35,9 @@ async fn history_detail_dir(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 async fn resolve_history_detail_path(
-    app: &AppHandle,
     detail_path: &str,
 ) -> Result<PathBuf, String> {
-    let root = history_root_dir(app).await?;
+    let root = history_root_dir().await?;
     let base = tokio::fs::canonicalize(&root)
         .await
         .map_err(|e| format!("canonicalize history root failed: {e}"))?;
@@ -54,7 +52,6 @@ async fn resolve_history_detail_path(
 }
 
 pub(crate) async fn persist_engine_history(
-    app: &AppHandle,
     engine_id: &str,
     profile_id: &str,
     workflow_name: &str,
@@ -77,7 +74,7 @@ pub(crate) async fn persist_engine_history(
         sanitize_file_stem(&format!("{engine_id}-{step_index}"))
     );
 
-    let mut detail_path = history_detail_dir(app).await?;
+    let mut detail_path = history_detail_dir().await?;
     detail_path.push(format!("{id}.json"));
     let detail = EngineHistoryDetail {
         id: id.clone(),
@@ -96,7 +93,7 @@ pub(crate) async fn persist_engine_history(
         .await
         .map_err(|e| format!("write history detail failed: {e}"))?;
 
-    let mut entry_path = history_index_dir(app, engine_id).await?;
+    let mut entry_path = history_index_dir(engine_id).await?;
     entry_path.push(format!("{id}.json"));
     let entry = EngineHistoryEntry {
         id,
@@ -123,7 +120,7 @@ pub(crate) async fn persist_engine_history(
 
 #[command]
 pub async fn workflow_list_engine_history(
-    app: AppHandle,
+    _app: AppHandle,
     engine_id: Option<String>,
     page: Option<usize>,
     page_size: Option<usize>,
@@ -132,7 +129,7 @@ pub async fn workflow_list_engine_history(
     let page_size = page_size.unwrap_or(20).clamp(1, 100);
     let mut entries = Vec::new();
 
-    let mut root = history_root_dir(&app).await?;
+    let mut root = history_root_dir().await?;
     root.push("index");
     if !root.exists() {
         return Ok(EngineHistoryPage {
@@ -209,10 +206,10 @@ pub async fn workflow_list_engine_history(
 
 #[command]
 pub async fn workflow_get_engine_history_detail(
-    app: AppHandle,
+    _app: AppHandle,
     detail_path: String,
 ) -> Result<EngineHistoryDetail, String> {
-    let canonical = resolve_history_detail_path(&app, &detail_path).await?;
+    let canonical = resolve_history_detail_path(&detail_path).await?;
     let text = tokio::fs::read_to_string(&canonical)
         .await
         .map_err(|e| format!("read history detail failed: {e}"))?;

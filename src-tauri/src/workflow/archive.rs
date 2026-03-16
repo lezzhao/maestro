@@ -4,10 +4,9 @@ use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{command, AppHandle, Manager};
+use tauri::{command, AppHandle};
 
 pub(crate) fn save_archive(
-    app: &AppHandle,
     request: &WorkflowRunRequest,
     result: &WorkflowRunResult,
 ) -> Result<String, String> {
@@ -17,7 +16,7 @@ pub(crate) fn save_archive(
         result: &'a WorkflowRunResult,
     }
 
-    let dir = archive_dir(app)?;
+    let dir = archive_dir()?;
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -38,18 +37,17 @@ pub(crate) fn save_archive(
     Ok(path.display().to_string())
 }
 
-fn archive_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let mut dir: PathBuf = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| format!("resolve app config dir failed: {e}"))?;
+fn archive_dir() -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Could not find home directory".to_string())?;
+    let mut dir = home;
+    dir.push(".maestro");
     dir.push("workflow-archives");
     fs::create_dir_all(&dir).map_err(|e| format!("create archive dir failed: {e}"))?;
     Ok(dir)
 }
 
-fn resolve_archive_path(app: &AppHandle, archive_path: &str) -> Result<PathBuf, String> {
-    let base = archive_dir(app)?
+fn resolve_archive_path(archive_path: &str) -> Result<PathBuf, String> {
+    let base = archive_dir()?
         .canonicalize()
         .map_err(|e| format!("canonicalize archive dir failed: {e}"))?;
     let requested = PathBuf::from(archive_path);
@@ -63,8 +61,8 @@ fn resolve_archive_path(app: &AppHandle, archive_path: &str) -> Result<PathBuf, 
 }
 
 #[command]
-pub async fn workflow_list_archives(app: AppHandle) -> Result<Vec<WorkflowArchiveEntry>, String> {
-    let dir = archive_dir(&app)?;
+pub async fn workflow_list_archives(_app: AppHandle) -> Result<Vec<WorkflowArchiveEntry>, String> {
+    let dir = archive_dir()?;
     let mut read_dir = tokio::fs::read_dir(&dir)
         .await
         .map_err(|e| format!("read archive dir failed: {e}"))?;
@@ -163,10 +161,10 @@ pub async fn workflow_list_archives(app: AppHandle) -> Result<Vec<WorkflowArchiv
 
 #[command]
 pub async fn workflow_get_archive(
-    app: AppHandle,
+    _app: AppHandle,
     archive_path: String,
 ) -> Result<WorkflowArchiveDetail, String> {
-    let canonical = resolve_archive_path(&app, &archive_path)?;
+    let canonical = resolve_archive_path(&archive_path)?;
     let text = tokio::fs::read_to_string(&canonical)
         .await
         .map_err(|e| format!("read archive failed: {e}"))?;
@@ -294,10 +292,10 @@ pub async fn workflow_get_archive(
 
 #[command]
 pub async fn workflow_get_full_archive(
-    app: AppHandle,
+    _app: AppHandle,
     archive_path: String,
 ) -> Result<serde_json::Value, String> {
-    let canonical = resolve_archive_path(&app, &archive_path)?;
+    let canonical = resolve_archive_path(&archive_path)?;
     let text = fs::read_to_string(&canonical).map_err(|e| format!("read archive failed: {e}"))?;
     serde_json::from_str::<serde_json::Value>(&text)
         .map_err(|e| format!("parse archive json failed: {e}"))
@@ -305,11 +303,11 @@ pub async fn workflow_get_full_archive(
 
 #[command]
 pub async fn workflow_export_archives(
-    app: AppHandle,
+    _app: AppHandle,
     entries: Vec<WorkflowArchiveEntry>,
 ) -> Result<WorkflowArchiveExportResult, String> {
     let count = entries.len();
-    let mut dir = archive_dir(&app)?;
+    let mut dir = archive_dir()?;
     dir.push("exports");
     fs::create_dir_all(&dir).map_err(|e| format!("create export dir failed: {e}"))?;
 
