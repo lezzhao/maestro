@@ -7,6 +7,8 @@ pub enum ExecutionMode {
     Headless,
     Api,
     Cli,
+    #[serde(rename = "workflow")]
+    Workflow,
 }
 
 impl ExecutionMode {
@@ -16,6 +18,7 @@ impl ExecutionMode {
             ExecutionMode::Headless => "headless",
             ExecutionMode::Api => "api",
             ExecutionMode::Cli => "cli",
+            ExecutionMode::Workflow => "workflow",
         }
     }
 }
@@ -120,6 +123,23 @@ impl Execution {
     pub fn cancel(&mut self) {
         self.status = ExecutionStatus::Cancelled;
         self.touch();
+    }
+
+    /// Complete with output and optional verification (for workflow/chat)
+    pub fn complete_with(
+        &mut self,
+        output_preview: impl Into<String>,
+        verification: Option<VerificationSummary>,
+    ) {
+        self.output_preview = output_preview.into();
+        self.verification = verification;
+        self.complete();
+    }
+
+    /// Fail with reason and optional output preview
+    pub fn fail_with(&mut self, reason: impl Into<String>, output_preview: impl Into<String>) {
+        self.output_preview = output_preview.into();
+        self.fail(reason.into());
     }
 
     fn touch(&mut self) {
