@@ -1,13 +1,16 @@
-use std::collections::HashMap;
+mod sse;
+
+use crate::core::events::StringStream;
 use crate::workflow::types::ChatApiMessage;
 use futures::StreamExt;
 use reqwest::Client;
 use serde_json::json;
-use crate::core::events::StringStream;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::oneshot;
+
+pub use sse::AnthropicEvent;
 
 pub trait ApiProvider: Send + Sync {
     fn id(&self) -> &str;
@@ -85,29 +88,12 @@ async fn stream_openai_compatible(
                     Some(Ok(bytes)) => {
                         let chunk = String::from_utf8_lossy(&bytes);
                         buffer.push_str(&chunk);
-                        while let Some(pos) = buffer.find('\n') {
-                            let line = buffer[..pos].to_string();
-                            buffer.drain(..=pos);
-                            let trimmed = line.trim();
-                            if !trimmed.starts_with("data:") {
-                                continue;
-                            }
-                            let payload = trimmed.trim_start_matches("data:").trim();
-                            if payload == "[DONE]" {
+                        while let Some((content, done)) = sse::parse_openai_line(&mut buffer) {
+                            if done {
                                 return Ok(());
                             }
-                            let value: serde_json::Value = match serde_json::from_str(payload) {
-                                Ok(v) => v,
-                                Err(_) => continue,
-                            };
-                            if let Some(text) = value.pointer("/choices/0/delta/content").and_then(|v| v.as_str()) {
-                                if !text.is_empty() {
-                                    let _ = on_data.send_string(text.to_string());
-                                }
-                            } else if let Some(text) = value.pointer("/choices/0/delta/content/0/text").and_then(|v| v.as_str()) {
-                                if !text.is_empty() {
-                                    let _ = on_data.send_string(text.to_string());
-                                }
+                            if let Some(text) = content {
+                                on_data.send_string(text)?;
                             }
                         }
                     }
@@ -120,38 +106,14 @@ async fn stream_openai_compatible(
 }
 
 fn flush_anthropic_event(
-    event_name: &str,
-    data_lines: &[String],
+    event: &AnthropicEvent,
     on_data: &Arc<dyn StringStream>,
 ) -> Result<bool, String> {
-    if event_name == "message_stop" {
+    if event.is_complete() {
         return Ok(true);
     }
-    if data_lines.is_empty() {
-        return Ok(false);
-    }
-    let payload = data_lines.join("\n");
-    let value: serde_json::Value =
-        serde_json::from_str(&payload).map_err(|e| format!("解析响应失败: {e}"))?;
-    if event_name == "content_block_delta" {
-        if let Some(text) = value.pointer("/delta/text").and_then(|v| v.as_str()) {
-            if !text.is_empty() {
-                let _ = on_data.send_string(text.to_string());
-            }
-        }
-    } else if event_name.is_empty() {
-        if let Some(event_type) = value.pointer("/type").and_then(|v| v.as_str()) {
-            if event_type == "message_stop" {
-                return Ok(true);
-            }
-            if event_type == "content_block_delta" {
-                if let Some(text) = value.pointer("/delta/text").and_then(|v| v.as_str()) {
-                    if !text.is_empty() {
-                        let _ = on_data.send_string(text.to_string());
-                    }
-                }
-            }
-        }
+    if let Some(text) = event.extract_content()? {
+        on_data.send_string(text)?;
     }
     Ok(false)
 }
@@ -204,27 +166,51 @@ async fn stream_anthropic(
                         while let Some(pos) = buffer.find('\n') {
                             let raw_line = buffer[..pos].to_string();
                             buffer.drain(..=pos);
-                            let line = raw_line.trim_end_matches('\r');
-                            if line.is_empty() {
-                                if flush_anthropic_event(&current_event, &current_data, on_data)? {
+                            if sse::parse_anthropic_line(&raw_line, &mut current_event, &mut current_data) {
+                                let event = AnthropicEvent {
+                                    event_type: std::mem::take(&mut current_event),
+                                    data_lines: std::mem::take(&mut current_data),
+                                };
+                                if flush_anthropic_event(&event, on_data)? {
                                     return Ok(());
                                 }
-                                current_event.clear();
-                                current_data.clear();
-                                continue;
-                            }
-                            if let Some(rest) = line.strip_prefix("event:") {
-                                current_event = rest.trim().to_string();
-                                continue;
-                            }
-                            if let Some(rest) = line.strip_prefix("data:") {
-                                current_data.push(rest.trim().to_string());
                             }
                         }
                     }
                     Some(Err(e)) => return Err(format!("读取流失败: {e}")),
                     None => {
-                        if flush_anthropic_event(&current_event, &current_data, on_data)? {
+                        // Process any remaining buffer (last chunk may lack trailing newline)
+                        while let Some(pos) = buffer.find('\n') {
+                            let raw_line = buffer[..pos].to_string();
+                            buffer.drain(..=pos);
+                            if sse::parse_anthropic_line(&raw_line, &mut current_event, &mut current_data) {
+                                let event = AnthropicEvent {
+                                    event_type: std::mem::take(&mut current_event),
+                                    data_lines: std::mem::take(&mut current_data),
+                                };
+                                if flush_anthropic_event(&event, on_data)? {
+                                    return Ok(());
+                                }
+                            }
+                        }
+                        // Handle last line without newline (e.g. "data: {...}")
+                        if !buffer.is_empty() {
+                            let raw_line = std::mem::take(&mut buffer);
+                            if sse::parse_anthropic_line(&raw_line, &mut current_event, &mut current_data) {
+                                let event = AnthropicEvent {
+                                    event_type: std::mem::take(&mut current_event),
+                                    data_lines: std::mem::take(&mut current_data),
+                                };
+                                if flush_anthropic_event(&event, on_data)? {
+                                    return Ok(());
+                                }
+                            }
+                        }
+                        let event = AnthropicEvent {
+                            event_type: std::mem::take(&mut current_event),
+                            data_lines: std::mem::take(&mut current_data),
+                        };
+                        if flush_anthropic_event(&event, on_data)? {
                             return Ok(());
                         }
                         return Ok(());
@@ -252,7 +238,9 @@ impl ApiProvider for OpenAiProvider {
         cancel_rx: &'a mut oneshot::Receiver<()>,
         on_data: &'a Arc<dyn StringStream>,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
-        Box::pin(stream_openai_compatible(client, base_url, api_key, model, messages, cancel_rx, on_data))
+        Box::pin(stream_openai_compatible(
+            client, base_url, api_key, model, messages, cancel_rx, on_data,
+        ))
     }
 }
 
@@ -273,18 +261,20 @@ impl ApiProvider for AnthropicProvider {
         cancel_rx: &'a mut oneshot::Receiver<()>,
         on_data: &'a Arc<dyn StringStream>,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
-        Box::pin(stream_anthropic(client, base_url, api_key, model, messages, cancel_rx, on_data))
+        Box::pin(stream_anthropic(
+            client, base_url, api_key, model, messages, cancel_rx, on_data,
+        ))
     }
 }
 
 pub struct ApiProviderRegistry {
-    providers: HashMap<String, Box<dyn ApiProvider>>,
+    providers: std::collections::HashMap<String, Box<dyn ApiProvider>>,
 }
 
 impl ApiProviderRegistry {
     pub fn new() -> Self {
         let mut registry = Self {
-            providers: HashMap::new(),
+            providers: std::collections::HashMap::new(),
         };
         registry.register(Box::new(AnthropicProvider));
         registry.register(Box::new(OpenAiProvider));
@@ -320,14 +310,15 @@ pub async fn stream_chat(
     }
     let client = Client::new();
     let registry = ApiProviderRegistry::new();
-    
-    // Map legacy names to internal IDs
+
     let internal_provider_id = match provider {
         "openai-compatible" => "openai",
         other => other,
     };
 
-    let p = registry.get(internal_provider_id).ok_or_else(|| format!("unsupported provider: {provider}"))?;
+    let p = registry
+        .get(internal_provider_id)
+        .ok_or_else(|| format!("unsupported provider: {provider}"))?;
     p.stream_chat(
         &client,
         base_url,
@@ -336,5 +327,6 @@ pub async fn stream_chat(
         messages,
         &mut cancel_rx,
         &on_data,
-    ).await
+    )
+    .await
 }
