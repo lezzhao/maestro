@@ -246,7 +246,12 @@ pub struct ChatApiRequest {
     pub engine_id: String,
     pub profile_id: Option<String>,
     pub task_id: Option<String>,
+    #[serde(default)]
+    pub message_ids: Vec<String>,
+    #[serde(default)]
     pub messages: Vec<ChatApiMessage>,
+    pub max_input_tokens: Option<usize>,
+    pub max_messages: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize)]

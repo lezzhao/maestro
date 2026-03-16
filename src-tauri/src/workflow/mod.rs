@@ -1,5 +1,6 @@
 pub mod archive;
 pub mod chat;
+pub mod context_manager;
 pub mod history;
 pub mod run;
 pub mod types;
