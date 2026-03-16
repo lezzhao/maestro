@@ -290,6 +290,12 @@ impl ApiProviderRegistry {
     }
 }
 
+/// Global provider registry (singleton) - avoids recreating on each stream_chat call.
+static PROVIDER_REGISTRY: once_cell::sync::Lazy<ApiProviderRegistry> =
+    once_cell::sync::Lazy::new(ApiProviderRegistry::new);
+
+const API_TIMEOUT_SECS: u64 = 120;
+
 pub async fn stream_chat(
     provider: &str,
     base_url: &str,
@@ -309,7 +315,7 @@ pub async fn stream_chat(
         return Err("API Base URL 未配置".to_string());
     }
     let client = Client::new();
-    let registry = ApiProviderRegistry::new();
+    let registry = &*PROVIDER_REGISTRY;
 
     let internal_provider_id = match provider {
         "openai-compatible" => "openai",
@@ -319,14 +325,24 @@ pub async fn stream_chat(
     let p = registry
         .get(internal_provider_id)
         .ok_or_else(|| format!("unsupported provider: {provider}"))?;
-    p.stream_chat(
-        &client,
-        base_url,
-        api_key,
-        model,
-        messages,
-        cancel_token,
-        &on_data,
+
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(API_TIMEOUT_SECS),
+        p.stream_chat(
+            &client,
+            base_url,
+            api_key,
+            model,
+            messages,
+            cancel_token,
+            &on_data,
+        ),
     )
-    .await
+    .await;
+
+    match result {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(e)) => Err(e),
+        Err(_) => Err(format!("API timeout after {}s", API_TIMEOUT_SECS)),
+    }
 }
