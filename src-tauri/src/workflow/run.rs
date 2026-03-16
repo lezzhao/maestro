@@ -2,10 +2,10 @@ use super::archive::save_archive;
 use super::history::persist_engine_history;
 use super::types::*;
 use super::util::*;
-use crate::config::AppConfigState;
+use crate::core::MaestroCore;
 use crate::engine::EngineRuntimeState;
 use crate::pty::PtyManagerState;
-use crate::core::execution::{Execution, ExecutionMode, ExecutionStatus};
+use crate::core::execution::{Execution, ExecutionMode};
 use crate::run_persistence::{
     append_run_record, current_time_ms, resolve_root_dir_from_project_path,
 };
@@ -532,17 +532,11 @@ async fn execute_workflow_step(
 pub async fn workflow_run_step(
     app: AppHandle,
     request: StepRunRequest,
-    runtime_state: State<'_, EngineRuntimeState>,
-    config_state: State<'_, AppConfigState>,
-    pty_state: State<'_, PtyManagerState>,
+    core_state: State<'_, MaestroCore>,
 ) -> Result<StepRunResult, String> {
-    workflow_run_step_core(
-        Arc::new(app.clone()),
-        request,
-        &runtime_state,
-        &config_state.get(),
-        &pty_state,
-    ).await
+    core_state
+        .workflow_run_step(Arc::new(app.clone()), request)
+        .await
 }
 
 pub async fn workflow_run_step_core(
@@ -610,17 +604,9 @@ pub async fn workflow_run_step_core(
 pub async fn workflow_run(
     app: AppHandle,
     request: WorkflowRunRequest,
-    runtime_state: State<'_, EngineRuntimeState>,
-    config_state: State<'_, AppConfigState>,
-    pty_state: State<'_, PtyManagerState>,
+    core_state: State<'_, MaestroCore>,
 ) -> Result<WorkflowRunResult, String> {
-    workflow_run_core(
-        Arc::new(app.clone()),
-        request,
-        &runtime_state,
-        &config_state.get(),
-        &pty_state,
-    ).await
+    core_state.workflow_run(Arc::new(app.clone()), request).await
 }
 
 pub async fn workflow_run_core(
@@ -635,6 +621,19 @@ pub async fn workflow_run_core(
     if total == 0 {
         return Err("workflow has no steps".to_string());
     }
+
+    // Create Execution at start - it becomes the single source of truth for this run
+    let now_ms = current_time_ms().unwrap_or_default();
+    let mut execution = Execution::new(
+        format!("workflow-{workflow_name}-{now_ms}"),
+        "workflow".to_string(),
+        ExecutionMode::Workflow,
+    );
+    execution.source = "workflow_run".to_string();
+    execution.task_id = request.task_id.clone().unwrap_or_default();
+    execution.cwd = cfg.project.path.clone();
+    execution.start();
+
     let mut used_fallback = false;
     let mut step_results = Vec::with_capacity(total);
 
@@ -711,41 +710,21 @@ pub async fn workflow_run_core(
     run_result.verification = merge_verification_summary(&run_result.step_results);
 
     run_result.archive_path = save_archive(&request, &run_result)?;
-    let workflow_name_for_record = run_result.workflow_name.clone();
-    if let Ok(root) = resolve_root_dir_from_project_path(&cfg.project.path) {
-        if let Ok(now_ms) = current_time_ms() {
-            let task_id = request.task_id.clone().unwrap_or_default();
-            let _ = append_run_record(
-                &root,
-                &Execution {
-                    id: format!("workflow-{workflow_name_for_record}-{now_ms}"),
-                    engine_id: "workflow".to_string(),
-                    task_id,
-                    source: "workflow_run".to_string(),
-                    mode: ExecutionMode::Api, // Or maybe Headless/Pty based on something, defaulting to Api for workflow
-                    status: if run_result.completed {
-                        ExecutionStatus::Completed
-                    } else {
-                        ExecutionStatus::Failed
-                    },
-                    command: String::new(),
-                    cwd: cfg.project.path.clone(),
-                    model: String::new(),
-                    created_at: now_ms,
-                    updated_at: now_ms,
-                    log_path: None,
-                    output_preview: run_result
-                        .step_results
-                        .last()
-                        .map(|item| item.output.chars().take(300).collect())
-                        .unwrap_or_default(),
-                    verification: run_result.verification.clone(),
-                    error: if run_result.completed { None } else { Some("workflow failed".to_string()) },
-                    result: None,
-                    native_ref: None,
-                },
-            );
-        }
+
+    // Finalize execution (single source of truth created at start)
+    let output_preview: String = run_result
+        .step_results
+        .last()
+        .map(|item| item.output.chars().take(300).collect())
+        .unwrap_or_default();
+    if run_result.completed {
+        execution.complete_with(output_preview, run_result.verification.clone());
+    } else {
+        execution.fail_with("workflow failed".to_string(), output_preview);
     }
+    if let Ok(root) = resolve_root_dir_from_project_path(&cfg.project.path) {
+        let _ = append_run_record(&root, &execution);
+    }
+
     Ok(run_result)
 }
