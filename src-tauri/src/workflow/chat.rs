@@ -2,6 +2,7 @@ use super::types::*;
 use super::util::{completion_matched, with_model_args};
 use crate::core::events::{ChannelStringStream, StringStream};
 use crate::config::{AppConfig, AppConfigState};
+use crate::core::error::CoreError;
 use crate::engine::EngineRuntimeState;
 use crate::headless::HeadlessProcessState;
 use crate::pty::{PtyManagerState, PtySessionInfo};
@@ -21,14 +22,14 @@ use tauri::{
 };
 use tokio::io::AsyncReadExt;
 
-async fn last_conversation_path(app: &AppHandle) -> Result<PathBuf, String> {
+async fn last_conversation_path(app: &AppHandle) -> Result<PathBuf, CoreError> {
     let mut dir: PathBuf = app
         .path()
         .app_config_dir()
-        .map_err(|e| format!("resolve app config dir failed: {e}"))?;
+        .map_err(|e| CoreError::Io(format!("resolve app config dir failed: {e}")))?;
     tokio::fs::create_dir_all(&dir)
         .await
-        .map_err(|e| format!("create app config dir failed: {e}"))?;
+        .map_err(|e| CoreError::Io(format!("create app config dir failed: {e}")))?;
     dir.push("last-conversation.json");
     Ok(dir)
 }
@@ -37,18 +38,18 @@ fn resolve_profile(
     cfg: &crate::config::AppConfig,
     engine_id: &str,
     profile_id: Option<&str>,
-) -> Result<crate::config::EngineProfile, String> {
+) -> Result<crate::config::EngineProfile, CoreError> {
     let engine = cfg
         .engines
         .get(engine_id)
-        .ok_or_else(|| format!("engine not found: {engine_id}"))?
+        .ok_or_else(|| CoreError::NotFound(format!("engine not found: {engine_id}")))?
         .clone();
     if let Some(pid) = profile_id {
         engine
             .profiles
             .get(pid)
             .cloned()
-            .ok_or_else(|| format!("profile not found for engine {engine_id}: {pid}"))
+            .ok_or_else(|| CoreError::NotFound(format!("profile not found for engine {engine_id}: {pid}")))
     } else {
         Ok(engine.active_profile())
     }
@@ -181,28 +182,28 @@ where
 pub async fn chat_save_last_conversation(
     app: AppHandle,
     payload: serde_json::Value,
-) -> Result<(), String> {
+) -> Result<(), CoreError> {
     let path = last_conversation_path(&app).await?;
     let text = serde_json::to_string_pretty(&payload)
-        .map_err(|e| format!("serialize last conversation failed: {e}"))?;
+        .map_err(|e| CoreError::Serialization(format!("serialize last conversation failed: {e}")))?;
     tokio::fs::write(path, text)
         .await
-        .map_err(|e| format!("write last conversation failed: {e}"))
+        .map_err(|e| CoreError::Io(format!("write last conversation failed: {e}")))
 }
 
 #[command]
 pub async fn chat_load_last_conversation(
     app: AppHandle,
-) -> Result<Option<serde_json::Value>, String> {
+) -> Result<Option<serde_json::Value>, CoreError> {
     let path = last_conversation_path(&app).await?;
     if !path.exists() {
         return Ok(None);
     }
     let text = tokio::fs::read_to_string(path)
         .await
-        .map_err(|e| format!("read last conversation failed: {e}"))?;
+        .map_err(|e| CoreError::Io(format!("read last conversation failed: {e}")))?;
     let payload = serde_json::from_str::<serde_json::Value>(&text)
-        .map_err(|e| format!("parse last conversation failed: {e}"))?;
+        .map_err(|e| CoreError::Serialization(format!("parse last conversation failed: {e}")))?;
     Ok(Some(payload))
 }
 
@@ -212,7 +213,7 @@ pub async fn chat_execute_api(
     config_state: State<'_, AppConfigState>,
     headless_state: State<'_, HeadlessProcessState>,
     on_data: Channel<String>,
-) -> Result<ChatExecuteApiResult, String> {
+) -> Result<ChatExecuteApiResult, CoreError> {
     chat_execute_api_core(
         request,
         config_state.get(),
@@ -226,7 +227,7 @@ pub async fn chat_execute_api_core(
     cfg: AppConfig,
     headless_state: &HeadlessProcessState,
     on_data: Arc<dyn StringStream>,
-) -> Result<ChatExecuteApiResult, String> {
+) -> Result<ChatExecuteApiResult, CoreError> {
     let profile = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
     let provider = profile
         .api_provider()
@@ -236,7 +237,7 @@ pub async fn chat_execute_api_core(
     let model = profile.model().clone();
     let messages = request.messages.clone();
     let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
-    let exec_id = headless_state.register(cancel_tx);
+    let exec_id = headless_state.register(request.engine_id.clone(), cancel_tx);
     let run_id = format!("chat-api-{}-{exec_id}", request.engine_id);
     let run_id_for_return = run_id.clone();
     let task_id = request.task_id.clone().unwrap_or_default();
@@ -248,6 +249,8 @@ pub async fn chat_execute_api_core(
     let profile_model = profile.model().clone();
     let cwd = cfg.project.path.clone();
     let _ = on_data.send_string(format!("\u{0}RUN_ID:{run_id_for_return}"));
+
+    let exec_id_for_spawn = exec_id.clone();
 
     tokio::spawn(async move {
         let run_result = crate::api_provider::stream_chat(
@@ -311,7 +314,7 @@ pub async fn chat_execute_api_core(
         entries
             .lock()
             .expect("headless process lock poisoned")
-            .remove(&exec_id);
+            .remove(&exec_id_for_spawn);
     });
 
     Ok(ChatExecuteApiResult {
@@ -326,8 +329,8 @@ pub async fn chat_execute_api_core(
 pub fn chat_execute_api_stop(
     request: ChatExecuteStopRequest,
     headless_state: State<'_, HeadlessProcessState>,
-) -> Result<(), String> {
-    headless_state.cancel(request.exec_id)
+) -> Result<(), CoreError> {
+    headless_state.cancel(&request.exec_id.to_string()).map_err(CoreError::CancelFailed)
 }
 
 #[command]
@@ -336,7 +339,7 @@ pub async fn chat_execute_cli(
     config_state: State<'_, AppConfigState>,
     headless_state: State<'_, HeadlessProcessState>,
     on_data: Channel<String>,
-) -> Result<ChatExecuteCliResult, String> {
+) -> Result<ChatExecuteCliResult, CoreError> {
     chat_execute_cli_core(
         request,
         config_state.get(),
@@ -350,15 +353,15 @@ pub async fn chat_execute_cli_core(
     cfg: AppConfig,
     headless_state: &HeadlessProcessState,
     on_data: Arc<dyn StringStream>,
-) -> Result<ChatExecuteCliResult, String> {
+) -> Result<ChatExecuteCliResult, CoreError> {
     let profile = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
     let fallback_headless_args = builtin_headless_defaults(&request.engine_id);
     let supports_headless = profile.supports_headless() || fallback_headless_args.is_some();
     if !supports_headless {
-        return Err(format!(
+        return Err(CoreError::Unsupported(format!(
             "engine {} does not support headless mode",
             request.engine_id
-        ));
+        )));
     }
 
     let mut args = if !profile.headless_args().is_empty() {
@@ -376,7 +379,7 @@ pub async fn chat_execute_cli_core(
 
     let full_command_str = format!("{} {}", profile.command(), args.join(" "));
     if let Err(reason) = crate::plugin_engine::action_guard::ActionGuard::unwrap_default().check_command(&full_command_str) {
-        return Err(format!("Blocked by ActionGuard: {reason}"));
+        return Err(CoreError::PermissionDenied(format!("Blocked by ActionGuard: {reason}")));
     }
 
     let mut command = tokio::process::Command::new(&profile.command());
@@ -395,12 +398,12 @@ pub async fn chat_execute_cli_core(
         command.env(k, v);
     }
 
-    let mut child = command.spawn().map_err(|e| format!("spawn failed: {e}"))?;
+    let mut child = command.spawn().map_err(|e| CoreError::ExecutionFailed(format!("spawn failed: {e}")))?;
     let pid = child.id();
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
     let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel();
-    let exec_id = headless_state.register(cancel_tx);
+    let exec_id = headless_state.register(request.engine_id.clone(), cancel_tx);
     let run_id = format!("chat-cli-{}-{exec_id}", request.engine_id);
     let run_id_for_return = run_id.clone();
     let task_id = request.task_id.clone().unwrap_or_default();
@@ -413,6 +416,8 @@ pub async fn chat_execute_cli_core(
     let profile_model = profile.model().clone();
     let cwd = cfg.project.path.clone();
     let _ = on_data.send_string(format!("\u{0}RUN_ID:{run_id_for_return}"));
+
+    let exec_id_for_spawn = exec_id.clone();
 
     tokio::spawn(async move {
         let stdout_aggregate = Arc::clone(&aggregate);
@@ -505,7 +510,7 @@ pub async fn chat_execute_cli_core(
         entries
             .lock()
             .expect("headless process lock poisoned")
-            .remove(&exec_id);
+            .remove(&exec_id_for_spawn);
     });
 
     Ok(ChatExecuteCliResult {
@@ -521,8 +526,8 @@ pub async fn chat_execute_cli_core(
 pub fn chat_execute_cli_stop(
     request: ChatExecuteStopRequest,
     headless_state: State<'_, HeadlessProcessState>,
-) -> Result<(), String> {
-    headless_state.cancel(request.exec_id)
+) -> Result<(), CoreError> {
+    headless_state.cancel(&request.exec_id.to_string()).map_err(CoreError::CancelFailed)
 }
 
 #[command]
@@ -532,19 +537,19 @@ pub async fn chat_spawn(
     config_state: State<'_, AppConfigState>,
     pty_state: State<'_, PtyManagerState>,
     on_data: Channel<String>,
-) -> Result<ChatSessionMeta, String> {
+) -> Result<ChatSessionMeta, CoreError> {
     let cfg = config_state.get();
     let engine = cfg
         .engines
         .get(&request.engine_id)
-        .ok_or_else(|| format!("engine not found: {}", request.engine_id))?
+        .ok_or_else(|| CoreError::NotFound(format!("engine not found: {}", request.engine_id)))?
         .clone();
     let profile = if let Some(profile_id) = request.profile_id.as_deref() {
         engine.profiles.get(profile_id).cloned().ok_or_else(|| {
-            format!(
+            CoreError::NotFound(format!(
                 "profile not found for engine {}: {profile_id}",
                 request.engine_id
-            )
+            ))
         })?
     } else {
         engine.active_profile()
@@ -574,7 +579,10 @@ pub async fn chat_spawn(
         Ok(())
     });
 
+    let session_id = uuid::Uuid::new_v4().to_string();
+
     let spawn: PtySessionInfo = pty_state.spawn_session(
+        session_id,
         profile.command().clone(),
         with_model_args(profile.args().clone(), &request.engine_id, &profile.model()),
         if cfg.project.path.trim().is_empty() {
@@ -605,7 +613,7 @@ pub async fn chat_spawn(
     }
 
     Ok(ChatSessionMeta {
-        session_id: spawn.session_id,
+        session_id: spawn.session_id.clone(),
         engine_id: request.engine_id,
         profile_id: profile.id.clone(),
         ready_signal: profile.ready_signal(),
@@ -616,19 +624,19 @@ pub async fn chat_spawn(
 pub fn chat_send(
     request: ChatSendRequest,
     pty_state: State<'_, PtyManagerState>,
-) -> Result<(), String> {
+) -> Result<(), CoreError> {
     let payload = if request.append_newline.unwrap_or(true) {
         format!("{}\n", request.content)
     } else {
         request.content
     };
-    pty_state.write_to_session(Some(request.session_id), &payload)
+    pty_state.write_to_session(Some(request.session_id.to_string()), &payload).map_err(CoreError::ExecutionFailed)
 }
 
 #[command]
 pub fn chat_stop(
     request: ChatStopRequest,
     pty_state: State<'_, PtyManagerState>,
-) -> Result<(), String> {
-    pty_state.kill_session(request.session_id)
+) -> Result<(), CoreError> {
+    pty_state.kill_session(&request.session_id.to_string()).map_err(CoreError::ExecutionFailed)
 }

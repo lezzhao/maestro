@@ -147,7 +147,7 @@ pub async fn run_cli_mode(args: Vec<String>) {
                                     let _ = tx.send(IpcResponse {
                                         id: msg.id,
                                         result: None,
-                                        error: Some(err),
+                                        error: Some(serde_json::to_string(&err).unwrap_or_else(|_| err.to_string())),
                                         is_stream: false,
                                     }).await;
                                 }
@@ -183,7 +183,7 @@ pub async fn run_cli_mode(args: Vec<String>) {
                                     let _ = tx.send(IpcResponse {
                                         id: msg.id,
                                         result: None,
-                                        error: Some(err),
+                                        error: Some(serde_json::to_string(&err).unwrap_or_else(|_| err.to_string())),
                                         is_stream: false,
                                     }).await;
                                 }
