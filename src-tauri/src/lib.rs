@@ -11,6 +11,7 @@ mod process;
 mod project;
 mod pty;
 mod run_persistence;
+mod scoped_fs;
 mod spec;
 pub mod workflow;
 

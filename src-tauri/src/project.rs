@@ -1,4 +1,5 @@
 use crate::config::write_config_to_disk;
+use crate::scoped_fs::ScopedWorkspace;
 use serde::Serialize;
 
 use std::path::{Path, PathBuf};
@@ -279,34 +280,10 @@ fn build_file_tree(files: Vec<String>) -> Vec<FileTreeNode> {
     roots
 }
 
-fn resolve_project_file_path(
-    project_root: &Path,
-    relative_or_abs: &str,
-) -> Result<PathBuf, String> {
-    let requested = PathBuf::from(relative_or_abs);
-    let candidate = if requested.is_absolute() {
-        requested
-    } else {
-        project_root.join(requested)
-    };
-    let canonical_root = project_root
-        .canonicalize()
-        .map_err(|e| format!("canonicalize project root failed: {e}"))?;
-    let canonical = candidate
-        .canonicalize()
-        .map_err(|e| format!("canonicalize file path failed: {e}"))?;
-    if !canonical.starts_with(&canonical_root) {
-        return Err("file path is outside current project".to_string());
-    }
-    Ok(canonical)
-}
-
 #[command]
 pub fn project_detect_stack(project_path: String) -> Result<ProjectStackResult, String> {
-    let path = PathBuf::from(&project_path);
-    if !path.exists() || !path.is_dir() {
-        return Err(format!("project path invalid: {project_path}"));
-    }
+    let scoped = ScopedWorkspace::new(&project_path)?;
+    let path = scoped.root().to_path_buf();
     Ok(ProjectStackResult {
         path: project_path,
         stacks: detect_stack(&path),
@@ -319,10 +296,8 @@ pub fn project_set_current(
     project_path: String,
     core_state: State<'_, crate::core::MaestroCore>,
 ) -> Result<ProjectSetResult, String> {
-    let path = PathBuf::from(&project_path);
-    if !path.exists() || !path.is_dir() {
-        return Err(format!("project path invalid: {project_path}"));
-    }
+    let scoped = ScopedWorkspace::new(&project_path)?;
+    let path = scoped.root().to_path_buf();
     let stacks = detect_stack(&path);
     let mut config = core_state.inner().config.get();
     config.project.path = project_path.clone();
@@ -337,10 +312,8 @@ pub fn project_set_current(
 
 #[command]
 pub async fn project_list_files(project_path: String) -> Result<Vec<FileTreeNode>, String> {
-    let path = PathBuf::from(&project_path);
-    if !path.exists() || !path.is_dir() {
-        return Err(format!("project path invalid: {project_path}"));
-    }
+    let scoped = ScopedWorkspace::new(&project_path)?;
+    let path = scoped.root().to_path_buf();
 
     let files = match list_files_via_git(&project_path).await {
         Ok(files) if !files.is_empty() => files,
@@ -365,14 +338,11 @@ pub async fn project_read_file(
     file_path: String,
     max_chars: Option<usize>,
 ) -> Result<String, String> {
-    let root = PathBuf::from(&project_path);
-    if !root.exists() || !root.is_dir() {
-        return Err(format!("project path invalid: {project_path}"));
-    }
+    let scoped = ScopedWorkspace::new(&project_path)?;
     if file_path.trim().is_empty() {
         return Err("file path is empty".to_string());
     }
-    let canonical = resolve_project_file_path(&root, &file_path)?;
+    let canonical = scoped.resolve_in_scope(&file_path)?;
     if !canonical.is_file() {
         return Err("target is not a file".to_string());
     }
@@ -435,10 +405,8 @@ pub fn project_recommend_engine(
     project_path: String,
     core_state: State<'_, crate::core::MaestroCore>,
 ) -> Result<EngineRecommendation, String> {
-    let path = PathBuf::from(&project_path);
-    if !path.exists() || !path.is_dir() {
-        return Err(format!("project path invalid: {project_path}"));
-    }
+    let scoped = ScopedWorkspace::new(&project_path)?;
+    let path = scoped.root().to_path_buf();
 
     let stacks = detect_stack(&path);
     let cfg = core_state.inner().config.get();
