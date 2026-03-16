@@ -25,6 +25,7 @@ portable-pty = "0.9"
 sysinfo = "0.33"
 toml = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "io-util", "fs", "process", "time"] }
+tokio-util = "0.7"
 strip-ansi-escapes = "0.2"
 regex = "1"
 which = "7"

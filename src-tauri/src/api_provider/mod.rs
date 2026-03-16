@@ -8,7 +8,7 @@ use serde_json::json;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
 
 pub use sse::AnthropicEvent;
 
@@ -21,7 +21,7 @@ pub trait ApiProvider: Send + Sync {
         api_key: &'a str,
         model: &'a str,
         messages: &'a [ChatApiMessage],
-        cancel_rx: &'a mut oneshot::Receiver<()>,
+        cancel_token: CancellationToken,
         on_data: &'a Arc<dyn StringStream>,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>>;
 }
@@ -53,7 +53,7 @@ async fn stream_openai_compatible(
     api_key: &str,
     model: &str,
     messages: &[ChatApiMessage],
-    cancel_rx: &mut oneshot::Receiver<()>,
+    cancel_token: CancellationToken,
     on_data: &Arc<dyn StringStream>,
 ) -> Result<(), String> {
     let endpoint = format!("{}/chat/completions", normalize_base_url(base_url));
@@ -80,7 +80,7 @@ async fn stream_openai_compatible(
     let mut buffer = String::new();
     loop {
         tokio::select! {
-            _ = &mut *cancel_rx => {
+            _ = cancel_token.cancelled() => {
                 return Err("请求已取消".to_string());
             }
             next = stream.next() => {
@@ -124,7 +124,7 @@ async fn stream_anthropic(
     api_key: &str,
     model: &str,
     messages: &[ChatApiMessage],
-    cancel_rx: &mut oneshot::Receiver<()>,
+    cancel_token: CancellationToken,
     on_data: &Arc<dyn StringStream>,
 ) -> Result<(), String> {
     let endpoint = format!("{}/v1/messages", normalize_base_url(base_url));
@@ -155,7 +155,7 @@ async fn stream_anthropic(
     let mut current_data: Vec<String> = Vec::new();
     loop {
         tokio::select! {
-            _ = &mut *cancel_rx => {
+            _ = cancel_token.cancelled() => {
                 return Err("请求已取消".to_string());
             }
             next = stream.next() => {
@@ -235,11 +235,11 @@ impl ApiProvider for OpenAiProvider {
         api_key: &'a str,
         model: &'a str,
         messages: &'a [ChatApiMessage],
-        cancel_rx: &'a mut oneshot::Receiver<()>,
+        cancel_token: CancellationToken,
         on_data: &'a Arc<dyn StringStream>,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(stream_openai_compatible(
-            client, base_url, api_key, model, messages, cancel_rx, on_data,
+            client, base_url, api_key, model, messages, cancel_token, on_data,
         ))
     }
 }
@@ -258,11 +258,11 @@ impl ApiProvider for AnthropicProvider {
         api_key: &'a str,
         model: &'a str,
         messages: &'a [ChatApiMessage],
-        cancel_rx: &'a mut oneshot::Receiver<()>,
+        cancel_token: CancellationToken,
         on_data: &'a Arc<dyn StringStream>,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(stream_anthropic(
-            client, base_url, api_key, model, messages, cancel_rx, on_data,
+            client, base_url, api_key, model, messages, cancel_token, on_data,
         ))
     }
 }
@@ -296,7 +296,7 @@ pub async fn stream_chat(
     api_key: &str,
     model: &str,
     messages: &[ChatApiMessage],
-    mut cancel_rx: oneshot::Receiver<()>,
+    cancel_token: CancellationToken,
     on_data: Arc<dyn StringStream>,
 ) -> Result<(), String> {
     if api_key.trim().is_empty() {
@@ -325,7 +325,7 @@ pub async fn stream_chat(
         api_key,
         model,
         messages,
-        &mut cancel_rx,
+        cancel_token,
         &on_data,
     )
     .await

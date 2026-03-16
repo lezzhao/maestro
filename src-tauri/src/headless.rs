@@ -2,12 +2,11 @@ use crate::core::execution::Execution;
 use crate::workflow::types::VerificationSummary;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
 
 pub struct HeadlessEntry {
     pub execution: Execution,
-    /// Wrapped in Option so cancel() can take ownership to send without removing the entry.
-    pub cancel_tx: Option<oneshot::Sender<()>>,
+    pub cancel_token: CancellationToken,
 }
 
 /// Manages headless execution lifecycle: register → running → complete/fail/cancel → extract for persist.
@@ -18,7 +17,7 @@ pub struct HeadlessProcessState {
 
 impl HeadlessProcessState {
     /// Register a new execution and return its id.
-    pub fn register(&self, execution: Execution, cancel_tx: oneshot::Sender<()>) -> String {
+    pub fn register(&self, execution: Execution, cancel_token: CancellationToken) -> String {
         let exec_id = execution.id.clone();
         self.entries
             .lock()
@@ -27,7 +26,7 @@ impl HeadlessProcessState {
                 exec_id.clone(),
                 HeadlessEntry {
                     execution,
-                    cancel_tx: Some(cancel_tx),
+                    cancel_token,
                 },
             );
         exec_id
@@ -40,9 +39,7 @@ impl HeadlessProcessState {
         let entry = map
             .get_mut(exec_id)
             .ok_or_else(|| format!("exec not found: {exec_id}"))?;
-        if let Some(tx) = entry.cancel_tx.take() {
-            let _ = tx.send(());
-        }
+        entry.cancel_token.cancel();
         Ok(())
     }
 
