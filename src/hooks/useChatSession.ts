@@ -4,47 +4,18 @@ import { useChatAgent } from "./useChatAgent";
 import { useAppStore } from "../stores/appStore";
 import { useTranslation } from "../i18n";
 import { createMessage } from "../components/chat/createMessage";
-import {
-  decodeTransportEscapes,
-  extractReadableTerminalChunk,
-  normalizeTerminalChunk,
-} from "../lib/utils/terminal";
-import {
-  CTRL_DONE,
-  CTRL_ERROR,
-  CTRL_EXIT,
-  CTRL_RUN_ID,
-  CTRL_VERIFICATION,
-  isControlChunk,
-  parseErrorChunk,
-  parseExitCodeChunk,
-  parseRunIdChunk,
-  parseVerificationChunk,
-} from "../lib/utils/controlChunks";
-import type {
-  ChatApiMessage,
-  EngineConfig,
-  EngineProfile,
-  RunEvent,
-  VerificationSummary,
-} from "../types";
+import { useExecutionQueue } from "./useExecutionQueue";
+import { useChatInputHistory } from "./useChatInputHistory";
+import { useAgentExecutor } from "./useAgentExecutor";
+import type { ExecutionEvent } from "../services/ExecutionClient";
+import type { ChatApiMessage, EngineConfig, EngineProfile, RunEvent } from "../types";
 
-interface UseChatSessionParams {
+export interface UseChatSessionParams {
   activeTaskId: string | null;
   activeEngineId: string;
   activeEngine: EngineConfig | undefined;
   activeProfile: EngineProfile | undefined;
 }
-
-type QueueItem = {
-  content: string;
-  mode: "api" | "cli";
-};
-
-type RunningExec = {
-  execId: number;
-  mode: "api" | "cli";
-};
 
 export function useChatSession({
   activeTaskId,
@@ -53,17 +24,13 @@ export function useChatSession({
   activeProfile,
 }: UseChatSessionParams) {
   const { t } = useTranslation();
-  const activeTask = useAppStore((s) => s.tasks.find((tk) => tk.id === activeTaskId));
   const updateTask = useAppStore((s) => s.updateTask);
   const setErrorMessage = useAppStore((s) => s.setErrorMessage);
   const setActiveEngineId = useAppStore((s) => s.setActiveEngineId);
 
-  const messages = useChatStore((s) => s.getTaskMessages(activeTaskId));
-  const messageCount = messages.length;
   const isRunning = useChatStore((s) => s.getTaskRunning(activeTaskId));
   const pendingAttachments = useChatStore((s) => s.getTaskPendingAttachments(activeTaskId));
   const addMessage = useChatStore((s) => s.addMessage);
-  const setMessages = useChatStore((s) => s.setMessages);
   const updateMessage = useChatStore((s) => s.updateMessage);
   const appendToMessage = useChatStore((s) => s.appendToMessage);
   const setRunning = useChatStore((s) => s.setRunning);
@@ -75,48 +42,31 @@ export function useChatSession({
   const appendRunTranscript = useChatStore((s) => s.appendRunTranscript);
   const addRunArtifact = useChatStore((s) => s.addRunArtifact);
   const setRunVerification = useChatStore((s) => s.setRunVerification);
-  const removePendingAttachmentByTask = useChatStore((s) => s.removePendingAttachment);
   const clearPendingAttachmentsByTask = useChatStore((s) => s.clearPendingAttachments);
+  const removePendingAttachmentByTask = useChatStore((s) => s.removePendingAttachment);
 
-  const {
-    executeApi,
-    executeCli,
-    stopApi,
-    stopCli,
-    stopSession,
-    saveLastConversation,
-  } = useChatAgent();
+  const { stopSession } = useChatAgent();
+  const { pushQueue, popQueue, clearQueue } = useExecutionQueue();
+  const { handleRetry: baseHandleRetry, handleCopy } = useChatInputHistory(activeTaskId, isRunning);
 
   const [input, setInput] = useState("");
   const [executionPhase, setExecutionPhase] = useState<
     "idle" | "connecting" | "sending" | "streaming" | "completed" | "error"
   >("idle");
 
-  const saveTimerRef = useRef<number | null>(null);
-  const activeAssistantIdRef = useRef<string | null>(null);
-  const currentExecRef = useRef<RunningExec | null>(null);
-  const currentRunIdRef = useRef<string | null>(null);
-  const queueRef = useRef<QueueItem[]>([]);
-  const isExecutingRef = useRef(false);
-  const cliContinuationRef = useRef(false);
-  const runExecutionRef = useRef<
-    ((content: string, mode: "api" | "cli") => Promise<void>) | null
-  >(null);
+  const handleRetry = useCallback((id: string) => {
+    baseHandleRetry(id, setInput);
+  }, [baseHandleRetry, setInput]);
 
   const executionMode = useMemo(
     () => ((activeProfile?.execution_mode || "cli") as "api" | "cli"),
     [activeProfile?.execution_mode],
   );
 
-  const persistConversation = useCallback(async () => {
-    if (!activeTaskId) return;
-    try {
-      const allMessages = useChatStore.getState().messages[activeTaskId] || [];
-      await saveLastConversation({ messages: allMessages, saved_at: Date.now() });
-    } catch {
-      // 忽略持久化失败，避免影响交互
-    }
-  }, [activeTaskId, saveLastConversation]);
+  const activeAssistantIdRef = useRef<string | null>(null);
+  const currentRunIdRef = useRef<string | null>(null);
+  const isExecutingRef = useRef(false);
+  const cliContinuationRef = useRef(false);
 
   const emitRunEvent = useCallback(
     (patch: Omit<RunEvent, "id" | "taskId" | "createdAt" | "runId">) => {
@@ -135,44 +85,9 @@ export function useChatSession({
     [activeTaskId, addRunEvent],
   );
 
-  useEffect(() => {
-    cliContinuationRef.current = false;
-  }, [activeEngineId, activeTaskId, executionMode]);
-
-  useEffect(() => {
-    if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = window.setTimeout(
-      () => {
-        void persistConversation();
-      },
-      isRunning ? 1200 : 350,
-    );
-    return () => {
-      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
-    };
-  }, [isRunning, messageCount, persistConversation]);
-
-  const handleRetry = useCallback(
-    (messageId: string) => {
-      if (!activeTaskId) return;
-      const allMessages = useChatStore.getState().messages[activeTaskId] || [];
-      const idx = allMessages.findIndex((m) => m.id === messageId);
-      if (idx <= 0) return;
-      const prevUserMessage = allMessages
-        .slice(0, idx)
-        .reverse()
-        .find((m) => m.role === "user");
-      if (!prevUserMessage) return;
-      const userMsgIdx = allMessages.findIndex((m) => m.id === prevUserMessage.id);
-      setMessages(activeTaskId, allMessages.slice(0, userMsgIdx + 1));
-      setInput(prevUserMessage.content);
-    },
-    [activeTaskId, setMessages],
-  );
-
-  const handleCopy = useCallback((content: string) => {
-    void navigator.clipboard.writeText(content);
-  }, []);
+  const runExecutionRef = useRef<
+    ((content: string, mode: "api" | "cli") => Promise<void>) | null
+  >(null);
 
   const finalizeRound = useCallback(() => {
     if (!activeTaskId) return;
@@ -181,11 +96,11 @@ export function useChatSession({
       updateMessage(activeTaskId, assistantId, { status: "done" });
     }
     activeAssistantIdRef.current = null;
-    currentExecRef.current = null;
     isExecutingRef.current = false;
     setTaskRunning(activeTaskId, false);
     setRunning(false);
     setExecutionPhase("completed");
+
     const finishedRunId = currentRunIdRef.current;
     const verification = finishedRunId
       ? useChatStore.getState().getRunVerification(finishedRunId)
@@ -197,6 +112,7 @@ export function useChatSession({
           ? "needs_review"
           : "completed";
     updateTask(activeTaskId, { status: nextStatus });
+
     emitRunEvent({
       kind: "status",
       status: "done",
@@ -204,6 +120,7 @@ export function useChatSession({
       engineId: activeEngineId,
       mode: executionMode,
     });
+
     if (finishedRunId) {
       finishRun(finishedRunId, "done", null);
       currentRunIdRef.current = null;
@@ -212,7 +129,7 @@ export function useChatSession({
     cliContinuationRef.current = executionMode === "cli";
     window.setTimeout(() => setExecutionPhase("idle"), 600);
 
-    const next = queueRef.current.shift();
+    const next = popQueue();
     if (next) {
       window.setTimeout(() => {
         void runExecutionRef.current?.(next.content, next.mode);
@@ -224,10 +141,11 @@ export function useChatSession({
     emitRunEvent,
     executionMode,
     finishRun,
+    popQueue,
     setRunning,
     setTaskRunning,
-    updateTask,
     updateMessage,
+    updateTask,
   ]);
 
   const failRound = useCallback(
@@ -236,15 +154,16 @@ export function useChatSession({
       setExecutionPhase("error");
       setErrorMessage(`${t("execution_error")}: ${errText}`);
       updateTask(activeTaskId, { status: "error" });
+
       const assistantId = activeAssistantIdRef.current;
       if (assistantId) {
         updateMessage(activeTaskId, assistantId, { status: "error" });
       }
       activeAssistantIdRef.current = null;
-      currentExecRef.current = null;
       isExecutingRef.current = false;
       setTaskRunning(activeTaskId, false);
       setRunning(false);
+
       emitRunEvent({
         kind: "error",
         status: "error",
@@ -252,6 +171,7 @@ export function useChatSession({
         engineId: activeEngineId,
         mode: executionMode,
       });
+
       if (currentRunIdRef.current) {
         finishRun(currentRunIdRef.current, "error", errText);
         currentRunIdRef.current = null;
@@ -259,7 +179,7 @@ export function useChatSession({
       updateTask(activeTaskId, { activeExecId: null, activeRunId: null, sessionId: null });
       cliContinuationRef.current = false;
 
-      const next = queueRef.current.shift();
+      const next = popQueue();
       if (next) {
         emitRunEvent({
           kind: "notice",
@@ -278,83 +198,58 @@ export function useChatSession({
       activeTaskId,
       emitRunEvent,
       executionMode,
+      finishRun,
+      popQueue,
       setErrorMessage,
       setRunning,
       setTaskRunning,
       t,
-      updateTask,
       updateMessage,
-      finishRun,
+      updateTask,
     ],
   );
 
-  const handleChunk = useCallback(
-    (chunk: string) => {
+  const handleExecutionEvent = useCallback(
+    (event: ExecutionEvent) => {
       if (!activeTaskId || !activeAssistantIdRef.current) return;
-      if (isControlChunk(chunk)) {
-        if (chunk.startsWith(CTRL_RUN_ID)) {
-          const parsedRunId = parseRunIdChunk(chunk);
-          if (parsedRunId) {
-            currentRunIdRef.current = parsedRunId;
-          }
-          return;
-        }
-        if (chunk.startsWith(CTRL_DONE)) {
-          finalizeRound();
-          return;
-        }
-        if (chunk.startsWith(CTRL_EXIT)) {
-          const exitCode = parseExitCodeChunk(chunk);
-          if (exitCode === 0) {
-            finalizeRound();
+
+      switch (event.type) {
+        case "runId":
+          currentRunIdRef.current = event.runId;
+          break;
+        case "done":
+          if (event.exitCode !== undefined && event.exitCode !== 0 && event.exitCode !== null) {
+            failRound(`命令执行失败（退出码：${event.exitCode}）`);
           } else {
-            const text =
-              exitCode === null
-                ? "命令执行失败（未知退出码）"
-                : `命令执行失败（退出码：${exitCode}）`;
-            failRound(text);
+            finalizeRound();
           }
-          return;
-        }
-        if (chunk.startsWith(CTRL_ERROR)) {
-          failRound(parseErrorChunk(chunk));
-          return;
-        }
-        if (chunk.startsWith(CTRL_VERIFICATION)) {
-          const runId = currentRunIdRef.current;
-          if (!runId) return;
-          const verification = parseVerificationChunk<VerificationSummary>(chunk);
-          if (verification) {
-            setRunVerification(runId, verification);
+          break;
+        case "error":
+          failRound(event.message);
+          break;
+        case "verification":
+          if (currentRunIdRef.current) {
+            setRunVerification(currentRunIdRef.current, event.verification);
           }
-          return;
+          break;
+        case "text": {
+          setExecutionPhase("streaming");
+          appendToMessage(activeTaskId, activeAssistantIdRef.current, event.text);
+          if (currentRunIdRef.current) {
+            appendRunTranscript(currentRunIdRef.current, event.text);
+            if (executionMode !== "api") {
+              addRunArtifact(currentRunIdRef.current, {
+                id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                runId: currentRunIdRef.current,
+                kind: "log",
+                label: "终端输出片段",
+                value: event.text.slice(0, 400),
+                createdAt: Date.now(),
+              });
+            }
+          }
+          break;
         }
-      }
-
-      setExecutionPhase("streaming");
-      const runId = currentRunIdRef.current;
-      if (executionMode === "api") {
-        appendToMessage(activeTaskId, activeAssistantIdRef.current, chunk);
-        if (runId) {
-          appendRunTranscript(runId, chunk);
-        }
-        return;
-      }
-
-      const decoded = decodeTransportEscapes(chunk);
-      const normalized = normalizeTerminalChunk(decoded) || extractReadableTerminalChunk(decoded);
-      if (!normalized) return;
-      appendToMessage(activeTaskId, activeAssistantIdRef.current, normalized);
-      if (runId) {
-        appendRunTranscript(runId, normalized);
-        addRunArtifact(runId, {
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          runId,
-          kind: "log",
-          label: "终端输出片段",
-          value: normalized.slice(0, 400),
-          createdAt: Date.now(),
-        });
       }
     },
     [
@@ -368,6 +263,8 @@ export function useChatSession({
       setRunVerification,
     ],
   );
+
+  const { startExecution, stopExecution } = useAgentExecutor(executionMode, handleExecutionEvent);
 
   const buildApiMessages = useCallback((): ChatApiMessage[] => {
     if (!activeTaskId) return [];
@@ -403,72 +300,46 @@ export function useChatSession({
       activeAssistantIdRef.current = assistantMsg.id;
 
       try {
-        if (mode === "api") {
-          setExecutionPhase("sending");
-          const result = await executeApi(
-            {
+        setExecutionPhase("sending");
+        const request = mode === "api"
+          ? {
               engine_id: activeEngineId,
               profile_id: activeEngine?.active_profile_id || null,
               task_id: activeTaskId,
               messages: buildApiMessages(),
-            },
-            handleChunk,
-          );
-          const runId = result.run_id || `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-          currentRunIdRef.current = runId;
-          createRun({
-            id: runId,
-            taskId: activeTaskId,
-            engineId: activeEngineId,
-            mode,
-            status: "running",
-            createdAt: startedAt,
-            startedAt,
-          });
-          emitRunEvent({
-            kind: "status",
-            status: "pending",
-            message: `开始执行（${mode.toUpperCase()}）`,
-            engineId: activeEngineId,
-            mode,
-          });
-          currentExecRef.current = { execId: result.exec_id, mode: "api" };
-          updateTask(activeTaskId, { activeExecId: result.exec_id, activeRunId: runId });
-          updateRun(runId, { status: "running" });
-        } else {
-          setExecutionPhase("sending");
-          const result = await executeCli(
-            {
+            }
+          : {
               engine_id: activeEngineId,
               profile_id: activeEngine?.active_profile_id || null,
               task_id: activeTaskId,
               prompt: content,
               is_continuation: cliContinuationRef.current,
-            },
-            handleChunk,
-          );
-          const runId = result.run_id || `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-          currentRunIdRef.current = runId;
-          createRun({
-            id: runId,
-            taskId: activeTaskId,
-            engineId: activeEngineId,
-            mode,
-            status: "running",
-            createdAt: startedAt,
-            startedAt,
-          });
-          emitRunEvent({
-            kind: "status",
-            status: "pending",
-            message: `开始执行（${mode.toUpperCase()}）`,
-            engineId: activeEngineId,
-            mode,
-          });
-          currentExecRef.current = { execId: result.exec_id, mode: "cli" };
-          updateTask(activeTaskId, { activeExecId: result.exec_id, activeRunId: runId });
-          updateRun(runId, { status: "running" });
-        }
+            };
+
+        const result = await startExecution(request);
+        const runId = result.run_id || `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        currentRunIdRef.current = runId;
+
+        createRun({
+          id: runId,
+          taskId: activeTaskId,
+          engineId: activeEngineId,
+          mode,
+          status: "running",
+          createdAt: startedAt,
+          startedAt,
+        });
+
+        emitRunEvent({
+          kind: "status",
+          status: "pending",
+          message: `开始执行（${mode.toUpperCase()}）`,
+          engineId: activeEngineId,
+          mode,
+        });
+
+        updateTask(activeTaskId, { activeExecId: result.exec_id, activeRunId: runId });
+        updateRun(runId, { status: "running" });
       } catch (err) {
         if (!currentRunIdRef.current) {
           const failedRunId = `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -494,19 +365,21 @@ export function useChatSession({
       addMessage,
       buildApiMessages,
       createRun,
-      executeApi,
-      executeCli,
       emitRunEvent,
       failRound,
-      handleChunk,
       setRunning,
       setTaskRunning,
+      startExecution,
       updateRun,
       updateTask,
     ],
   );
 
   runExecutionRef.current = runExecution;
+
+  useEffect(() => {
+    cliContinuationRef.current = false;
+  }, [activeEngineId, activeTaskId, executionMode]);
 
   const handleSend = async () => {
     if (!activeTaskId) return;
@@ -525,10 +398,7 @@ export function useChatSession({
     addMessage(activeTaskId, createMessage("user", trimmedInput, { attachments: currentAttachments }));
 
     if (isExecutingRef.current) {
-      queueRef.current.push({
-        content: finalContent,
-        mode: executionMode,
-      });
+      pushQueue({ content: finalContent, mode: executionMode });
       addMessage(
         activeTaskId,
         createMessage("system", t("queued_hint"), {
@@ -588,31 +458,18 @@ export function useChatSession({
 
   const handleStop = async () => {
     if (!activeTaskId) return;
-    const runningExec =
-      currentExecRef.current ??
-      (activeTask?.activeExecId
-        ? {
-            execId: activeTask.activeExecId,
-            mode: executionMode,
-          }
-        : null);
+
     try {
-      if (runningExec) {
-        if (runningExec.mode === "api") {
-          await stopApi({ exec_id: runningExec.execId });
-        } else {
-          await stopCli({ exec_id: runningExec.execId });
-        }
-      }
+      await stopExecution();
+      const activeTask = useAppStore.getState().tasks.find((t) => t.id === activeTaskId);
       if (activeTask?.sessionId) {
         await stopSession({ session_id: activeTask.sessionId });
       }
     } catch {
-      // 忽略停止失败
+      // ignore
     }
 
-    queueRef.current = [];
-    currentExecRef.current = null;
+    clearQueue();
     isExecutingRef.current = false;
     if (currentRunIdRef.current) {
       finishRun(currentRunIdRef.current, "stopped", null);
@@ -643,13 +500,6 @@ export function useChatSession({
       removePendingAttachmentByTask(activeTaskId, path);
     },
     [activeTaskId, removePendingAttachmentByTask],
-  );
-
-  useEffect(
-    () => () => {
-      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
-    },
-    [],
   );
 
   return {
