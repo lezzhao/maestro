@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::workflow::types::ChatApiMessage;
 use futures::StreamExt;
 use reqwest::Client;
@@ -238,7 +239,7 @@ pub struct OpenAiProvider;
 
 impl ApiProvider for OpenAiProvider {
     fn id(&self) -> &str {
-        "openai" // Or rather, generic compatible
+        "openai"
     }
 
     fn stream_chat<'a>(
@@ -277,26 +278,25 @@ impl ApiProvider for AnthropicProvider {
 }
 
 pub struct ApiProviderRegistry {
-    providers: Vec<Box<dyn ApiProvider>>,
+    providers: HashMap<String, Box<dyn ApiProvider>>,
 }
 
 impl ApiProviderRegistry {
     pub fn new() -> Self {
-        Self {
-            providers: vec![
-                Box::new(AnthropicProvider),
-                Box::new(OpenAiProvider),
-            ],
-        }
+        let mut registry = Self {
+            providers: HashMap::new(),
+        };
+        registry.register(Box::new(AnthropicProvider));
+        registry.register(Box::new(OpenAiProvider));
+        registry
+    }
+
+    pub fn register(&mut self, provider: Box<dyn ApiProvider>) {
+        self.providers.insert(provider.id().to_string(), provider);
     }
 
     pub fn get(&self, id: &str) -> Option<&dyn ApiProvider> {
-        if id == "anthropic" {
-            self.providers.iter().find(|p| p.id() == "anthropic").map(|p| p.as_ref())
-        } else {
-            // default to openai compatible
-            self.providers.iter().find(|p| p.id() == "openai").map(|p| p.as_ref())
-        }
+        self.providers.get(id).map(|p| p.as_ref())
     }
 }
 
@@ -320,7 +320,14 @@ pub async fn stream_chat(
     }
     let client = Client::new();
     let registry = ApiProviderRegistry::new();
-    let p = registry.get(provider).ok_or_else(|| format!("unsupported provider: {provider}"))?;
+    
+    // Map legacy names to internal IDs
+    let internal_provider_id = match provider {
+        "openai-compatible" => "openai",
+        other => other,
+    };
+
+    let p = registry.get(internal_provider_id).ok_or_else(|| format!("unsupported provider: {provider}"))?;
     p.stream_chat(
         &client,
         base_url,
