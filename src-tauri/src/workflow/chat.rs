@@ -4,15 +4,16 @@ use crate::core::events::{ChannelStringStream, StringStream};
 use crate::config::AppConfig;
 use crate::core::error::CoreError;
 use crate::headless::HeadlessProcessState;
+use crate::plugin_engine::maestro_engine::{
+    ApiChatRequest, CliChatRequest, DefaultMaestroEngine, MaestroEngine,
+};
 use crate::pty::PtySessionInfo;
 use crate::core::execution::{Execution, ExecutionMode, ExecutionStatus};
 use crate::run_persistence::{
     append_run_record, current_time_ms, resolve_root_dir_from_project_path,
 };
-use regex::Regex;
 
 use std::path::PathBuf;
-use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{
@@ -20,7 +21,7 @@ use tauri::{
     ipc::{Channel, InvokeResponseBody},
     AppHandle, Manager, State,
 };
-use tokio::io::AsyncReadExt;
+use tokio_util::sync::CancellationToken;
 
 async fn last_conversation_path(app: &AppHandle) -> Result<PathBuf, CoreError> {
     let mut dir: PathBuf = app
@@ -70,116 +71,6 @@ fn builtin_headless_defaults(engine_id: &str) -> Option<Vec<String>> {
     }
 }
 
-fn parse_case_counts(output: &str) -> (usize, usize, usize, usize) {
-    let passed_re = Regex::new(r"(?i)\b(\d+)\s+passed\b").expect("regex must compile");
-    let failed_re = Regex::new(r"(?i)\b(\d+)\s+failed\b").expect("regex must compile");
-    let skipped_re =
-        Regex::new(r"(?i)\b(\d+)\s+(skipped|todo|pending)\b").expect("regex must compile");
-    let total_re = Regex::new(r"(?i)\b(\d+)\s+total\b").expect("regex must compile");
-    let passed = passed_re
-        .captures_iter(output)
-        .filter_map(|cap| cap.get(1).and_then(|m| m.as_str().parse::<usize>().ok()))
-        .last()
-        .unwrap_or(0);
-    let failed = failed_re
-        .captures_iter(output)
-        .filter_map(|cap| cap.get(1).and_then(|m| m.as_str().parse::<usize>().ok()))
-        .last()
-        .unwrap_or(0);
-    let skipped = skipped_re
-        .captures_iter(output)
-        .filter_map(|cap| cap.get(1).and_then(|m| m.as_str().parse::<usize>().ok()))
-        .last()
-        .unwrap_or(0);
-    let mut total = total_re
-        .captures_iter(output)
-        .filter_map(|cap| cap.get(1).and_then(|m| m.as_str().parse::<usize>().ok()))
-        .last()
-        .unwrap_or(0);
-    if total == 0 {
-        total = passed + failed + skipped;
-    }
-    (total, passed, failed, skipped)
-}
-
-fn detect_framework(output: &str) -> Option<String> {
-    let lower = output.to_lowercase();
-    if lower.contains("vitest") {
-        return Some("vitest".to_string());
-    }
-    if lower.contains("jest") {
-        return Some("jest".to_string());
-    }
-    if lower.contains("playwright") {
-        return Some("playwright".to_string());
-    }
-    if lower.contains("cypress") {
-        return Some("cypress".to_string());
-    }
-    None
-}
-
-fn extract_verification_summary(output: &str) -> Option<VerificationSummary> {
-    let framework = detect_framework(output)?;
-    let (total_cases, passed_cases, failed_cases, skipped_cases) = parse_case_counts(output);
-    let success = failed_cases == 0;
-    Some(VerificationSummary {
-        has_verification: true,
-        test_run: Some(TestRunSummary {
-            framework,
-            success,
-            total_suites: 0,
-            passed_suites: 0,
-            failed_suites: 0,
-            total_cases,
-            passed_cases,
-            failed_cases,
-            skipped_cases,
-            duration_ms: None,
-            suites: vec![TestSuiteResult {
-                name: "chat-exec".to_string(),
-                total_cases,
-                passed_cases,
-                failed_cases,
-                skipped_cases,
-                duration_ms: None,
-                cases: vec![],
-            }],
-            raw_summary: None,
-        }),
-        source: Some("chat-exec-parser".to_string()),
-        notes: None,
-    })
-}
-
-async fn forward_output<R>(reader: R, on_data: Arc<dyn StringStream>, aggregate: Arc<Mutex<String>>)
-where
-    R: tokio::io::AsyncRead + Unpin,
-{
-    let mut stream = reader;
-    let mut buffer = vec![0_u8; 4096];
-    loop {
-        match stream.read(&mut buffer).await {
-            Ok(0) => break,
-            Ok(size) => {
-                let chunk = String::from_utf8_lossy(&buffer[..size]).to_string();
-                {
-                    let mut text = aggregate.lock().expect("chat aggregate lock poisoned");
-                    text.push_str(&chunk);
-                    if text.len() > 1_500_000 {
-                        let drop_prefix = text.len() - 1_500_000;
-                        text.drain(..drop_prefix);
-                    }
-                }
-                if on_data.send_string(chunk).is_err() {
-                    break; // Channel closed, stop forwarding
-                }
-            }
-            Err(_) => break,
-        }
-    }
-}
-
 #[command]
 pub async fn chat_save_last_conversation(
     app: AppHandle,
@@ -211,16 +102,18 @@ pub async fn chat_load_last_conversation(
 
 #[command]
 pub async fn chat_execute_api(
+    app: AppHandle,
     request: ChatApiRequest,
     core_state: State<'_, crate::core::MaestroCore>,
     on_data: Channel<String>,
 ) -> Result<ChatExecuteApiResult, CoreError> {
     core_state
-        .chat_execute_api(request, Arc::new(ChannelStringStream(on_data)))
+        .chat_execute_api(Some(app), request, Arc::new(ChannelStringStream(on_data)))
         .await
 }
 
 pub async fn chat_execute_api_core(
+    app: Option<AppHandle>,
     request: ChatApiRequest,
     cfg: AppConfig,
     headless_state: &HeadlessProcessState,
@@ -233,8 +126,15 @@ pub async fn chat_execute_api_core(
     let base_url = profile.api_base_url().unwrap_or_default();
     let api_key = profile.api_key().unwrap_or_default();
     let model = profile.model().clone();
-    let messages = request.messages.clone();
-    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+    let context = super::context_manager::build_chat_context(app.as_ref(), &request)
+        .await
+        .map_err(|reason| CoreError::ExecutionFailed {
+            id: "chat-context".to_string(),
+            reason,
+        })?;
+    let messages = context.messages.clone();
+    let cancel_token = CancellationToken::new();
+    let runtime_engine = DefaultMaestroEngine;
     let task_id = request.task_id.clone().unwrap_or_default();
     
     let now_ms = current_time_ms().unwrap_or_default();
@@ -258,7 +158,7 @@ pub async fn chat_execute_api_core(
         native_ref: None,
     };
     let run_id_for_return = execution.id.clone();
-    let exec_id = headless_state.register(execution, cancel_tx);
+    let exec_id = headless_state.register(execution, cancel_token.clone());
     let on_data_clone = on_data.clone();
     let root_dir = resolve_root_dir_from_project_path(&cfg.project.path).ok();
     let _ = on_data.send_string(format!("\u{0}RUN_ID:{run_id_for_return}"));
@@ -267,16 +167,19 @@ pub async fn chat_execute_api_core(
     let headless_state_clone = headless_state.clone();
 
     tokio::spawn(async move {
-        let run_result = crate::api_provider::stream_chat(
-            &provider,
-            &base_url,
-            &api_key,
-            &model,
-            &messages,
-            cancel_rx,
-            on_data_clone.clone(),
-        )
-        .await;
+        let run_result = runtime_engine
+            .run_api_chat(
+                ApiChatRequest {
+                    provider,
+                    base_url,
+                    api_key,
+                    model,
+                    messages,
+                },
+                cancel_token,
+                on_data_clone.clone(),
+            )
+            .await;
         if let Err(e) = match &run_result {
             Ok(_) => on_data_clone.send_string("\u{0}DONE".to_string()),
             Err(err) => on_data_clone.send_string(format!("\u{0}ERROR:{err}")),
@@ -286,7 +189,7 @@ pub async fn chat_execute_api_core(
         let execution = match &run_result {
             Ok(_) => headless_state_clone.complete_and_extract(
                 &exec_id_for_spawn,
-                String::new(),
+                format!("input_tokens≈{}", context.estimate.approx_input_tokens),
                 None,
             ),
             Err(err) => headless_state_clone.fail_and_extract(
@@ -359,30 +262,10 @@ pub async fn chat_execute_cli_core(
     if let Err(reason) = crate::plugin_engine::action_guard::ActionGuard::unwrap_default().check_command(&full_command_str) {
         return Err(CoreError::PermissionDenied { reason: format!("Blocked by ActionGuard: {reason}") });
     }
-
-    let mut command = tokio::process::Command::new(&profile.command());
-    // Assign to a new process group or current daemon's process group so child processes can be managed
-    // In Tauri desktop apps, this isolates the process tree slightly. For daemons, this is very important.
-    #[cfg(unix)]
-    {
-        command.process_group(0);
-    }
-    command.args(args);
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
-    if !cfg.project.path.trim().is_empty() {
-        command.current_dir(&cfg.project.path);
-    }
-    for (k, v) in &profile.env() {
-        command.env(k, v);
-    }
-
-    let mut child = command.spawn().map_err(|e| CoreError::ExecutionFailed { id: "spawn".to_string(), reason: format!("spawn failed: {e}") })?;
-    let pid = child.id();
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
-    let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel();
     let task_id = request.task_id.clone().unwrap_or_default();
-    
+    let cancel_token = CancellationToken::new();
+    let runtime_engine = DefaultMaestroEngine;
+
     let now_ms = current_time_ms().unwrap_or_default();
     let execution = Execution {
         id: format!("chat-cli-{}-{}", request.engine_id, uuid::Uuid::new_v4()),
@@ -404,74 +287,67 @@ pub async fn chat_execute_cli_core(
         native_ref: None,
     };
     let run_id_for_return = execution.id.clone();
-    let exec_id = headless_state.register(execution, cancel_tx);
+    let exec_id = headless_state.register(execution, cancel_token.clone());
     let on_data_clone = on_data.clone();
-    let aggregate = Arc::new(Mutex::new(String::new()));
     let root_dir = resolve_root_dir_from_project_path(&cfg.project.path).ok();
     let _ = on_data.send_string(format!("\u{0}RUN_ID:{run_id_for_return}"));
 
     let exec_id_for_spawn = exec_id.clone();
     let headless_state_clone = headless_state.clone();
+    let command = profile.command().clone();
+    let cwd = if cfg.project.path.trim().is_empty() {
+        None
+    } else {
+        Some(cfg.project.path.clone())
+    };
+    let env = profile
+        .env()
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect::<Vec<_>>();
 
     tokio::spawn(async move {
-        let stdout_aggregate = Arc::clone(&aggregate);
-        let stderr_aggregate = Arc::clone(&aggregate);
-        let stdout_task = stdout
-            .map(|out| tokio::spawn(forward_output(out, on_data_clone.clone(), stdout_aggregate)));
-        let stderr_task = stderr
-            .map(|err| tokio::spawn(forward_output(err, on_data_clone.clone(), stderr_aggregate)));
+        let run_result = runtime_engine
+            .run_cli_chat(
+                CliChatRequest {
+                    command,
+                    args,
+                    cwd,
+                    env,
+                },
+                cancel_token,
+                on_data_clone.clone(),
+            )
+            .await;
 
-        let wait_result: Result<std::process::ExitStatus, std::io::Error> = tokio::select! {
-            _ = &mut cancel_rx => {
-                let _ = child.start_kill();
-                child.wait().await
-            }
-            status = child.wait() => status
-        };
-
-        if let Some(task) = stdout_task {
-            let _ = task.await;
-        }
-        if let Some(task) = stderr_task {
-            let _ = task.await;
-        }
-
-        let output_snapshot = aggregate
-            .lock()
-            .expect("chat aggregate lock poisoned")
-            .clone();
-        let verification = extract_verification_summary(&output_snapshot);
-        if let Some(ref v) = verification {
-            if let Ok(json) = serde_json::to_string(v) {
-                if on_data_clone.send_string(format!("\u{0}VERIFICATION:{json}")).is_err() {
-                    eprintln!("chat_execute_cli: send VERIFICATION failed");
+        match &run_result {
+            Ok(out) => {
+                if let Some(ref v) = out.verification {
+                    if let Ok(json) = serde_json::to_string(v) {
+                        let _ = on_data_clone.send_string(format!("\u{0}VERIFICATION:{json}"));
+                    }
                 }
+                let code = out.exit_code.unwrap_or(-1);
+                let _ = on_data_clone.send_string(format!("\u{0}EXIT:{code}"));
+            }
+            Err(err) => {
+                let _ = on_data_clone.send_string(format!("\u{0}ERROR:{err}"));
             }
         }
 
-        if let Err(e) = match &wait_result {
-            Ok(status) => on_data_clone.send_string(format!(
-                "\u{0}EXIT:{}",
-                status.code().unwrap_or(-1)
-            )),
-            Err(err) => on_data_clone.send_string(format!("\u{0}ERROR:wait failed: {err}")),
-        } {
-            eprintln!("chat_execute_cli: send EXIT/ERROR failed: {e}");
-        }
-        let output_preview = output_snapshot.chars().take(300).collect::<String>();
-        let execution = match &wait_result {
-            Ok(status) => {
-                let code = status.code().unwrap_or(-1);
-                if code == 0 {
+        let execution = match &run_result {
+            Ok(out) => {
+                let output_preview = out.output_snapshot.chars().take(300).collect::<String>();
+                if out.exit_code.unwrap_or(-1) == 0 {
                     headless_state_clone.complete_and_extract(
                         &exec_id_for_spawn,
                         output_preview,
-                        verification.clone(),
+                        out.verification.clone(),
                     )
                 } else {
                     headless_state_clone.fail_and_extract(
                         &exec_id_for_spawn,
-                        format!("exit code: {code}"),
+                        format!("exit code: {}", out.exit_code.unwrap_or(-1)),
                         output_preview,
                     )
                 }
@@ -492,7 +368,7 @@ pub async fn chat_execute_cli_core(
     Ok(ChatExecuteCliResult {
         exec_id,
         run_id: run_id_for_return,
-        pid,
+        pid: None,
         engine_id: request.engine_id,
         profile_id: profile.id,
     })

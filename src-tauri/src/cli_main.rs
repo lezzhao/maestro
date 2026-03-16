@@ -129,6 +129,7 @@ pub async fn run_cli_mode(args: Vec<String>) {
                         if let Ok(req) = serde_json::from_value::<ChatApiRequest>(msg.payload) {
                             let stream = Arc::new(MpscStringStream { tx: tx.clone(), msg_id: msg.id.clone() });
                             let result = chat_execute_api_core(
+                                None,
                                 req,
                                 core_clone.config.get(),
                                 &core_clone.headless_state,

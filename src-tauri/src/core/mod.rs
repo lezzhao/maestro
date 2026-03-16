@@ -13,6 +13,7 @@ use crate::workflow::chat::{chat_execute_api_core, chat_execute_cli_core};
 use crate::workflow::run::{workflow_run_core, workflow_run_step_core};
 use crate::core::events::StringStream;
 use std::sync::Arc;
+use tauri::AppHandle;
 
 pub struct MaestroCore {
     pub config: AppConfigState,
@@ -69,10 +70,11 @@ impl MaestroCore {
     /// Chat execute via API - creates Execution, registers with headless, spawns
     pub async fn chat_execute_api(
         &self,
+        app: Option<AppHandle>,
         request: ChatApiRequest,
         on_data: Arc<dyn StringStream>,
     ) -> Result<crate::workflow::types::ChatExecuteApiResult, error::CoreError> {
-        chat_execute_api_core(request, self.config.get(), &self.headless_state, on_data).await
+        chat_execute_api_core(app, request, self.config.get(), &self.headless_state, on_data).await
     }
 
     /// Chat execute via CLI - creates Execution, registers with headless, spawns
