@@ -1,4 +1,5 @@
-import { Suspense, useMemo, useState, useCallback } from "react";
+import { Suspense, useMemo, useState, useCallback, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "./stores/appStore";
 import { useTranslation } from "./i18n";
@@ -25,6 +26,11 @@ function App() {
   })));
 
   const [commandOpen, setCommandOpen] = useState(false);
+
+  useEffect(() => {
+    invoke("cli_reconcile_active_sessions").catch(console.error);
+    invoke("pty_cleanup_dead_sessions").catch(console.error);
+  }, []);
 
   const handleImport = useCallback(
     async (path: string) => {

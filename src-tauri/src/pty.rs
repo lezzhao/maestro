@@ -84,6 +84,23 @@ impl PtyManagerState {
         }
     }
 
+    pub fn cleanup_dead_sessions(&self) -> usize {
+        let mut dead_ids = Vec::new();
+        {
+            let sessions = self.sessions.read().expect("sessions read lock poisoned");
+            for (id, session) in sessions.iter() {
+                if let Ok(Some(_)) = session.child.lock().expect("child lock poisoned").try_wait() {
+                    dead_ids.push(*id);
+                }
+            }
+        }
+        let count = dead_ids.len();
+        for id in dead_ids {
+            self.remove_session(id);
+        }
+        count
+    }
+
     pub fn write_to_session(&self, session_id: Option<u32>, data: &str) -> Result<(), String> {
         let session = self.get_session(session_id)?;
         session
@@ -319,6 +336,11 @@ pub fn pty_kill(session_id: u32, state: tauri::State<'_, PtyManagerState>) -> Re
 #[command]
 pub fn pty_kill_all(state: tauri::State<'_, PtyManagerState>) {
     state.kill_all();
+}
+
+#[command]
+pub fn pty_cleanup_dead_sessions(state: tauri::State<'_, PtyManagerState>) -> usize {
+    state.cleanup_dead_sessions()
 }
 
 #[command]

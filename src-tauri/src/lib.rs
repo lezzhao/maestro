@@ -14,7 +14,7 @@ mod run_persistence;
 mod spec;
 pub mod workflow;
 
-use cli_state::{cli_list_sessions, cli_prune_sessions, cli_read_session_logs};
+use cli_state::{cli_list_sessions, cli_prune_sessions, cli_read_session_logs, cli_reconcile_active_sessions};
 use config::{load_or_create_config, save_config, AppConfigState};
 use engine::{
     engine_get_active, engine_list, engine_list_models, engine_preflight, engine_set_active,
@@ -30,9 +30,9 @@ use project::{
     project_read_file, project_recommend_engine, project_set_current,
 };
 use pty::{
-    pty_active_session, pty_kill, pty_kill_all, pty_resize, pty_spawn, pty_write, PtyManagerState,
+    pty_active_session, pty_cleanup_dead_sessions, pty_kill, pty_kill_all, pty_resize, pty_spawn, pty_write, PtyManagerState,
 };
-use spec::{spec_detect, spec_inject, spec_list, spec_remove};
+use spec::{spec_detect, spec_inject, spec_list, spec_remove, spec_preview, spec_backup, spec_restore};
 use tauri::Manager;
 use workflow::{
     chat_execute_api, chat_execute_api_stop, chat_execute_cli, chat_execute_cli_stop,
@@ -79,6 +79,9 @@ pub fn run() {
             spec_inject,
             spec_remove,
             spec_detect,
+            spec_preview,
+            spec_backup,
+            spec_restore,
             project_detect_stack,
             project_set_current,
             project_recommend_engine,
@@ -109,6 +112,8 @@ pub fn run() {
             cli_list_sessions,
             cli_read_session_logs,
             cli_prune_sessions,
+            cli_reconcile_active_sessions,
+            pty_cleanup_dead_sessions,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri app")
