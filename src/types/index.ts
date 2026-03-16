@@ -271,7 +271,10 @@ export type ChatApiRequest = {
   engine_id: string;
   profile_id?: string | null;
   task_id?: string | null;
-  messages: ChatApiMessage[];
+  message_ids?: string[];
+  messages?: ChatApiMessage[];
+  max_input_tokens?: number;
+  max_messages?: number;
 };
 
 export type ChatExecuteApiResult = {

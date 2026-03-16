@@ -45,7 +45,7 @@ export function useChatSession({
   const clearPendingAttachmentsByTask = useChatStore((s) => s.clearPendingAttachments);
   const removePendingAttachmentByTask = useChatStore((s) => s.removePendingAttachment);
 
-  const { stopSession } = useChatAgent();
+  const { stopSession, saveLastConversation } = useChatAgent();
   const { pushQueue, popQueue, clearQueue } = useExecutionQueue();
   const { handleRetry: baseHandleRetry, handleCopy } = useChatInputHistory(activeTaskId, isRunning);
 
@@ -281,6 +281,18 @@ export function useChatSession({
       }));
   }, [activeTaskId]);
 
+  const buildApiMessageIds = useCallback((): string[] => {
+    if (!activeTaskId) return [];
+    const list = useChatStore.getState().messages[activeTaskId] || [];
+    return list
+      .filter(
+        (m) =>
+          (m.role === "system" || m.role === "user" || m.role === "assistant") &&
+          !!m.content.trim(),
+      )
+      .map((m) => m.id);
+  }, [activeTaskId]);
+
   const runExecution = useCallback(
     async (content: string, mode: "api" | "cli") => {
       if (!activeTaskId) return;
@@ -301,12 +313,24 @@ export function useChatSession({
 
       try {
         setExecutionPhase("sending");
+        if (mode === "api" && activeTaskId) {
+          const allMessages = useChatStore.getState().messages[activeTaskId] || [];
+          await saveLastConversation({
+            task_id: activeTaskId,
+            messages: allMessages,
+            saved_at: Date.now(),
+          });
+        }
         const request = mode === "api"
           ? {
               engine_id: activeEngineId,
               profile_id: activeEngine?.active_profile_id || null,
               task_id: activeTaskId,
+              message_ids: buildApiMessageIds(),
+              // Fallback payload: Rust 优先从持久化+ID恢复，缺失时使用该列表
               messages: buildApiMessages(),
+              max_input_tokens: 12000,
+              max_messages: 48,
             }
           : {
               engine_id: activeEngineId,
@@ -364,9 +388,11 @@ export function useChatSession({
       activeTaskId,
       addMessage,
       buildApiMessages,
+      buildApiMessageIds,
       createRun,
       emitRunEvent,
       failRound,
+      saveLastConversation,
       setRunning,
       setTaskRunning,
       startExecution,
