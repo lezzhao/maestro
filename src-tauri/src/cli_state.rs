@@ -1,5 +1,6 @@
 use crate::config::AppConfigState;
-use crate::run_persistence::{read_run_records, rewrite_run_records, UnifiedRunRecord};
+use crate::core::execution::{Execution, ExecutionStatus};
+use crate::run_persistence::{read_run_records, rewrite_run_records};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
@@ -61,7 +62,7 @@ fn session_log_path(log_dir: &PathBuf, session_id: &str) -> PathBuf {
 }
 
 fn map_run_records(
-    records: &[UnifiedRunRecord],
+    records: &[Execution],
     log_dir: &PathBuf,
     engine_filter: Option<&str>,
 ) -> Vec<CliSessionListItem> {
@@ -73,15 +74,15 @@ fn map_run_records(
                 .unwrap_or(true)
         })
         .map(|record| {
-            let log_path = session_log_path(log_dir, &record.run_id);
+            let log_path = session_log_path(log_dir, &record.id);
             let log_size = fs::metadata(log_path).map(|m| m.len()).unwrap_or(0);
             CliSessionListItem {
-                session_id: record.run_id.clone(),
+                session_id: record.id.clone(),
                 engine_id: record.engine_id.clone(),
                 task_id: record.task_id.clone(),
                 source: record.source.clone(),
-                status: record.status.clone(),
-                mode: record.mode.clone(),
+                status: record.status.as_str().to_string(),
+                mode: record.mode.as_str().to_string(),
                 command: record.command.clone(),
                 cwd: record.cwd.clone(),
                 model: record.model.clone(),
@@ -143,17 +144,17 @@ pub fn cli_read_session_logs(
             .filter(|item| item.engine_id == engine_id)
             .max_by_key(|item| item.updated_at);
         filtered
-            .map(|item| item.run_id.clone())
+            .map(|item| item.id.clone())
             .ok_or_else(|| format!("no run record for engine: {engine_id}"))?
     };
-    let matched = run_records.iter().find(|item| item.run_id == target);
+    let matched = run_records.iter().find(|item| item.id == target);
     if let Some(item) = matched {
         if !item.output_preview.trim().is_empty() {
             return Ok(item.output_preview.clone());
         }
         return Ok(format!(
             "run_id: {}\nengine: {}\nstatus: {}\nmode: {}\n暂无日志预览。",
-            item.run_id, item.engine_id, item.status, item.mode
+            item.id, item.engine_id, item.status.as_str(), item.mode.as_str()
         ));
     }
     
@@ -199,7 +200,7 @@ pub fn cli_prune_sessions(
     rewrite_run_records(&root, &keep)?;
     let mut deleted_logs = 0usize;
     for record in &remove {
-        let log_path = session_log_path(&log_dir, &record.run_id);
+        let log_path = session_log_path(&log_dir, &record.id);
         if log_path.exists() && fs::remove_file(log_path).is_ok() {
             deleted_logs += 1;
         }
@@ -225,9 +226,9 @@ pub fn cli_reconcile_active_sessions(
             .as_millis() as i64;
         let mut updated = Vec::new();
         for mut item in run_records {
-            if item.status == "active" {
+            if item.status == ExecutionStatus::Running {
                 if now_ms - item.updated_at > 12 * 60 * 60 * 1000 {
-                    item.status = "error".to_string();
+                    item.status = ExecutionStatus::Failed;
                     item.updated_at = now_ms;
                     reconciled += 1;
                 }

@@ -1,3 +1,4 @@
+use crate::workflow::types::VerificationSummary;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -19,7 +20,9 @@ impl ExecutionMode {
     }
 }
 
+// Ensure the parser handles the string names backward-compatibly
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub enum ExecutionStatus {
     Pending,
     Running,
@@ -42,17 +45,32 @@ impl ExecutionStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Execution {
+    #[serde(alias = "run_id")] // For backward compatibility with UnifiedRunRecord
     pub id: String,
     pub engine_id: String,
+    #[serde(default)]
     pub task_id: String,
+    #[serde(default)]
+    pub source: String,
     pub mode: ExecutionMode,
     pub status: ExecutionStatus,
+    #[serde(default)]
     pub command: String,
+    #[serde(default)]
     pub cwd: String,
+    #[serde(default)]
     pub model: String,
+    #[serde(default)]
     pub created_at: i64,
+    #[serde(default)]
     pub updated_at: i64,
     pub log_path: Option<String>,
+    #[serde(default)]
+    pub output_preview: String,
+    pub verification: Option<VerificationSummary>,
+    pub error: Option<String>,
+    pub result: Option<String>,
+    pub native_ref: Option<String>,
 }
 
 impl Execution {
@@ -66,6 +84,7 @@ impl Execution {
             id,
             engine_id,
             task_id: String::new(),
+            source: String::new(),
             mode,
             status: ExecutionStatus::Pending,
             command: String::new(),
@@ -74,6 +93,11 @@ impl Execution {
             created_at: now,
             updated_at: now,
             log_path: None,
+            output_preview: String::new(),
+            verification: None,
+            error: None,
+            result: None,
+            native_ref: None,
         }
     }
 
@@ -87,8 +111,9 @@ impl Execution {
         self.touch();
     }
 
-    pub fn fail(&mut self) {
+    pub fn fail(&mut self, reason: String) {
         self.status = ExecutionStatus::Failed;
+        self.error = Some(reason);
         self.touch();
     }
 

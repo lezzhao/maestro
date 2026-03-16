@@ -41,14 +41,19 @@ impl MaestroCore {
             return Ok(());
         }
         // Try Headless
-        self.headless_state.cancel(id).map_err(error::CoreError::CancelFailed)
+        self.headless_state.cancel(id).map_err(|e| error::CoreError::CancelFailed { id: id.to_string(), reason: e })
     }
 
     /// Use-Case: List all executions
     pub fn list_executions(&self) -> Result<Vec<crate::core::execution::Execution>, error::CoreError> {
-        // In reality, this queries run-records.jsonl
-        // For now, return stub
-        Ok(vec![])
+        let root_dir = crate::run_persistence::resolve_root_dir_from_project_path(&self.config.get().project.path).unwrap_or_else(|_| {
+            let mut pb = std::path::PathBuf::from(&self.config.get().project.path);
+            pb.push(".maestro-cli");
+            pb
+        });
+        
+        let records = crate::run_persistence::read_run_records(&root_dir).unwrap_or_default();
+        Ok(records)
     }
 
     /// Use-Case: Fetch logs for an execution

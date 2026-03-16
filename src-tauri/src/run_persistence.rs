@@ -1,35 +1,10 @@
-use crate::workflow::types::VerificationSummary;
-use serde::{Deserialize, Serialize};
+use crate::core::execution::Execution;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
 static RUN_RECORDS_LOCK: Mutex<()> = Mutex::new(());
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UnifiedRunRecord {
-    pub run_id: String,
-    pub engine_id: String,
-    #[serde(default)]
-    pub task_id: String,
-    pub source: String,
-    pub mode: String,
-    pub status: String,
-    #[serde(default)]
-    pub command: String,
-    #[serde(default)]
-    pub cwd: String,
-    #[serde(default)]
-    pub model: String,
-    #[serde(default)]
-    pub created_at: i64,
-    #[serde(default)]
-    pub updated_at: i64,
-    #[serde(default)]
-    pub output_preview: String,
-    pub verification: Option<VerificationSummary>,
-}
 
 pub fn current_time_ms() -> Result<i64, String> {
     Ok(std::time::SystemTime::now()
@@ -50,7 +25,7 @@ pub fn run_records_path(root: &PathBuf) -> PathBuf {
     root.join(".maestro-cli").join("run-records.jsonl")
 }
 
-pub fn append_run_record(root: &PathBuf, record: &UnifiedRunRecord) -> Result<(), String> {
+pub fn append_run_record(root: &PathBuf, record: &Execution) -> Result<(), String> {
     let _guard = RUN_RECORDS_LOCK
         .lock()
         .map_err(|_| "lock run records failed".to_string())?;
@@ -70,7 +45,7 @@ pub fn append_run_record(root: &PathBuf, record: &UnifiedRunRecord) -> Result<()
     Ok(())
 }
 
-pub fn read_run_records(root: &PathBuf) -> Result<Vec<UnifiedRunRecord>, String> {
+pub fn read_run_records(root: &PathBuf) -> Result<Vec<Execution>, String> {
     let _guard = RUN_RECORDS_LOCK
         .lock()
         .map_err(|_| "lock run records failed".to_string())?;
@@ -86,7 +61,7 @@ pub fn read_run_records(root: &PathBuf) -> Result<Vec<UnifiedRunRecord>, String>
         if trimmed.is_empty() {
             continue;
         }
-        if let Ok(item) = serde_json::from_str::<UnifiedRunRecord>(trimmed) {
+        if let Ok(item) = serde_json::from_str::<Execution>(trimmed) {
             records.push(item);
         } else {
             bad_line_count += 1;
@@ -102,7 +77,7 @@ pub fn read_run_records(root: &PathBuf) -> Result<Vec<UnifiedRunRecord>, String>
     Ok(records)
 }
 
-pub fn rewrite_run_records(root: &PathBuf, records: &[UnifiedRunRecord]) -> Result<(), String> {
+pub fn rewrite_run_records(root: &PathBuf, records: &[Execution]) -> Result<(), String> {
     let _guard = RUN_RECORDS_LOCK
         .lock()
         .map_err(|_| "lock run records failed".to_string())?;

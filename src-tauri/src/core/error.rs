@@ -1,19 +1,40 @@
 use serde::ser::{Serialize, SerializeStruct, Serializer};
-use std::fmt;
+use thiserror::Error;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Error)]
 pub enum CoreError {
-    NotFound(String),
-    EngineUnavailable(String),
-    SystemError(String),
-    ValidationError(String),
-    AuthFailed(String),
-    ExecutionFailed(String),
-    CancelFailed(String),
-    Io(String),
-    Serialization(String),
-    Unsupported(String),
-    PermissionDenied(String),
+    #[error("NotFound: {resource} - {id}")]
+    NotFound { resource: String, id: String },
+
+    #[error("EngineUnavailable: {engine_id} - {reason}")]
+    EngineUnavailable { engine_id: String, reason: String },
+
+    #[error("SystemError: {message}")]
+    SystemError { message: String },
+
+    #[error("ValidationError: {field} - {message}")]
+    ValidationError { field: String, message: String },
+
+    #[error("AuthFailed: {engine_id} - {reason}")]
+    AuthFailed { engine_id: String, reason: String },
+
+    #[error("ExecutionFailed: {id} - {reason}")]
+    ExecutionFailed { id: String, reason: String },
+
+    #[error("CancelFailed: {id} - {reason}")]
+    CancelFailed { id: String, reason: String },
+
+    #[error("Io: {message}")]
+    Io { message: String },
+
+    #[error("Serialization: {message}")]
+    Serialization { message: String },
+
+    #[error("Unsupported: {feature}")]
+    Unsupported { feature: String },
+
+    #[error("PermissionDenied: {reason}")]
+    PermissionDenied { reason: String },
 }
 
 impl Serialize for CoreError {
@@ -22,59 +43,39 @@ impl Serialize for CoreError {
         S: Serializer,
     {
         let (code, message) = match self {
-            CoreError::NotFound(m) => ("ERR_NOT_FOUND", m),
-            CoreError::EngineUnavailable(m) => ("ERR_ENGINE_UNAVAILABLE", m),
-            CoreError::SystemError(m) => ("ERR_SYSTEM", m),
-            CoreError::ValidationError(m) => ("ERR_VALIDATION", m),
-            CoreError::AuthFailed(m) => ("ERR_AUTH_FAILED", m),
-            CoreError::ExecutionFailed(m) => ("ERR_EXECUTION_FAILED", m),
-            CoreError::CancelFailed(m) => ("ERR_CANCEL_FAILED", m),
-            CoreError::Io(m) => ("ERR_IO", m),
-            CoreError::Serialization(m) => ("ERR_SERIALIZATION", m),
-            CoreError::Unsupported(m) => ("ERR_UNSUPPORTED", m),
-            CoreError::PermissionDenied(m) => ("ERR_PERMISSION_DENIED", m),
+            CoreError::NotFound { resource, id } => ("ERR_NOT_FOUND", format!("{} not found: {}", resource, id)),
+            CoreError::EngineUnavailable { engine_id, reason } => ("ERR_ENGINE_UNAVAILABLE", format!("Engine {} unavailable: {}", engine_id, reason)),
+            CoreError::SystemError { message } => ("ERR_SYSTEM", message.clone()),
+            CoreError::ValidationError { field, message } => ("ERR_VALIDATION", format!("Invalid {}: {}", field, message)),
+            CoreError::AuthFailed { engine_id, reason } => ("ERR_AUTH_FAILED", format!("Auth failed for {}: {}", engine_id, reason)),
+            CoreError::ExecutionFailed { id, reason } => ("ERR_EXECUTION_FAILED", format!("Execution {} failed: {}", id, reason)),
+            CoreError::CancelFailed { id, reason } => ("ERR_CANCEL_FAILED", format!("Cancel failed for {}: {}", id, reason)),
+            CoreError::Io { message } => ("ERR_IO", message.clone()),
+            CoreError::Serialization { message } => ("ERR_SERIALIZATION", message.clone()),
+            CoreError::Unsupported { feature } => ("ERR_UNSUPPORTED", format!("Unsupported: {}", feature)),
+            CoreError::PermissionDenied { reason } => ("ERR_PERMISSION_DENIED", reason.clone()),
         };
         let mut state = serializer.serialize_struct("CoreError", 2)?;
         state.serialize_field("code", code)?;
-        state.serialize_field("message", message)?;
+        state.serialize_field("message", &message)?;
         state.end()
     }
 }
 
-impl fmt::Display for CoreError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            CoreError::NotFound(m) => write!(f, "NotFound: {}", m),
-            CoreError::EngineUnavailable(m) => write!(f, "EngineUnavailable: {}", m),
-            CoreError::SystemError(m) => write!(f, "SystemError: {}", m),
-            CoreError::ValidationError(m) => write!(f, "ValidationError: {}", m),
-            CoreError::AuthFailed(m) => write!(f, "AuthFailed: {}", m),
-            CoreError::ExecutionFailed(m) => write!(f, "ExecutionFailed: {}", m),
-            CoreError::CancelFailed(m) => write!(f, "CancelFailed: {}", m),
-            CoreError::Io(m) => write!(f, "Io: {}", m),
-            CoreError::Serialization(m) => write!(f, "Serialization: {}", m),
-            CoreError::Unsupported(m) => write!(f, "Unsupported: {}", m),
-            CoreError::PermissionDenied(m) => write!(f, "PermissionDenied: {}", m),
-        }
-    }
-}
-
-impl std::error::Error for CoreError {}
-
 impl From<std::io::Error> for CoreError {
     fn from(err: std::io::Error) -> Self {
-        CoreError::SystemError(err.to_string())
+        CoreError::SystemError { message: err.to_string() }
     }
 }
 
 impl From<String> for CoreError {
     fn from(s: String) -> Self {
-        CoreError::SystemError(s)
+        CoreError::SystemError { message: s }
     }
 }
 
 impl From<&str> for CoreError {
     fn from(s: &str) -> Self {
-        CoreError::SystemError(s.to_string())
+        CoreError::SystemError { message: s.to_string() }
     }
 }

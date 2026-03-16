@@ -6,8 +6,9 @@ use crate::core::error::CoreError;
 use crate::engine::EngineRuntimeState;
 use crate::headless::HeadlessProcessState;
 use crate::pty::{PtyManagerState, PtySessionInfo};
+use crate::core::execution::{Execution, ExecutionMode, ExecutionStatus};
 use crate::run_persistence::{
-    append_run_record, current_time_ms, resolve_root_dir_from_project_path, UnifiedRunRecord,
+    append_run_record, current_time_ms, resolve_root_dir_from_project_path,
 };
 use regex::Regex;
 
@@ -26,10 +27,10 @@ async fn last_conversation_path(app: &AppHandle) -> Result<PathBuf, CoreError> {
     let mut dir: PathBuf = app
         .path()
         .app_config_dir()
-        .map_err(|e| CoreError::Io(format!("resolve app config dir failed: {e}")))?;
+        .map_err(|e| CoreError::Io { message: format!("resolve app config dir failed: {e}") })?;
     tokio::fs::create_dir_all(&dir)
         .await
-        .map_err(|e| CoreError::Io(format!("create app config dir failed: {e}")))?;
+        .map_err(|e| CoreError::Io { message: format!("create app config dir failed: {e}") })?;
     dir.push("last-conversation.json");
     Ok(dir)
 }
@@ -42,14 +43,14 @@ fn resolve_profile(
     let engine = cfg
         .engines
         .get(engine_id)
-        .ok_or_else(|| CoreError::NotFound(format!("engine not found: {engine_id}")))?
+        .ok_or_else(|| CoreError::NotFound { resource: "engine".to_string(), id: engine_id.to_string() })?
         .clone();
     if let Some(pid) = profile_id {
         engine
             .profiles
             .get(pid)
             .cloned()
-            .ok_or_else(|| CoreError::NotFound(format!("profile not found for engine {engine_id}: {pid}")))
+            .ok_or_else(|| CoreError::NotFound { resource: "profile".to_string(), id: pid.to_string() })
     } else {
         Ok(engine.active_profile())
     }
@@ -185,10 +186,10 @@ pub async fn chat_save_last_conversation(
 ) -> Result<(), CoreError> {
     let path = last_conversation_path(&app).await?;
     let text = serde_json::to_string_pretty(&payload)
-        .map_err(|e| CoreError::Serialization(format!("serialize last conversation failed: {e}")))?;
+        .map_err(|e| CoreError::Serialization { message: format!("serialize last conversation failed: {e}") })?;
     tokio::fs::write(path, text)
         .await
-        .map_err(|e| CoreError::Io(format!("write last conversation failed: {e}")))
+        .map_err(|e| CoreError::Io { message: format!("write last conversation failed: {e}") })
 }
 
 #[command]
@@ -201,9 +202,9 @@ pub async fn chat_load_last_conversation(
     }
     let text = tokio::fs::read_to_string(path)
         .await
-        .map_err(|e| CoreError::Io(format!("read last conversation failed: {e}")))?;
+        .map_err(|e| CoreError::Io { message: format!("read last conversation failed: {e}") })?;
     let payload = serde_json::from_str::<serde_json::Value>(&text)
-        .map_err(|e| CoreError::Serialization(format!("parse last conversation failed: {e}")))?;
+        .map_err(|e| CoreError::Serialization { message: format!("parse last conversation failed: {e}") })?;
     Ok(Some(payload))
 }
 
@@ -237,11 +238,31 @@ pub async fn chat_execute_api_core(
     let model = profile.model().clone();
     let messages = request.messages.clone();
     let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
-    let exec_id = headless_state.register(request.engine_id.clone(), cancel_tx);
-    let run_id = format!("chat-api-{}-{exec_id}", request.engine_id);
-    let run_id_for_return = run_id.clone();
     let task_id = request.task_id.clone().unwrap_or_default();
-    let entries = headless_state.clone_entries();
+    
+    let now_ms = current_time_ms().unwrap_or_default();
+    let execution = Execution {
+        id: format!("chat-api-{}-{}", request.engine_id, uuid::Uuid::new_v4()),
+        engine_id: request.engine_id.clone(),
+        task_id: task_id.clone(),
+        source: "chat_execute_api".to_string(),
+        mode: ExecutionMode::Api,
+        status: ExecutionStatus::Running,
+        command: profile.command().clone(),
+        cwd: cfg.project.path.clone(),
+        model: profile.model().clone(),
+        created_at: now_ms,
+        updated_at: now_ms,
+        log_path: None,
+        output_preview: String::new(),
+        verification: None,
+        error: None,
+        result: None,
+        native_ref: None,
+    };
+    let run_id_for_return = execution.id.clone();
+    let exec_id = headless_state.register(execution, cancel_tx);
+    let run_id = exec_id.clone();
     let on_data_clone = on_data.clone();
     let root_dir = resolve_root_dir_from_project_path(&cfg.project.path).ok();
     let engine_id = request.engine_id.clone();
@@ -251,6 +272,7 @@ pub async fn chat_execute_api_core(
     let _ = on_data.send_string(format!("\u{0}RUN_ID:{run_id_for_return}"));
 
     let exec_id_for_spawn = exec_id.clone();
+    let headless_state_clone = headless_state.clone();
 
     tokio::spawn(async move {
         let run_result = crate::api_provider::stream_chat(
@@ -269,20 +291,24 @@ pub async fn chat_execute_api_core(
                 if let (Some(root), Ok(now_ms)) = (root_dir.as_ref(), current_time_ms()) {
                     let _ = append_run_record(
                         root,
-                        &UnifiedRunRecord {
-                            run_id: run_id.clone(),
+                        &Execution {
+                            id: run_id.clone(),
                             engine_id: engine_id.clone(),
                             task_id: task_id.clone(),
                             source: "chat_execute_api".to_string(),
-                            mode: "api".to_string(),
-                            status: "done".to_string(),
+                            mode: ExecutionMode::Api,
+                            status: ExecutionStatus::Completed,
                             command: profile_command.clone(),
                             cwd: cwd.clone(),
                             model: profile_model.clone(),
                             created_at: now_ms,
                             updated_at: now_ms,
+                            log_path: None,
                             output_preview: String::new(),
                             verification: None,
+                            error: None,
+                            result: None,
+                            native_ref: None,
                         },
                     );
                 }
@@ -292,29 +318,30 @@ pub async fn chat_execute_api_core(
                 if let (Some(root), Ok(now_ms)) = (root_dir.as_ref(), current_time_ms()) {
                     let _ = append_run_record(
                         root,
-                        &UnifiedRunRecord {
-                            run_id: run_id.clone(),
+                        &Execution {
+                            id: run_id.clone(),
                             engine_id: engine_id.clone(),
                             task_id: task_id.clone(),
                             source: "chat_execute_api".to_string(),
-                            mode: "api".to_string(),
-                            status: "error".to_string(),
+                            mode: ExecutionMode::Api,
+                            status: ExecutionStatus::Failed,
                             command: profile_command.clone(),
                             cwd: cwd.clone(),
                             model: profile_model.clone(),
                             created_at: now_ms,
                             updated_at: now_ms,
+                            log_path: None,
                             output_preview: err.chars().take(300).collect(),
                             verification: None,
+                            error: Some(err),
+                            result: None,
+                            native_ref: None,
                         },
                     );
                 }
             }
         }
-        entries
-            .lock()
-            .expect("headless process lock poisoned")
-            .remove(&exec_id_for_spawn);
+        headless_state_clone.remove(&exec_id_for_spawn);
     });
 
     Ok(ChatExecuteApiResult {
@@ -330,7 +357,7 @@ pub fn chat_execute_api_stop(
     request: ChatExecuteStopRequest,
     headless_state: State<'_, HeadlessProcessState>,
 ) -> Result<(), CoreError> {
-    headless_state.cancel(&request.exec_id.to_string()).map_err(CoreError::CancelFailed)
+    headless_state.cancel(&request.exec_id.to_string()).map_err(|e| CoreError::CancelFailed { id: request.exec_id.to_string(), reason: e })
 }
 
 #[command]
@@ -358,10 +385,7 @@ pub async fn chat_execute_cli_core(
     let fallback_headless_args = builtin_headless_defaults(&request.engine_id);
     let supports_headless = profile.supports_headless() || fallback_headless_args.is_some();
     if !supports_headless {
-        return Err(CoreError::Unsupported(format!(
-            "engine {} does not support headless mode",
-            request.engine_id
-        )));
+        return Err(CoreError::Unsupported { feature: "headless mode".to_string() });
     }
 
     let mut args = if !profile.headless_args().is_empty() {
@@ -379,7 +403,7 @@ pub async fn chat_execute_cli_core(
 
     let full_command_str = format!("{} {}", profile.command(), args.join(" "));
     if let Err(reason) = crate::plugin_engine::action_guard::ActionGuard::unwrap_default().check_command(&full_command_str) {
-        return Err(CoreError::PermissionDenied(format!("Blocked by ActionGuard: {reason}")));
+        return Err(CoreError::PermissionDenied { reason: format!("Blocked by ActionGuard: {reason}") });
     }
 
     let mut command = tokio::process::Command::new(&profile.command());
@@ -398,16 +422,36 @@ pub async fn chat_execute_cli_core(
         command.env(k, v);
     }
 
-    let mut child = command.spawn().map_err(|e| CoreError::ExecutionFailed(format!("spawn failed: {e}")))?;
+    let mut child = command.spawn().map_err(|e| CoreError::ExecutionFailed { id: "spawn".to_string(), reason: format!("spawn failed: {e}") })?;
     let pid = child.id();
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
     let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel();
-    let exec_id = headless_state.register(request.engine_id.clone(), cancel_tx);
-    let run_id = format!("chat-cli-{}-{exec_id}", request.engine_id);
-    let run_id_for_return = run_id.clone();
     let task_id = request.task_id.clone().unwrap_or_default();
-    let entries = headless_state.clone_entries();
+    
+    let now_ms = current_time_ms().unwrap_or_default();
+    let execution = Execution {
+        id: format!("chat-cli-{}-{}", request.engine_id, uuid::Uuid::new_v4()),
+        engine_id: request.engine_id.clone(),
+        task_id: task_id.clone(),
+        source: "chat_execute_cli".to_string(),
+        mode: ExecutionMode::Cli,
+        status: ExecutionStatus::Running,
+        command: profile.command().clone(),
+        cwd: cfg.project.path.clone(),
+        model: profile.model().clone(),
+        created_at: now_ms,
+        updated_at: now_ms,
+        log_path: None,
+        output_preview: String::new(),
+        verification: None,
+        error: None,
+        result: None,
+        native_ref: None,
+    };
+    let run_id_for_return = execution.id.clone();
+    let exec_id = headless_state.register(execution, cancel_tx);
+    let run_id = exec_id.clone();
     let on_data_clone = on_data.clone();
     let aggregate = Arc::new(Mutex::new(String::new()));
     let root_dir = resolve_root_dir_from_project_path(&cfg.project.path).ok();
@@ -418,6 +462,7 @@ pub async fn chat_execute_cli_core(
     let _ = on_data.send_string(format!("\u{0}RUN_ID:{run_id_for_return}"));
 
     let exec_id_for_spawn = exec_id.clone();
+    let headless_state_clone = headless_state.clone();
 
     tokio::spawn(async move {
         let stdout_aggregate = Arc::clone(&aggregate);
@@ -427,7 +472,7 @@ pub async fn chat_execute_cli_core(
         let stderr_task = stderr
             .map(|err| tokio::spawn(forward_output(err, on_data_clone.clone(), stderr_aggregate)));
 
-        let wait_result = tokio::select! {
+        let wait_result: Result<std::process::ExitStatus, std::io::Error> = tokio::select! {
             _ = &mut cancel_rx => {
                 let _ = child.start_kill();
                 child.wait().await
@@ -460,24 +505,28 @@ pub async fn chat_execute_cli_core(
                 if let (Some(root), Ok(now_ms)) = (root_dir.as_ref(), current_time_ms()) {
                     let _ = append_run_record(
                         root,
-                        &UnifiedRunRecord {
-                            run_id: run_id.clone(),
+                        &Execution {
+                            id: run_id.clone(),
                             engine_id: engine_id.clone(),
                             task_id: task_id.clone(),
                             source: "chat_execute_cli".to_string(),
-                            mode: "cli".to_string(),
+                            mode: ExecutionMode::Cli,
                             status: if code == 0 {
-                                "done".to_string()
+                                ExecutionStatus::Completed
                             } else {
-                                "error".to_string()
+                                ExecutionStatus::Failed
                             },
                             command: profile_command.clone(),
                             cwd: cwd.clone(),
                             model: profile_model.clone(),
                             created_at: now_ms,
                             updated_at: now_ms,
+                            log_path: None,
                             output_preview: output_snapshot.chars().take(300).collect(),
                             verification: verification.clone(),
+                            error: if code == 0 { None } else { Some(format!("exit code: {code}")) },
+                            result: None,
+                            native_ref: None,
                         },
                     );
                 }
@@ -487,30 +536,31 @@ pub async fn chat_execute_cli_core(
                 if let (Some(root), Ok(now_ms)) = (root_dir.as_ref(), current_time_ms()) {
                     let _ = append_run_record(
                         root,
-                        &UnifiedRunRecord {
-                            run_id: run_id.clone(),
+                        &Execution {
+                            id: run_id.clone(),
                             engine_id: engine_id.clone(),
                             task_id: task_id.clone(),
                             source: "chat_execute_cli".to_string(),
-                            mode: "cli".to_string(),
-                            status: "error".to_string(),
+                            mode: ExecutionMode::Cli,
+                            status: ExecutionStatus::Failed,
                             command: profile_command.clone(),
                             cwd: cwd.clone(),
                             model: profile_model.clone(),
                             created_at: now_ms,
                             updated_at: now_ms,
+                            log_path: None,
                             output_preview: err.to_string().chars().take(300).collect(),
                             verification: verification.clone(),
+                            error: Some(err.to_string()),
+                            result: None,
+                            native_ref: None,
                         },
                     );
                 }
             }
         }
 
-        entries
-            .lock()
-            .expect("headless process lock poisoned")
-            .remove(&exec_id_for_spawn);
+        headless_state_clone.remove(&exec_id_for_spawn);
     });
 
     Ok(ChatExecuteCliResult {
@@ -527,7 +577,7 @@ pub fn chat_execute_cli_stop(
     request: ChatExecuteStopRequest,
     headless_state: State<'_, HeadlessProcessState>,
 ) -> Result<(), CoreError> {
-    headless_state.cancel(&request.exec_id.to_string()).map_err(CoreError::CancelFailed)
+    headless_state.cancel(&request.exec_id.to_string()).map_err(|e| CoreError::CancelFailed { id: request.exec_id.to_string(), reason: e })
 }
 
 #[command]
@@ -542,14 +592,11 @@ pub async fn chat_spawn(
     let engine = cfg
         .engines
         .get(&request.engine_id)
-        .ok_or_else(|| CoreError::NotFound(format!("engine not found: {}", request.engine_id)))?
+        .ok_or_else(|| CoreError::NotFound { resource: "engine".to_string(), id: request.engine_id.clone() })?
         .clone();
     let profile = if let Some(profile_id) = request.profile_id.as_deref() {
         engine.profiles.get(profile_id).cloned().ok_or_else(|| {
-            CoreError::NotFound(format!(
-                "profile not found for engine {}: {profile_id}",
-                request.engine_id
-            ))
+            CoreError::NotFound { resource: "profile".to_string(), id: profile_id.to_string() }
         })?
     } else {
         engine.active_profile()
@@ -630,7 +677,7 @@ pub fn chat_send(
     } else {
         request.content
     };
-    pty_state.write_to_session(Some(request.session_id.to_string()), &payload).map_err(CoreError::ExecutionFailed)
+    pty_state.write_to_session(Some(request.session_id.to_string()), &payload).map_err(|e| CoreError::ExecutionFailed { id: request.session_id.clone(), reason: e })
 }
 
 #[command]
@@ -638,5 +685,5 @@ pub fn chat_stop(
     request: ChatStopRequest,
     pty_state: State<'_, PtyManagerState>,
 ) -> Result<(), CoreError> {
-    pty_state.kill_session(&request.session_id.to_string()).map_err(CoreError::ExecutionFailed)
+    pty_state.kill_session(&request.session_id.to_string()).map_err(|e| CoreError::ExecutionFailed { id: request.session_id.clone(), reason: e })
 }

@@ -5,8 +5,9 @@ use super::util::*;
 use crate::config::AppConfigState;
 use crate::engine::EngineRuntimeState;
 use crate::pty::PtyManagerState;
+use crate::core::execution::{Execution, ExecutionMode, ExecutionStatus};
 use crate::run_persistence::{
-    append_run_record, current_time_ms, resolve_root_dir_from_project_path, UnifiedRunRecord,
+    append_run_record, current_time_ms, resolve_root_dir_from_project_path,
 };
 use regex::Regex;
 use std::process::Stdio;
@@ -716,28 +717,32 @@ pub async fn workflow_run_core(
             let task_id = request.task_id.clone().unwrap_or_default();
             let _ = append_run_record(
                 &root,
-                &UnifiedRunRecord {
-                    run_id: format!("workflow-{workflow_name_for_record}-{now_ms}"),
+                &Execution {
+                    id: format!("workflow-{workflow_name_for_record}-{now_ms}"),
                     engine_id: "workflow".to_string(),
                     task_id,
                     source: "workflow_run".to_string(),
-                    mode: "workflow".to_string(),
+                    mode: ExecutionMode::Api, // Or maybe Headless/Pty based on something, defaulting to Api for workflow
                     status: if run_result.completed {
-                        "done".to_string()
+                        ExecutionStatus::Completed
                     } else {
-                        "error".to_string()
+                        ExecutionStatus::Failed
                     },
                     command: String::new(),
                     cwd: cfg.project.path.clone(),
                     model: String::new(),
                     created_at: now_ms,
                     updated_at: now_ms,
+                    log_path: None,
                     output_preview: run_result
                         .step_results
                         .last()
                         .map(|item| item.output.chars().take(300).collect())
                         .unwrap_or_default(),
                     verification: run_result.verification.clone(),
+                    error: if run_result.completed { None } else { Some("workflow failed".to_string()) },
+                    result: None,
+                    native_ref: None,
                 },
             );
         }

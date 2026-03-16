@@ -37,12 +37,12 @@ impl EventStream for MpscEventStream {
             "event": event_name,
             "payload": payload,
         });
-        let _ = self.tx.try_send(IpcResponse {
+        self.tx.try_send(IpcResponse {
             id: self.msg_id.clone(),
             result: Some(msg),
             error: None,
             is_stream: true,
-        });
+        }).map_err(|e| format!("Channel full/closed: {e}"))?;
         Ok(())
     }
 }
@@ -54,12 +54,12 @@ pub struct MpscStringStream {
 
 impl StringStream for MpscStringStream {
     fn send_string(&self, data: String) -> Result<(), String> {
-        let _ = self.tx.try_send(IpcResponse {
+        self.tx.try_send(IpcResponse {
             id: self.msg_id.clone(),
             result: Some(serde_json::Value::String(data)),
             error: None,
             is_stream: true,
-        });
+        }).map_err(|e| format!("Channel full/closed: {e}"))?;
         Ok(())
     }
 }
