@@ -310,8 +310,30 @@ pub fn project_set_current(
     })
 }
 
+/// Validate project_path matches configured workspace (scoped permission).
+pub fn validate_project_scope(project_path: &str, allowed: &str) -> Result<(), String> {
+    let a = std::path::Path::new(project_path)
+        .canonicalize()
+        .map_err(|e| format!("canonicalize project failed: {e}"))?;
+    let b = std::path::Path::new(allowed)
+        .canonicalize()
+        .map_err(|e| format!("canonicalize allowed failed: {e}"))?;
+    if a != b {
+        return Err("project path is outside allowed workspace scope".to_string());
+    }
+    Ok(())
+}
+
 #[command]
-pub async fn project_list_files(project_path: String) -> Result<Vec<FileTreeNode>, String> {
+pub async fn project_list_files(
+    project_path: String,
+    core_state: State<'_, crate::core::MaestroCore>,
+) -> Result<Vec<FileTreeNode>, String> {
+    let allowed_path = core_state.inner().config.get().project.path.clone();
+    if allowed_path.is_empty() {
+        return Err("no workspace selected; set project first".to_string());
+    }
+    validate_project_scope(&project_path, &allowed_path)?;
     let scoped = ScopedWorkspace::new(&project_path)?;
     let path = scoped.root().to_path_buf();
 
@@ -337,7 +359,13 @@ pub async fn project_read_file(
     project_path: String,
     file_path: String,
     max_chars: Option<usize>,
+    core_state: State<'_, crate::core::MaestroCore>,
 ) -> Result<String, String> {
+    let allowed_path = core_state.inner().config.get().project.path.clone();
+    if allowed_path.is_empty() {
+        return Err("no workspace selected; set project first".to_string());
+    }
+    validate_project_scope(&project_path, &allowed_path)?;
     let scoped = ScopedWorkspace::new(&project_path)?;
     if file_path.trim().is_empty() {
         return Err("file path is empty".to_string());
@@ -443,7 +471,15 @@ pub fn project_recommend_engine(
 }
 
 #[command]
-pub async fn project_git_status(project_path: String) -> Result<Vec<FileChange>, String> {
+pub async fn project_git_status(
+    project_path: String,
+    core_state: State<'_, crate::core::MaestroCore>,
+) -> Result<Vec<FileChange>, String> {
+    let allowed_path = core_state.inner().config.get().project.path.clone();
+    if allowed_path.is_empty() {
+        return Err("no workspace selected; set project first".to_string());
+    }
+    validate_project_scope(&project_path, &allowed_path)?;
     ensure_git_repo(&project_path)?;
     let output = tokio::process::Command::new("git")
         .arg("-C")
@@ -485,7 +521,13 @@ pub async fn project_git_status(project_path: String) -> Result<Vec<FileChange>,
 pub async fn project_git_diff(
     project_path: String,
     file_path: Option<String>,
+    core_state: State<'_, crate::core::MaestroCore>,
 ) -> Result<String, String> {
+    let allowed_path = core_state.inner().config.get().project.path.clone();
+    if allowed_path.is_empty() {
+        return Err("no workspace selected; set project first".to_string());
+    }
+    validate_project_scope(&project_path, &allowed_path)?;
     ensure_git_repo(&project_path)?;
     let mut command = tokio::process::Command::new("git");
     command.arg("-C").arg(&project_path).arg("diff");
