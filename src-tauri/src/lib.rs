@@ -1,4 +1,6 @@
+mod agent_state;
 mod api_provider;
+mod task_state;
 mod cli_state;
 pub mod config;
 pub mod core;
@@ -34,6 +36,7 @@ use pty::{
 };
 use spec::{spec_detect, spec_inject, spec_list, spec_remove, spec_preview, spec_backup, spec_restore};
 use tauri::Manager;
+use task_state::{task_get_state, task_transition};
 use workflow::{
     chat_execute_api, chat_execute_api_stop, chat_execute_cli, chat_execute_cli_stop,
     chat_load_last_conversation, chat_save_last_conversation, chat_send, chat_spawn, chat_stop,
@@ -110,6 +113,8 @@ pub fn run() {
             cli_prune_sessions,
             cli_reconcile_active_sessions,
             pty_cleanup_dead_sessions,
+            task_transition,
+            task_get_state,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri app")

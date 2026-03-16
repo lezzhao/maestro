@@ -79,9 +79,34 @@ pub async fn chat_save_last_conversation(
     let path = last_conversation_path(&app).await?;
     let text = serde_json::to_string_pretty(&payload)
         .map_err(|e| CoreError::Serialization { message: format!("serialize last conversation failed: {e}") })?;
-    tokio::fs::write(path, text)
+    tokio::fs::write(&path, text)
         .await
-        .map_err(|e| CoreError::Io { message: format!("write last conversation failed: {e}") })
+        .map_err(|e| CoreError::Io { message: format!("write last conversation failed: {e}") })?;
+    // Emit agent state update so frontend can sync (event-driven architecture)
+    if let (Some(task_id), Some(messages)) = (
+        payload.get("task_id").and_then(|v| v.as_str()),
+        payload.get("messages").and_then(|v| v.as_array()),
+    ) {
+        let msgs: Vec<crate::agent_state::PersistedMessagePayload> = messages
+            .iter()
+            .filter_map(|m| {
+                let id = m.get("id")?.as_str()?.to_string();
+                let role = m.get("role")?.as_str().unwrap_or("user").to_string();
+                let content = m.get("content")?.as_str().unwrap_or("").to_string();
+                Some(crate::agent_state::PersistedMessagePayload { id, role, content })
+            })
+            .collect();
+        if !msgs.is_empty() {
+            crate::agent_state::emit_state_update(
+                Some(&app),
+                crate::agent_state::AgentStateUpdate::MessagesUpdated {
+                    task_id: task_id.to_string(),
+                    messages: msgs,
+                },
+            );
+        }
+    }
+    Ok(())
 }
 
 #[command]
@@ -163,8 +188,27 @@ pub async fn chat_execute_api_core(
     let root_dir = resolve_root_dir_from_project_path(&cfg.project.path).ok();
     let _ = on_data.send_string(format!("\u{0}RUN_ID:{run_id_for_return}"));
 
+    // Emit run_created for event-driven frontend sync
+    let run_payload = crate::agent_state::task_run_from_execution(
+        &run_id_for_return,
+        &task_id,
+        &request.engine_id,
+        "api",
+        now_ms,
+    );
+    crate::agent_state::emit_state_update(
+        app.as_ref(),
+        crate::agent_state::AgentStateUpdate::RunCreated {
+            task_id: task_id.clone(),
+            run: run_payload,
+        },
+    );
+
     let exec_id_for_spawn = exec_id.clone();
     let headless_state_clone = headless_state.clone();
+    let app_for_emit = app.clone();
+    let task_id_for_emit = task_id.clone();
+    let run_id_for_emit = run_id_for_return.clone();
 
     tokio::spawn(async move {
         let run_result = runtime_engine
@@ -203,6 +247,15 @@ pub async fn chat_execute_api_core(
                 eprintln!("chat_execute_api: append_run_record failed: {e}");
             }
         }
+        // Emit run_finished for event-driven frontend sync
+        let (status, err) = match &run_result {
+            Ok(_) => ("done", None),
+            Err(e) => ("error", Some(e.clone())),
+        };
+        crate::agent_state::emit_state_update(
+            app_for_emit.as_ref(),
+            crate::agent_state::run_finished_payload(&task_id_for_emit, &run_id_for_emit, status, err),
+        );
     });
 
     Ok(ChatExecuteApiResult {
@@ -223,16 +276,18 @@ pub fn chat_execute_api_stop(
 
 #[command]
 pub async fn chat_execute_cli(
+    app: AppHandle,
     request: ChatExecuteCliRequest,
     core_state: State<'_, crate::core::MaestroCore>,
     on_data: Channel<String>,
 ) -> Result<ChatExecuteCliResult, CoreError> {
     core_state
-        .chat_execute_cli(request, Arc::new(ChannelStringStream(on_data)))
+        .chat_execute_cli(Some(app), request, Arc::new(ChannelStringStream(on_data)))
         .await
 }
 
 pub async fn chat_execute_cli_core(
+    app: Option<AppHandle>,
     request: ChatExecuteCliRequest,
     cfg: AppConfig,
     headless_state: &HeadlessProcessState,
@@ -292,8 +347,27 @@ pub async fn chat_execute_cli_core(
     let root_dir = resolve_root_dir_from_project_path(&cfg.project.path).ok();
     let _ = on_data.send_string(format!("\u{0}RUN_ID:{run_id_for_return}"));
 
+    // Emit run_created for event-driven frontend sync
+    let run_payload = crate::agent_state::task_run_from_execution(
+        &run_id_for_return,
+        &task_id,
+        &request.engine_id,
+        "cli",
+        now_ms,
+    );
+    crate::agent_state::emit_state_update(
+        app.as_ref(),
+        crate::agent_state::AgentStateUpdate::RunCreated {
+            task_id: task_id.clone(),
+            run: run_payload,
+        },
+    );
+
     let exec_id_for_spawn = exec_id.clone();
     let headless_state_clone = headless_state.clone();
+    let app_for_emit = app.clone();
+    let task_id_for_emit = task_id.clone();
+    let run_id_for_emit = run_id_for_return.clone();
     let command = profile.command().clone();
     let cwd = if cfg.project.path.trim().is_empty() {
         None
@@ -363,6 +437,15 @@ pub async fn chat_execute_cli_core(
                 eprintln!("chat_execute_cli: append_run_record failed: {e}");
             }
         }
+        // Emit run_finished for event-driven frontend sync
+        let (status, err) = match &run_result {
+            Ok(_) => ("done", None),
+            Err(e) => ("error", Some(e.clone())),
+        };
+        crate::agent_state::emit_state_update(
+            app_for_emit.as_ref(),
+            crate::agent_state::run_finished_payload(&task_id_for_emit, &run_id_for_emit, status, err),
+        );
     });
 
     Ok(ChatExecuteCliResult {

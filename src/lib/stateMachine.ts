@@ -1,6 +1,6 @@
 import { assign, setup } from 'xstate';
+import { invoke } from '@tauri-apps/api/core';
 import { dbProvider } from './db';
-import { takeGitSnapshot } from './gitSync';
 
 export interface TaskContext {
   taskId: string;
@@ -25,24 +25,38 @@ export const taskMachine = setup({
   },
   guards: {
     hasTestsGuard: ({ context }) => {
-      // Return true if tests have been generated and recorded 
+      // Return true if tests have been generated and recorded
       return context.hasTests === true;
     },
   },
   actions: {
     recordTransition: async ({ context, event }, params: { from: string; to: string }) => {
-      // Wait for git snapshot before writing to DB
-      const gitHash = await takeGitSnapshot(context.taskId, params.to);
-      await dbProvider.logTransition({
-        id: crypto.randomUUID(),
-        task_id: context.taskId,
-        from_state: params.from,
-        to_state: params.to,
-        triggered_by: 'system', // or passed in event
-        git_snapshot_hash: gitHash,
-        context_reasoning: `Transitioned via ${event.type}`,
-      });
-      await dbProvider.updateTaskState(context.taskId, params.to);
+      // Logic to Rust: delegate to backend task_transition command
+      const eventType = event.type;
+      const eventReason = event.type === 'REJECT' && 'reason' in event ? event.reason : undefined;
+      try {
+        await invoke<string>('task_transition', {
+          taskId: context.taskId,
+          fromState: params.from,
+          eventType,
+          eventReason,
+        });
+      } catch (err) {
+        console.error('[taskMachine] task_transition failed:', err);
+        // Fallback to legacy frontend DB if Rust command fails (e.g. task not in DB yet)
+        const { takeGitSnapshot } = await import('./gitSync');
+        const gitHash = await takeGitSnapshot(context.taskId, params.to);
+        await dbProvider.logTransition({
+          id: crypto.randomUUID(),
+          task_id: context.taskId,
+          from_state: params.from,
+          to_state: params.to,
+          triggered_by: 'system',
+          git_snapshot_hash: gitHash,
+          context_reasoning: `Transitioned via ${event.type}`,
+        });
+        await dbProvider.updateTaskState(context.taskId, params.to);
+      }
     },
     setRejectReason: assign({
       rejectReason: ({ event }) => {

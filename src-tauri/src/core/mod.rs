@@ -80,10 +80,11 @@ impl MaestroCore {
     /// Chat execute via CLI - creates Execution, registers with headless, spawns
     pub async fn chat_execute_cli(
         &self,
+        app: Option<AppHandle>,
         request: ChatExecuteCliRequest,
         on_data: Arc<dyn StringStream>,
     ) -> Result<crate::workflow::types::ChatExecuteCliResult, error::CoreError> {
-        chat_execute_cli_core(request, self.config.get(), &self.headless_state, on_data).await
+        chat_execute_cli_core(app, request, self.config.get(), &self.headless_state, on_data).await
     }
 
     /// Use-Case: Cancel an active execution

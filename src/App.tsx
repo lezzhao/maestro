@@ -6,6 +6,7 @@ import { useTranslation } from "./i18n";
 import { useProject } from "./hooks/useProject";
 import { useAppDragDrop } from "./hooks/useAppDragDrop";
 import { useAppShortcuts } from "./hooks/useAppShortcuts";
+import { useAgentStateSync } from "./hooks/useAgentStateSync";
 import { AppProviders } from "./components/providers/AppProviders";
 import { WorkspaceLayout } from "./components/layout/WorkspaceLayout";
 import { CommandPalette } from "./components/CommandPalette";
@@ -68,6 +69,7 @@ function App() {
 
   useAppDragDrop({ onDropProject: handleImport });
   useAppShortcuts(commandOpen, setCommandOpen, showSettings, setShowSettings);
+  useAgentStateSync();
 
   const commandActions = useMemo(
     () => [
