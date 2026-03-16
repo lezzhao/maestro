@@ -1,6 +1,6 @@
 use crate::config::{write_config_to_disk, AppConfigState};
 use serde::Serialize;
-use std::fs;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tauri::{command, AppHandle, State};
@@ -343,7 +343,7 @@ pub async fn project_list_files(project_path: String) -> Result<Vec<FileTreeNode
 }
 
 #[command]
-pub fn project_read_file(
+pub async fn project_read_file(
     project_path: String,
     file_path: String,
     max_chars: Option<usize>,
@@ -363,12 +363,12 @@ pub fn project_read_file(
     let max = max_chars.unwrap_or(20_000).clamp(1_000, 200_000);
     
     // Efficiency: Use Metadata to check size before reading
-    let metadata = fs::metadata(&canonical).map_err(|e| format!("get metadata failed: {e}"))?;
+    let metadata = tokio::fs::metadata(&canonical).await.map_err(|e| format!("get metadata failed: {e}"))?;
     let file_size = metadata.len();
     
     // Only read fully if it's reasonably small, otherwise stream-read
     if file_size < (max * 4) as u64 {
-        let text = fs::read_to_string(&canonical).map_err(|e| format!("read file failed: {e}"))?;
+        let text = tokio::fs::read_to_string(&canonical).await.map_err(|e| format!("read file failed: {e}"))?;
         if text.chars().count() <= max {
             return Ok(text);
         }
@@ -376,14 +376,14 @@ pub fn project_read_file(
         out.push_str("\n\n...[file truncated]");
         Ok(out)
     } else {
-        use std::io::{BufRead, BufReader};
-        let file = fs::File::open(&canonical).map_err(|e| format!("open file failed: {e}"))?;
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        let file = tokio::fs::File::open(&canonical).await.map_err(|e| format!("open file failed: {e}"))?;
         let reader = BufReader::new(file);
+        let mut lines = reader.lines();
         let mut out = String::new();
         let mut count = 0;
         
-        for line in reader.lines() {
-            let line = line.map_err(|e| format!("read line failed: {e}"))?;
+        while let Some(line) = lines.next_line().await.map_err(|e| format!("read line failed: {e}"))? {
             let line_chars = line.chars().count();
             if count + line_chars > max {
                 let remaining = max - count;

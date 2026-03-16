@@ -557,26 +557,30 @@ export function useChatSession({
     }
 
     const preflight = useAppStore.getState().enginePreflight[activeEngineId];
-    if (
-      executionMode === "cli" &&
-      preflight &&
-      (!preflight.command_exists || !preflight.auth_ok)
-    ) {
-      const fallbackEngineId = Object.entries(useAppStore.getState().enginePreflight).find(
-        ([engineId, result]) =>
-          engineId !== activeEngineId && result.command_exists && result.auth_ok,
-      )?.[0];
-      if (fallbackEngineId) {
-        setActiveEngineId(fallbackEngineId);
+    if (executionMode === "cli") {
+      if (!preflight) {
         setErrorMessage(
-          `${t("execution_error")}: 当前引擎 ${activeEngineId} 不可用，已切换到 ${fallbackEngineId}。`,
+          `${t("execution_error")}: \u5f53\u524d\u5f15\u64ce ${activeEngineId} \u5c1a\u672a\u5b8c\u6210\u68c0\u6d4b\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5\u3002`,
         );
-      } else {
-        setErrorMessage(
-          `${t("execution_error")}: 当前引擎 ${activeEngineId} 不可用，请先完成 CLI 配置。`,
-        );
+        return;
       }
-      return;
+      if (!preflight.command_exists || !preflight.auth_ok) {
+        const fallbackEngineId = Object.entries(useAppStore.getState().enginePreflight).find(
+          ([engineId, result]) =>
+            engineId !== activeEngineId && result.command_exists && result.auth_ok,
+        )?.[0];
+        if (fallbackEngineId) {
+          setActiveEngineId(fallbackEngineId);
+          setErrorMessage(
+            `${t("execution_error")}: \u5f53\u524d\u5f15\u64ce ${activeEngineId} \u4e0d\u53ef\u7528\uff08\u547d\u4ee4\u6216auth\u5931\u8d25\uff09\uff0c\u5df2\u5207\u6362\u5230 ${fallbackEngineId}\u3002\u8bf7\u91cd\u65b0\u53d1\u9001\u3002`,
+          );
+        } else {
+          setErrorMessage(
+            `${t("execution_error")}: \u5f53\u524d\u5f15\u64ce ${activeEngineId} \u4e0d\u53ef\u7528\u3002\u8bf7\u5728\u8bbe\u7f6e\u4e2d\u5b8c\u6210 CLI \u914d\u7f6e\u3002`,
+          );
+        }
+        return;
+      }
     }
 
     await runExecution(finalContent, executionMode);

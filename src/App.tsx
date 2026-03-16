@@ -1,11 +1,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+
 import { useShallow } from "zustand/react/shallow";
 import { Toaster } from "./components/ui/sonner";
-import { ErrorBanner } from "./components/ErrorBanner";
-import { TaskSidebar } from "./components/TaskSidebar";
-import { useEngine } from "./hooks/useEngine";
-import { useProject } from "./hooks/useProject";
 import { usePerformance } from "./hooks/usePerformance";
 import { useTheme } from "./hooks/useTheme";
 import { useActiveTask } from "./hooks/useActiveTask";
@@ -14,13 +10,10 @@ import { useChatStore } from "./stores/chatStore";
 import { useTranslation } from "./i18n";
 import {
   Monitor,
-  Settings2,
   Rocket,
   Plus,
-  Loader2,
-  ChevronRight,
 } from "lucide-react";
-import { Group, Panel, Separator, type PanelImperativeHandle } from "react-resizable-panels";
+import { Group, Panel, Separator } from "react-resizable-panels";
 import { Button } from "./components/ui/button";
 import { Select } from "./components/ui/select";
 import { cn } from "./lib/utils";
@@ -29,24 +22,15 @@ import { markPerf, measurePerf, recordPerf } from "./lib/utils/perf";
 import { SetupPanel } from "./components/SetupPanel";
 import { TaskWorkspace } from "./components/TaskWorkspace";
 import { CommandPalette } from "./components/CommandPalette";
-import { DevPerfPanel } from "./components/DevPerfPanel";
+import { MainSidebar } from "./components/MainSidebar";
+import { ResourcePanel, type RightPanelTab } from "./components/ResourcePanel";
+import { useAppDragDrop } from "./hooks/useAppDragDrop";
+import { useAppShortcuts } from "./hooks/useAppShortcuts";
+import { useEngine } from "./hooks/useEngine";
+import { useProject } from "./hooks/useProject";
+import { ErrorBanner } from "./components/ErrorBanner";
+import { PanelFallback } from "./components/ui/PanelFallback";
 
-import { GitChangesPanel } from "./components/GitChangesPanel";
-import { CliSessionPanel } from "./components/CliSessionPanel";
-
-function PanelFallback({ label }: { label: string }) {
-  const { t } = useTranslation();
-  return (
-    <div className="flex-1 min-h-0 flex flex-col items-center justify-center p-6 animate-pulse opacity-60">
-      <div className="w-16 h-16 rounded-2xl bg-bg-elevated/80 flex items-center justify-center mb-6 shadow-inner">
-        <Loader2 size={24} className="animate-spin text-primary-500/50" />
-      </div>
-      <div className="text-xs font-black tracking-widest uppercase text-text-muted/60 mb-2">
-        {t("loading")} {label}
-      </div>
-    </div>
-  );
-}
 
 function runWhenIdle(task: () => void, timeout = 1200) {
   const win = window as Window & {
@@ -106,13 +90,19 @@ function App() {
   const [commandOpen, setCommandOpen] = useState(false);
   const [activeFile, setActiveFile] = useState<string>("");
   const [activeDiff, setActiveDiff] = useState<string>("");
-  const [rightPanelTab, setRightPanelTab] = useState<"changes" | "verification" | "runs" | "conclusion">("runs");
+  const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>("runs");
   const taskSwitchStartRef = useRef<number>(performance.now());
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sidebarPanelRef = useRef<any>(null);
 
-  const sidebarPanelRef = useRef<PanelImperativeHandle | null>(null);
+  const activeTaskMessages = useChatStore((s) => s.getTaskMessages(activeTaskId));
+  const latestRun = useChatStore((s) => s.getLatestRun(activeTaskId));
+  const latestVerification = useChatStore((s) => s.getRunVerification(latestRun?.id || null));
+
   const bootPreflightStartedRef = useRef(false);
   const autoSelectDoneRef = useRef(false);
   const autoSelectingRef = useRef(false);
+
   const activeProfile = useMemo(() => {
     const engine = engines[activeEngineId];
     if (!engine?.profiles) return null;
@@ -123,48 +113,8 @@ function App() {
     if (!profileId) return null;
     return engine.profiles[profileId] || null;
   }, [activeEngineId, engines]);
+  
   const activeExecutionMode = ((activeProfile?.execution_mode || "cli") as "api" | "cli");
-  const activeTaskMessages = useChatStore((s) => s.getTaskMessages(activeTaskId));
-  const latestRun = useChatStore((s) => s.getLatestRun(activeTaskId));
-  const latestVerification = useChatStore((s) => s.getRunVerification(latestRun?.id || null));
-  const outputSummary = useMemo(() => {
-    const assistantMessages = activeTaskMessages.filter((msg) => msg.role === "assistant");
-    const lastAssistant = [...assistantMessages].reverse().find((msg) => msg.content.trim());
-    if (!lastAssistant) {
-      return "暂无产出摘要";
-    }
-    return lastAssistant.content.length > 800
-      ? `${lastAssistant.content.slice(0, 800)}...`
-      : lastAssistant.content;
-  }, [activeTaskMessages]);
-  const conclusionSummary = useMemo(() => {
-    const runStatus = latestRun?.status || "pending";
-    const verification = latestVerification?.test_run;
-    const hasVerification = Boolean(latestVerification?.has_verification && verification);
-    const riskList: string[] = [];
-    if (runStatus === "error") {
-      riskList.push("本轮执行失败，需要先处理错误后再继续。");
-    }
-    if (runStatus === "stopped") {
-      riskList.push("本轮被手动停止，产出可能不完整。");
-    }
-    if (hasVerification && verification && !verification.success) {
-      riskList.push("验证未通过，存在失败用例。");
-    }
-    return {
-      done: runStatus === "done" && hasVerification && Boolean(verification?.success),
-      risks: riskList,
-      pending: runStatus === "running" ? ["执行仍在进行中。"] : [],
-      next:
-        runStatus === "done" && hasVerification
-          ? "可进入下一轮任务，或先审查 diff 后提交。"
-          : runStatus === "done"
-            ? "当前缺少验证证据，建议先补一次可验证执行。"
-          : runStatus === "running"
-            ? "等待当前轮次结束，期间可继续排队补充约束。"
-            : "建议补充约束后重新执行一轮。"
-    };
-  }, [latestRun?.status, latestVerification]);
 
   const handleImport = useCallback(
     async (path: string) => {
@@ -278,33 +228,8 @@ function App() {
     });
   }, [activeTaskId, activeTaskMessages.length]);
 
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    void (async () => {
-      unlisten = await getCurrentWindow().onDragDropEvent(async (event) => {
-        if (event.payload.type === "drop" && event.payload.paths.length > 0) {
-          const path = event.payload.paths[0];
-          try {
-            await handleImport(path);
-          } catch (e) {
-            setErrorMessageStore(`${t("drag_drop_fail")}: ${String(e)}`);
-          }
-        }
-      });
-    })();
-    return () => unlisten?.();
-  }, [handleImport, setErrorMessageStore, t]);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setCommandOpen((v) => !v);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  useAppDragDrop({ onDropProject: handleImport });
+  useAppShortcuts(commandOpen, setCommandOpen, showSettings, setShowSettings);
 
   useEffect(() => {
     if (bootPreflightStartedRef.current) return;
@@ -463,69 +388,12 @@ function App() {
           id="app-root-group" 
           className="w-full h-full"
         >
-          <Panel
-            id="panel-sidebar"
+          <MainSidebar
             panelRef={sidebarPanelRef}
-            defaultSize={260}
-            minSize={200}
-            maxSize={450}
-            className="flex flex-col border-r border-border-muted/30 bg-bg-surface overflow-hidden relative z-20"
-          >
-            {/* Sidebar Header */}
-            <div className="p-4 space-y-4">
-              <div 
-                className="flex items-center gap-2.5 group cursor-pointer"
-                onClick={() => setShowSettings(true)}
-              >
-                <div className="w-8 h-8 rounded-lg bg-primary-500 flex items-center justify-center text-white transition-all group-active:scale-95">
-                  <Rocket size={16} />
-                </div>
-                <div className="flex flex-col">
-                  <h1 className="text-[14px] font-bold leading-none">
-                    BMAD <span className="text-primary-500">Client</span>
-                  </h1>
-                  <span className="text-[10px] font-medium text-text-muted/60">
-                    v0.1.0
-                  </span>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div 
-                  className="flex items-center justify-between px-3 py-2 bg-bg-elevated/40 rounded-xl border border-border-muted/30 group cursor-pointer hover:border-primary-500/30 transition-colors"
-                  onClick={() => void handleOpenProjectPicker()}
-                >
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-[10px] font-semibold text-text-muted/60">{t("active_project")}</span>
-                    <span className="text-xs font-bold truncate text-text-main pr-2">{projectName}</span>
-                  </div>
-                  <div className="shrink-0 w-6 h-6 rounded-md bg-bg-subtle flex items-center justify-center text-text-muted group-hover:text-primary-500 transition-colors">
-                    <Plus size={14} />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex-1 min-h-0 px-2 overflow-hidden">
-               <TaskSidebar />
-            </div>
-
-            {/* Sidebar Footer */}
-            <div className="p-3 mt-auto space-y-2 border-t border-border-muted/20 bg-bg-elevated/10">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start gap-3 h-10 text-text-muted hover:text-text-main hover:bg-bg-elevated border border-transparent rounded-lg px-3 transition-all"
-                onClick={() => setShowSettings(true)}
-              >
-                <Settings2 size={16} />
-                <span className="text-xs font-semibold">{t("nav_setup")}</span>
-                <div className="ml-auto opacity-40">
-                  <ChevronRight size={12} />
-                </div>
-              </Button>
-            </div>
-          </Panel>
+            projectName={projectName}
+            onOpenSettings={() => setShowSettings(true)}
+            onOpenProjectPicker={() => void handleOpenProjectPicker()}
+          />
 
           <Separator
             className="w-2 bg-transparent hover:bg-primary-500/20 active:bg-primary-500/40 transition-colors cursor-col-resize flex items-center justify-center group relative z-50 -mx-1"
@@ -646,173 +514,26 @@ function App() {
             </Separator>
           )}
           {activeTaskId && (
-            <Panel id="resource-panel" defaultSize={320} minSize={200} className="flex flex-col gap-2 p-2 bg-bg-elevated/5">
-              <div className="h-10 shrink-0 rounded-lg border border-border-muted/30 bg-bg-surface/50 px-2 flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant={rightPanelTab === "runs" ? "default" : "outline"}
-                  className="h-7 px-2 text-[10px] font-semibold"
-                  onClick={() => setRightPanelTab("runs")}
-                >
-                  运行
-                </Button>
-                <Button
-                  size="sm"
-                  variant={rightPanelTab === "verification" ? "default" : "outline"}
-                  className="h-7 px-2 text-[10px] font-semibold"
-                  onClick={() => setRightPanelTab("verification")}
-                >
-                  验证
-                </Button>
-                <Button
-                  size="sm"
-                  variant={rightPanelTab === "changes" ? "default" : "outline"}
-                  className="h-7 px-2 text-[10px] font-semibold"
-                  onClick={() => setRightPanelTab("changes")}
-                >
-                  变更
-                </Button>
-                <Button
-                  size="sm"
-                  variant={rightPanelTab === "conclusion" ? "default" : "outline"}
-                  className="h-7 px-2 text-[10px] font-semibold"
-                  onClick={() => setRightPanelTab("conclusion")}
-                >
-                  结论
-                </Button>
-              </div>
-              {rightPanelTab === "runs" ? (
-                <div className="flex-1 min-h-0">
-                  <CliSessionPanel activeEngineId={activeEngineId} activeTaskId={activeTaskId} />
-                </div>
-              ) : rightPanelTab === "verification" ? (
-                <div className="flex-1 min-h-0 rounded-xl border border-border-muted/30 bg-bg-surface/30 p-3 overflow-y-auto custom-scrollbar">
-                  <div className="text-[11px] font-semibold mb-2">结构化验证结果</div>
-                  {!latestVerification?.has_verification || !latestVerification.test_run ? (
-                    <div className="text-xs text-text-muted">本轮暂无结构化验证数据。</div>
-                  ) : (
-                    <div className="space-y-2 text-xs">
-                      <div className="rounded-md border border-border-muted/20 px-2 py-1.5">
-                        <div className="text-text-muted">框架</div>
-                        <div className="text-text-main font-semibold uppercase">
-                          {latestVerification.test_run.framework}
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="rounded-md border border-border-muted/20 px-2 py-1.5">
-                          <div className="text-text-muted">用例通过</div>
-                          <div className="text-emerald-500 font-semibold">
-                            {latestVerification.test_run.passed_cases} / {latestVerification.test_run.total_cases}
-                          </div>
-                        </div>
-                        <div className="rounded-md border border-border-muted/20 px-2 py-1.5">
-                          <div className="text-text-muted">用例失败</div>
-                          <div className="text-rose-500 font-semibold">
-                            {latestVerification.test_run.failed_cases}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="rounded-md border border-border-muted/20 px-2 py-1.5">
-                        <div className="text-text-muted">套件</div>
-                        <div className="text-text-main">
-                          {latestVerification.test_run.passed_suites} 通过 / {latestVerification.test_run.failed_suites} 失败
-                        </div>
-                      </div>
-                      <div className="rounded-md border border-border-muted/20 px-2 py-1.5">
-                        <div className="text-text-muted">数据来源</div>
-                        <div className="text-text-main">{latestVerification.source || "unknown"}</div>
-                      </div>
-                      {latestVerification.test_run.raw_summary ? (
-                        <div className="rounded-md border border-border-muted/20 px-2 py-1.5">
-                          <div className="text-text-muted mb-1">原始摘要</div>
-                          <pre className="whitespace-pre-wrap wrap-break-word text-[11px] text-text-main leading-relaxed">
-                            {latestVerification.test_run.raw_summary}
-                          </pre>
-                        </div>
-                      ) : null}
-                      {latestVerification.test_run.suites.length > 0 ? (
-                        <div className="rounded-md border border-border-muted/20 px-2 py-1.5">
-                          <div className="text-text-muted mb-1">Suite 明细</div>
-                          <div className="space-y-1">
-                            {latestVerification.test_run.suites.map((suite, index) => (
-                              <div key={`${suite.name}-${index}`} className="text-[11px] border border-border-muted/15 rounded px-2 py-1">
-                                <div className="font-semibold text-text-main">{suite.name}</div>
-                                <div className="text-text-muted">
-                                  {suite.passed_cases} 通过 / {suite.failed_cases} 失败 / {suite.skipped_cases} 跳过
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-                  )}
-                </div>
-              ) : rightPanelTab === "changes" ? (
-                <div className="flex-1 min-h-0">
-                  <GitChangesPanel
-                    gitChanges={gitChanges}
-                    activeFile={activeFile}
-                    activeDiff={activeDiff}
-                    onFileSelect={(path) => {
-                      setActiveFile(path);
-                      void loadGitDiff(path);
-                    }}
-                    onRefresh={() => refreshGitStatus({ force: true })}
-                  />
-                </div>
-              ) : (
-                <div className="flex-1 min-h-0 rounded-xl border border-border-muted/30 bg-bg-surface/30 p-3 overflow-y-auto custom-scrollbar">
-                  <div className="text-[11px] font-semibold mb-2">结论</div>
-                  <div className="space-y-3 text-xs">
-                    <div>
-                      <div className="text-text-muted mb-1">已完成</div>
-                      <div className={cn("font-semibold", conclusionSummary.done ? "text-emerald-500" : "text-amber-500")}>
-                        {conclusionSummary.done ? "本轮结果可进入下一步" : "本轮结果仍需审查"}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-text-muted mb-1">风险</div>
-                      {conclusionSummary.risks.length === 0 ? (
-                        <div className="text-emerald-500">未检测到高风险信号</div>
-                      ) : (
-                        <div className="space-y-1">
-                          {conclusionSummary.risks.map((risk) => (
-                            <div key={risk} className="text-rose-400">{risk}</div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <div className="text-text-muted mb-1">待确认</div>
-                      {conclusionSummary.pending.length === 0 ? (
-                        <div className="text-text-main">无</div>
-                      ) : (
-                        <div className="space-y-1">
-                          {conclusionSummary.pending.map((item) => (
-                            <div key={item} className="text-amber-400">{item}</div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <div className="text-text-muted mb-1">下一步</div>
-                      <div className="text-text-main">{conclusionSummary.next}</div>
-                    </div>
-                    <div>
-                      <div className="text-text-muted mb-1">最新产出摘要</div>
-                      <pre className="whitespace-pre-wrap wrap-break-word text-xs text-text-main leading-relaxed">
-                        {outputSummary}
-                      </pre>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </Panel>
+            <ResourcePanel
+              activeTaskId={activeTaskId}
+              activeEngineId={activeEngineId}
+              rightPanelTab={rightPanelTab}
+              setRightPanelTab={setRightPanelTab}
+              gitChanges={gitChanges}
+              activeFile={activeFile}
+              activeDiff={activeDiff}
+              onFileSelect={(path) => {
+                setActiveFile(path);
+                void loadGitDiff(path);
+              }}
+              onRefreshGit={() => refreshGitStatus({ force: true })}
+              latestVerification={latestVerification || null}
+              latestRun={latestRun || null}
+              activeTaskMessages={activeTaskMessages}
+            />
           )}
         </Group>
       </div>
-      {import.meta.env.DEV ? <DevPerfPanel /> : null}
     </div>
   );
 }

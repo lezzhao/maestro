@@ -5,13 +5,13 @@ export type PerfRecord = {
   meta?: Record<string, unknown>;
 };
 
-const PERF_KEY = "__BMAD_PERF__";
+const PERF_KEY = "__MAESTRO_PERF__";
 const MAX_RECORDS = 400;
 const MARK_PREFIX = "bmad:";
 
 function getPerfStore(): PerfRecord[] {
   const target = window as Window & {
-    __BMAD_PERF__?: PerfRecord[];
+    __MAESTRO_PERF__?: PerfRecord[];
   };
   if (!target[PERF_KEY]) {
     target[PERF_KEY] = [];
@@ -27,10 +27,6 @@ function pushPerfRecord(record: PerfRecord) {
   }
 }
 
-export function getPerfRecords(): PerfRecord[] {
-  const store = getPerfStore();
-  return [...store];
-}
 
 export function markPerf(name: string) {
   if (typeof performance === "undefined") return;

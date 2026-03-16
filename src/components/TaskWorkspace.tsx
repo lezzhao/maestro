@@ -4,6 +4,7 @@ import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 import { useTranslation } from "../i18n";
 import { useChatStore } from "../stores/chatStore";
+import { useShallow } from "zustand/react/shallow";
 import { ChatPanel } from "./ChatPanel";
 import type { AppTask, EngineConfig } from "../types";
 
@@ -39,12 +40,13 @@ export function TaskWorkspace({
   const [tab, setTab] = useState<WorkspaceTab>("transcript");
   const [eventStatusFilter, setEventStatusFilter] = useState<EventStatusFilter>("all");
   const [eventModeFilter, setEventModeFilter] = useState<EventModeFilter>("all");
-  const messages = useChatStore((s) => s.getTaskMessages(activeTask?.id || null));
-  const isRunning = useChatStore((s) => s.getTaskRunning(activeTask?.id || null));
-  const runEvents = useChatStore((s) => s.getTaskRunEvents(activeTask?.id || null));
-  const latestRun = useChatStore((s) => s.getLatestRun(activeTask?.id || null));
+  const activeId = activeTask?.id || null;
+  const messages = useChatStore((s) => s.getTaskMessages(activeId));
+  const isRunning = useChatStore((s) => s.getTaskRunning(activeId));
+  const pendingAttachments = useChatStore((s) => s.getTaskPendingAttachments(activeId));
+  const latestRun = useChatStore((s) => s.getLatestRun(activeId));
   const latestTranscript = useChatStore((s) => s.getRunTranscript(latestRun?.id || null));
-  const pendingAttachments = useChatStore((s) => s.getTaskPendingAttachments(activeTask?.id || null));
+  const runEvents = useChatStore(useShallow((s) => s.getTaskRunEvents(activeId)));
   const activeEngine = engines[activeEngineId];
   const activeProfile = useMemo(() => {
     if (!activeEngine?.profiles) return null;

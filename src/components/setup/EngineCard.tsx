@@ -206,14 +206,14 @@ export function EngineCard({
   return (
     <Card
       className={cn(
-        "group relative overflow-hidden transition-all duration-300 rounded-xl border-border-muted bg-bg-surface shadow-sm hover:shadow-md hover:border-primary-500/30",
+        "group relative overflow-hidden transition-all duration-200 rounded-xl border-border bg-bg-surface shadow-sm",
         isActive &&
-          "ring-1 ring-primary-500 border-primary-500/40 bg-primary-500/2",
+          "ring-1 ring-primary-500 border-primary-500",
       )}
     >
       {isActive && (
         <div className="absolute top-0 right-0 p-px">
-          <div className="bg-primary-500 text-white text-[9px] font-semibold px-2 py-0.5 rounded-bl-lg rounded-tr-xl uppercase shadow-sm">
+          <div className="bg-primary-500 text-white text-xs px-2 py-0.5 rounded-bl-lg rounded-tr-xl shadow-sm">
             {t("active_label")}
           </div>
         </div>
@@ -224,20 +224,20 @@ export function EngineCard({
           <div className="flex items-center gap-4">
             <div
               className={cn(
-                "w-12 h-12 rounded-xl flex items-center justify-center transition-transform group-hover:scale-105",
+                "w-10 h-10 rounded-lg flex items-center justify-center",
                 ok
-                  ? "bg-emerald-500/10 text-emerald-500"
-                  : "bg-amber-500/10 text-amber-500",
+                  ? "bg-bg-elevated text-text-main"
+                  : "bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-500",
               )}
             >
-              <Cpu size={24} />
+              <Cpu size={20} />
             </div>
             <div>
               <CardTitle className="text-base font-bold tracking-tight flex items-center gap-2">
                 {engine.display_name}
                 <Badge
                   variant="outline"
-                  className="text-[10px] font-medium opacity-60 rounded-md"
+                  className="font-medium bg-transparent"
                 >
                   V1.0
                 </Badge>
@@ -246,16 +246,16 @@ export function EngineCard({
                 <div
                   className={cn(
                     "w-2 h-2 rounded-full",
-                    ok ? "bg-emerald-500" : "bg-amber-500 animate-pulse",
+                    ok ? "bg-emerald-500" : "bg-amber-500",
                   )}
                 />
                 <span
                   className={cn(
-                    "text-[10px] font-semibold uppercase",
-                    ok ? "text-emerald-500" : "text-amber-500",
+                    "text-xs font-medium",
+                    ok ? "text-text-muted" : "text-amber-600 dark:text-amber-500",
                   )}
                 >
-                  {ok ? "Engine Ready" : "Setup Required"}
+                  {ok ? "Ready" : "Setup Required"}
                 </span>
               </div>
             </div>
@@ -267,27 +267,27 @@ export function EngineCard({
         {!editing ? (
           <>
             <div className="space-y-4">
-              <div className="bg-bg-code rounded-xl p-4 border border-border-muted/20 font-mono text-[11px] leading-relaxed text-text-muted relative overflow-hidden group/code overflow-x-auto">
+              <div className="bg-bg-code rounded-lg p-3 border border-border text-sm font-mono text-text-muted relative overflow-x-auto">
                 <div className="flex items-start gap-2">
-                  <span className="text-primary-500 font-bold opacity-60">
+                  <span className="text-primary-500 font-bold opacity-80">
                     $
                   </span>
-                  <span className="break-all">
+                  <span className="break-all text-text-main">
                     {activeProfile?.command || engine.command}{" "}
                     {(activeProfile?.args || engine.args).join(" ")}
                   </span>
                 </div>
                 {activeProfile?.model && (
-                  <div className="mt-2 flex items-center gap-2 text-primary-400 font-semibold opacity-80">
-                    <span className="text-[9px] uppercase opacity-40">
+                  <div className="mt-2 flex items-center gap-2 text-text-muted">
+                    <span className="text-xs opacity-60">
                       Model:
                     </span>
-                    {activeProfile.model}
+                    <span className="font-semibold text-text-main">{activeProfile.model}</span>
                   </div>
                 )}
-                <div className="mt-2 flex items-center gap-2 text-[10px] font-semibold">
-                  <span className="opacity-50 uppercase">Mode:</span>
-                  <span className="text-primary-400">
+                <div className="mt-1 flex items-center gap-2 text-xs">
+                  <span className="opacity-60">Mode:</span>
+                  <span className="font-semibold text-text-main">
                     {(activeProfile?.execution_mode || "cli").toUpperCase()}
                   </span>
                 </div>
@@ -295,22 +295,22 @@ export function EngineCard({
 
               <div
                 className={cn(
-                  "px-4 py-3 rounded-xl border flex items-start gap-3 transition-colors",
+                  "px-4 py-3 rounded-lg border flex items-start gap-3",
                   tone === "ok"
-                    ? "bg-emerald-500/5 border-emerald-500/20 text-emerald-600/90"
+                    ? "bg-bg-elevated border-border text-text-main"
                     : tone === "danger"
-                      ? "bg-rose-500/5 border-rose-500/20 text-rose-600/90"
-                      : "bg-bg-base border-border-muted text-text-muted",
+                      ? "bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-500/10 dark:border-rose-500/20 dark:text-rose-400"
+                      : "bg-bg-base border-border text-text-muted",
                 )}
               >
-                <div className="mt-0.5 p-1 rounded-full bg-bg-surface border border-border-muted shadow-sm">
-                  <ShieldCheck size={12} />
+                <div className="mt-0.5 text-text-muted">
+                  <ShieldCheck size={16} />
                 </div>
                 <div className="flex-1">
-                  <span className="text-[9px] font-semibold uppercase block mb-0.5 opacity-50">
+                  <span className="text-xs font-semibold block mb-0.5 opacity-70">
                     {t("engine_status")}
                   </span>
-                  <p className="whitespace-pre-wrap wrap-break-word text-[14px] leading-relaxed font-semibold">
+                  <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
                     {preflight?.notes || t("not_checked_yet")}
                   </p>
                 </div>
@@ -363,7 +363,7 @@ export function EngineCard({
                     }
                   }}
                 >
-                  <span className="text-[11px] font-black uppercase tracking-widest">
+                  <span className="font-medium text-xs">
                     {t("new_profile")}
                   </span>
                 </Button>
@@ -375,8 +375,8 @@ export function EngineCard({
                   variant={isActive ? "default" : "outline"}
                   loading={switching}
                   className={cn(
-                    "flex-1 h-10 rounded-xl font-semibold uppercase text-[10px] active:scale-95",
-                    isActive ? "bg-primary-500 text-white" : "",
+                    "flex-1 rounded-md text-xs",
+                    isActive ? "bg-primary-500 hover:bg-primary-600 text-white" : "",
                   )}
                   onClick={async () => {
                     setSwitching(true);
@@ -394,7 +394,7 @@ export function EngineCard({
                   size="sm"
                   variant="outline"
                   loading={preflighting}
-                  className="flex-1 h-10 rounded-xl font-semibold uppercase text-[10px] hover:border-primary-500/40 hover:text-primary-500 active:scale-95"
+                  className="flex-1 rounded-md text-xs"
                   onClick={async () => {
                     setPreflighting(true);
                     try {
@@ -420,7 +420,7 @@ export function EngineCard({
         ) : (
           <div className="space-y-4 pt-2">
             <div className="space-y-1.5">
-              <label className="px-1 text-[9px] font-black uppercase tracking-widest text-text-muted/60">
+              <label className="text-xs font-semibold text-text-main mb-1.5 block">
                 {t("command")}
               </label>
               <Input
@@ -436,7 +436,7 @@ export function EngineCard({
 
             <div className="grid grid-cols-[1fr_auto] gap-3 items-end">
               <div className="space-y-1.5 flex-1">
-                <label className="px-1 text-[9px] font-black uppercase tracking-widest text-text-muted/60">
+                <label className="text-xs font-semibold text-text-main mb-1.5 block">
                   {t("active_profile")}
                 </label>
                 <Select
@@ -491,7 +491,7 @@ export function EngineCard({
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <label className="px-1 text-[9px] font-black uppercase tracking-widest text-text-muted/60">
+                <label className="text-xs font-semibold text-text-main mb-1.5 block">
                   {t("args")}
                 </label>
                 <Input
@@ -501,7 +501,7 @@ export function EngineCard({
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="px-1 text-[9px] font-black uppercase tracking-widest text-text-muted/60">
+                <label className="text-xs font-semibold text-text-main mb-1.5 block">
                   {t("headless_args")}
                 </label>
                 <Input
@@ -513,7 +513,7 @@ export function EngineCard({
             </div>
 
             <div className="space-y-2">
-              <label className="px-1 text-[9px] font-black uppercase tracking-widest text-text-muted/60">
+              <label className="text-xs font-semibold text-text-main mb-1.5 block">
                 {t("execution_mode")}
               </label>
               <div className="grid grid-cols-2 gap-2">
@@ -559,7 +559,7 @@ export function EngineCard({
             {(draft.execution_mode || "cli") === "api" && (
               <div className="grid grid-cols-1 gap-3">
                 <div className="space-y-1.5">
-                  <label className="px-1 text-[9px] font-black uppercase tracking-widest text-text-muted/60">
+                  <label className="text-xs font-semibold text-text-main mb-1.5 block">
                     {t("api_provider")}
                   </label>
                   <Select
@@ -582,7 +582,7 @@ export function EngineCard({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="px-1 text-[9px] font-black uppercase tracking-widest text-text-muted/60">
+                  <label className="text-xs font-semibold text-text-main mb-1.5 block">
                     {t("api_base_url")}
                   </label>
                   <Input
@@ -602,7 +602,7 @@ export function EngineCard({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="px-1 text-[9px] font-black uppercase tracking-widest text-text-muted/60">
+                  <label className="text-xs font-semibold text-text-main mb-1.5 block">
                     {t("api_key")}
                   </label>
                   <Input
@@ -626,7 +626,7 @@ export function EngineCard({
             )}
 
             <div className="space-y-1.5">
-              <label className="px-1 text-[9px] font-black uppercase tracking-widest text-text-muted/60">
+              <label className="text-xs font-semibold text-text-main mb-1.5 block">
                 {t("env")}
               </label>
               <textarea
@@ -639,8 +639,8 @@ export function EngineCard({
 
             <div className="flex gap-3 pt-2">
               <Button
-                variant="primary-gradient"
-                className="flex-1 h-11 rounded-2xl font-bold shadow-lg"
+                variant="default"
+                className="flex-1 rounded-md font-bold"
                 onClick={() => void commitEdit()}
                 loading={saving}
               >
@@ -649,7 +649,7 @@ export function EngineCard({
               </Button>
               <Button
                 variant="outline"
-                className="flex-1 h-11 rounded-2xl font-bold border-border-muted/30"
+                className="flex-1 rounded-md font-bold"
                 onClick={stopEdit}
               >
                 {t("cancel")}

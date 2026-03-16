@@ -79,7 +79,7 @@ cd src-tauri && cargo check
 
 应用会在 Tauri app config 目录创建 `config.toml`。典型路径（macOS）：
 
-`~/Library/Application Support/com.lezhao.omniagent/config.toml`
+`~/Library/Application Support/com.lezhao.maestro/config.toml`
 
 示例：
 

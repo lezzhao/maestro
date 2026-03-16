@@ -1,16 +1,21 @@
 import { Plus, MessageSquare, Trash2, Clock, PlayCircle } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
+import { useShallow } from "zustand/react/shallow";
 import { useTranslation } from "../i18n";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 
 export function TaskSidebar() {
   const { t } = useTranslation();
-  const tasks = useAppStore((s) => s.tasks);
-  const activeTaskId = useAppStore((s) => s.activeTaskId);
-  const addTask = useAppStore((s) => s.addTask);
-  const removeTask = useAppStore((s) => s.removeTask);
-  const setActiveTaskId = useAppStore((s) => s.setActiveTaskId);
+  const { tasks, activeTaskId, addTask, removeTask, setActiveTaskId } = useAppStore(
+    useShallow((s) => ({
+      tasks: s.tasks,
+      activeTaskId: s.activeTaskId,
+      addTask: s.addTask,
+      removeTask: s.removeTask,
+      setActiveTaskId: s.setActiveTaskId,
+    }))
+  );
 
   const handleNewTask = () => {
     addTask("");

@@ -4,6 +4,7 @@ import { FileText, RefreshCcw, Trash2 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { useChatStore } from "../stores/chatStore";
+import { useShallow } from "zustand/react/shallow";
 import type { CliPruneResult, CliSessionListItem } from "../types";
 
 interface CliSessionPanelProps {
@@ -20,8 +21,8 @@ export function CliSessionPanel({ activeEngineId, activeTaskId = null }: CliSess
   const [pruning, setPruning] = useState(false);
   const [message, setMessage] = useState("");
   const [scope, setScope] = useState<"task" | "engine">("task");
-  const taskRuns = useChatStore((s) => s.getTaskRuns(activeTaskId));
-  const taskRunIdSet = useMemo(() => new Set(taskRuns.map((run) => run.id)), [taskRuns]);
+  const taskRunIds = useChatStore(useShallow((s) => s.getTaskRuns(activeTaskId).map(run => run.id)));
+  const taskRunIdSet = useMemo(() => new Set(taskRunIds), [taskRunIds]);
   const visibleSessions = useMemo(() => {
     if (scope !== "task" || !activeTaskId) return sessions;
     return sessions.filter(

@@ -24,7 +24,7 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
-    console.error("BMAD Root Error:", error, errorInfo);
+    console.error("Maestro Root Error:", error, errorInfo);
   }
   render() {
     if (this.state.hasError) {

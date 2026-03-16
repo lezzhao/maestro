@@ -8,7 +8,7 @@ use crate::run_persistence::{
 use super::types::*;
 use super::util::{completion_matched, with_model_args};
 use regex::Regex;
-use std::fs;
+
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
@@ -20,12 +20,12 @@ use tauri::{
 };
 use tokio::io::AsyncReadExt;
 
-fn last_conversation_path(app: &AppHandle) -> Result<PathBuf, String> {
+async fn last_conversation_path(app: &AppHandle) -> Result<PathBuf, String> {
     let mut dir: PathBuf = app
         .path()
         .app_config_dir()
         .map_err(|e| format!("resolve app config dir failed: {e}"))?;
-    fs::create_dir_all(&dir).map_err(|e| format!("create app config dir failed: {e}"))?;
+    tokio::fs::create_dir_all(&dir).await.map_err(|e| format!("create app config dir failed: {e}"))?;
     dir.push("last-conversation.json");
     Ok(dir)
 }
@@ -178,7 +178,7 @@ pub async fn chat_save_last_conversation(
     app: AppHandle,
     payload: serde_json::Value,
 ) -> Result<(), String> {
-    let path = last_conversation_path(&app)?;
+    let path = last_conversation_path(&app).await?;
     let text = serde_json::to_string_pretty(&payload)
         .map_err(|e| format!("serialize last conversation failed: {e}"))?;
     tokio::fs::write(path, text).await.map_err(|e| format!("write last conversation failed: {e}"))
@@ -186,7 +186,7 @@ pub async fn chat_save_last_conversation(
 
 #[command]
 pub async fn chat_load_last_conversation(app: AppHandle) -> Result<Option<serde_json::Value>, String> {
-    let path = last_conversation_path(&app)?;
+    let path = last_conversation_path(&app).await?;
     if !path.exists() {
         return Ok(None);
     }

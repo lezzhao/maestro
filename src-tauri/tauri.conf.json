@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-app",
+  "productName": "Maestro",
   "version": "0.1.0",
-  "identifier": "com.lezhao.omniagent",
+  "identifier": "com.lezhao.maestro",
   "build": {
     "beforeDevCommand": "pnpm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "tauri-app",
+        "title": "Maestro",
         "width": 1280,
         "height": 820,
         "minWidth": 1080,

@@ -21,14 +21,11 @@ export function GeneralSettings({
   return (
     <section className="space-y-6">
       <div className="flex items-center gap-3 px-2">
-        <div className="w-10 h-10 rounded-xl bg-primary-500/10 text-primary-500 flex items-center justify-center">
-          <Palette size={20} />
-        </div>
         <div className="flex flex-col">
-          <h2 className="text-xl font-bold text-text-main tracking-tight">
+          <h2 className="text-xl font-bold tracking-tight">
             {t("general_settings") || "General Settings"}
           </h2>
-          <p className="text-[10px] text-text-muted font-semibold uppercase tracking-wider mt-0.5">
+          <p className="text-sm text-text-muted mt-1">
             Customization & Locale
           </p>
         </div>
@@ -37,19 +34,19 @@ export function GeneralSettings({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card className="rounded-xl border-border-muted bg-bg-surface shadow-sm overflow-hidden">
           <CardHeader className="pb-2">
-            <div className="flex items-center gap-2 text-primary-500">
-              <Palette size={16} />
-              <CardTitle className="text-sm font-semibold uppercase">
+            <div className="flex items-center gap-2">
+              <Palette size={16} className="text-text-muted" />
+              <CardTitle className="text-sm font-semibold">
                 {t("theme_label") || "Theme"}
               </CardTitle>
             </div>
           </CardHeader>
           <CardContent className="pt-4 px-6 pb-6">
-            <div className="capsule-group w-full max-w-sm">
+            <div className="flex gap-2 w-full max-w-sm">
               <button
                 className={cn(
-                  "capsule-sm flex-1 text-[10px] font-semibold uppercase",
-                  theme === "light" && "active",
+                  "flex-1 rounded-lg px-3 py-2 text-sm font-medium border transition-colors",
+                  theme === "light" ? "bg-bg-elevated border-border text-text-main shadow-sm" : "bg-transparent border-transparent text-text-muted hover:bg-bg-subtle"
                 )}
                 onClick={() => onThemeChange("light")}
               >
@@ -57,8 +54,8 @@ export function GeneralSettings({
               </button>
               <button
                 className={cn(
-                  "capsule-sm flex-1 text-[10px] font-semibold uppercase",
-                  theme === "dark" && "active",
+                  "flex-1 rounded-lg px-3 py-2 text-sm font-medium border transition-colors",
+                  theme === "dark" ? "bg-bg-elevated border-border text-text-main shadow-sm" : "bg-transparent border-transparent text-text-muted hover:bg-bg-subtle"
                 )}
                 onClick={() => onThemeChange("dark")}
               >
@@ -66,8 +63,8 @@ export function GeneralSettings({
               </button>
               <button
                 className={cn(
-                  "capsule-sm flex-1 text-[10px] font-semibold uppercase",
-                  theme === "system" && "active",
+                  "flex-1 rounded-lg px-3 py-2 text-sm font-medium border transition-colors",
+                  theme === "system" ? "bg-bg-elevated border-border text-text-main shadow-sm" : "bg-transparent border-transparent text-text-muted hover:bg-bg-subtle"
                 )}
                 onClick={() => onThemeChange("system")}
               >
@@ -79,19 +76,19 @@ export function GeneralSettings({
 
         <Card className="rounded-xl border-border-muted bg-bg-surface shadow-sm overflow-hidden">
           <CardHeader className="pb-2">
-            <div className="flex items-center gap-2 text-primary-500">
-              <Languages size={16} />
-              <CardTitle className="text-sm font-semibold uppercase">
+            <div className="flex items-center gap-2">
+              <Languages size={16} className="text-text-muted" />
+              <CardTitle className="text-sm font-semibold">
                 {t("language_label") || "Language"}
               </CardTitle>
             </div>
           </CardHeader>
           <CardContent className="pt-4 px-6 pb-6">
-            <div className="capsule-group w-full max-w-xs">
+            <div className="flex gap-2 w-full max-w-xs">
               <button
                 className={cn(
-                  "capsule-sm flex-1 text-[10px] font-semibold uppercase",
-                  lang === "zh" && "active",
+                  "flex-1 rounded-lg px-3 py-2 text-sm font-medium border transition-colors",
+                  lang === "zh" ? "bg-bg-elevated border-border text-text-main shadow-sm" : "bg-transparent border-transparent text-text-muted hover:bg-bg-subtle"
                 )}
                 onClick={() => onLangChange("zh")}
               >
@@ -99,8 +96,8 @@ export function GeneralSettings({
               </button>
               <button
                 className={cn(
-                  "capsule-sm flex-1 text-[10px] font-semibold uppercase",
-                  lang === "en" && "active",
+                  "flex-1 rounded-lg px-3 py-2 text-sm font-medium border transition-colors",
+                  lang === "en" ? "bg-bg-elevated border-border text-text-main shadow-sm" : "bg-transparent border-transparent text-text-muted hover:bg-bg-subtle"
                 )}
                 onClick={() => onLangChange("en")}
               >

@@ -501,7 +501,7 @@ pub async fn workflow_run_step(
         step_index,
         &request.step.prompt,
         &result,
-    ) {
+    ).await {
         let _ = app.emit(
             "workflow://progress",
             WorkflowProgressEvent {
@@ -570,7 +570,7 @@ pub async fn workflow_run(
             idx,
             &step.prompt,
             &result,
-        ) {
+        ).await {
             let _ = app.emit(
                 "workflow://progress",
                 WorkflowProgressEvent {

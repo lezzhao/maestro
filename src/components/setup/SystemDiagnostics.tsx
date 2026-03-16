@@ -106,14 +106,11 @@ export function SystemDiagnostics({
   return (
     <section className="space-y-6 pt-4">
       <div className="flex items-center gap-3 px-2">
-        <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center">
-          <Activity size={20} />
-        </div>
         <div className="flex flex-col">
-          <h2 className="text-xl font-bold text-text-main tracking-tight">
+          <h2 className="text-xl font-bold tracking-tight">
             {t("system_diagnostics") || "System Diagnostics"}
           </h2>
-          <p className="text-[10px] text-text-muted font-semibold uppercase tracking-wider mt-0.5">
+          <p className="text-sm text-text-muted mt-1">
             Troubleshooting & Logs
           </p>
         </div>
@@ -123,8 +120,8 @@ export function SystemDiagnostics({
         <CardContent className="p-8 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="p-4 rounded-xl bg-bg-base border border-border-muted">
-              <h4 className="flex items-center gap-2 text-[10px] font-semibold uppercase text-text-muted mb-3">
-                <Database size={14} className="text-primary-500" />
+              <h4 className="flex items-center gap-2 text-sm font-semibold text-text-main mb-3">
+                <Database size={16} className="text-text-muted" />
                 Store Status
               </h4>
               <div className="space-y-2">
@@ -138,9 +135,9 @@ export function SystemDiagnostics({
                   <span className="opacity-50">Tasks Count:</span>
                   <span className="font-mono">{engineCount} Tasks</span>
                 </div>
-                <div className="flex justify-between text-xs">
-                  <span className="opacity-50">Project:</span>
-                  <span className="font-mono text-[10px] truncate max-w-[180px]">
+                <div className="flex justify-between text-sm">
+                  <span className="text-text-muted">Project:</span>
+                  <span className="font-mono truncate max-w-[180px]">
                     {projectPath || "None"}
                   </span>
                 </div>
@@ -148,15 +145,15 @@ export function SystemDiagnostics({
             </div>
 
             <div className="p-4 rounded-xl bg-bg-base border border-border-muted">
-              <h4 className="flex items-center gap-2 text-[10px] font-semibold uppercase text-text-muted mb-3">
-                <Activity size={14} className="text-rose-500" />
+              <h4 className="flex items-center gap-2 text-sm font-semibold text-text-main mb-3">
+                <Activity size={16} className="text-text-muted" />
                 Diagnostic Actions
               </h4>
               <div className="flex gap-2">
                 <Button
                   variant="outline"
                   size="sm"
-                  className="rounded-lg flex-1 text-[10px] font-semibold"
+                  className="rounded-lg flex-1 text-xs font-semibold"
                   onClick={() => {
                     if (import.meta.env.DEV) {
                       console.log(
@@ -176,7 +173,7 @@ export function SystemDiagnostics({
                 <Button
                   variant="outline"
                   size="sm"
-                  className="rounded-lg flex-1 text-[10px] font-semibold"
+                  className="rounded-lg flex-1 text-xs font-semibold"
                   onClick={() => window.location.reload()}
                 >
                   Force Reload
@@ -186,7 +183,7 @@ export function SystemDiagnostics({
                 <Button
                   variant="outline"
                   size="sm"
-                  className="rounded-lg flex-1 text-[10px] font-semibold"
+                  className="rounded-lg flex-1 text-xs font-semibold"
                   loading={loadingSessions}
                   onClick={() => void loadSessions()}
                 >
@@ -196,7 +193,7 @@ export function SystemDiagnostics({
                 <Button
                   variant="outline"
                   size="sm"
-                  className="rounded-lg flex-1 text-[10px] font-semibold"
+                  className="rounded-lg flex-1 text-xs font-semibold"
                   loading={pruning}
                   onClick={() => void pruneStoppedSessions()}
                 >
@@ -209,7 +206,7 @@ export function SystemDiagnostics({
 
           <div className="bg-bg-code rounded-xl p-6 border border-border-muted font-mono text-[11px] leading-relaxed relative overflow-hidden group/logs">
             <div className="flex items-center justify-between mb-4">
-              <h5 className="text-[10px] font-semibold uppercase text-rose-500/80">
+              <h5 className="text-sm font-semibold text-text-main">
                 Diagnostic Log Trace
               </h5>
               <Badge
@@ -247,7 +244,7 @@ export function SystemDiagnostics({
 
           <div className="rounded-xl border border-border-muted bg-bg-base p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <h5 className="text-[10px] font-semibold uppercase text-primary-500/80">
+              <h5 className="text-sm font-semibold text-text-main">
                 CLI Session Logs
               </h5>
               {selectedSession && (
@@ -275,7 +272,7 @@ export function SystemDiagnostics({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 text-[10px] font-semibold"
+                className="h-8 text-xs font-semibold"
                 loading={loadingLogs}
                 onClick={() => void loadLogs()}
                 disabled={!selectedSessionId}
@@ -285,9 +282,9 @@ export function SystemDiagnostics({
               </Button>
             </div>
             {cliMessage && (
-              <p className="text-[11px] text-amber-500 break-all">{cliMessage}</p>
+              <p className="text-xs text-amber-500 break-all">{cliMessage}</p>
             )}
-            <pre className="min-h-[120px] max-h-[220px] overflow-auto custom-scrollbar rounded-md border border-border-subtle bg-bg-code p-2 text-[10px] whitespace-pre-wrap break-words">
+            <pre className="min-h-[120px] max-h-[220px] overflow-auto custom-scrollbar rounded-md border border-border-subtle bg-bg-code p-2 text-xs whitespace-pre-wrap break-words">
               {sessionLogs || "暂无日志"}
             </pre>
           </div>

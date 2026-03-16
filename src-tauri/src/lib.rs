@@ -40,6 +40,8 @@ use workflow::{
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_sql::Builder::default().build())
+        .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             let config = load_or_create_config(app.handle().clone())?;
             app.manage(AppConfigState::new(config));

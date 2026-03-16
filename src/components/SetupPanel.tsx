@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { CheckCircle2, Cpu, RefreshCcw } from "lucide-react";
+import { CheckCircle2, RefreshCcw } from "lucide-react";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
 import { useTranslation } from "../i18n";
@@ -58,7 +58,7 @@ export function SetupPanel({
   const [finishedAll, setFinishedAll] = useState(false);
 
   return (
-    <div className="space-y-10 animate-in fade-in slide-in-from-bottom-2 duration-500 pb-20">
+    <div className="space-y-10 pb-20">
       {/* 通用设置：主题 + 语言 */}
       <GeneralSettings
         theme={theme}
@@ -71,11 +71,10 @@ export function SetupPanel({
       <section className="space-y-6">
         <div className="flex items-center justify-between px-2">
           <div className="flex flex-col">
-            <h2 className="text-xl font-bold text-text-main tracking-tight flex items-center gap-2">
-              <Cpu className="text-primary-500" size={24} />
+            <h2 className="text-xl font-bold tracking-tight">
               {t("core_engines")}
             </h2>
-            <p className="text-xs text-text-muted font-medium mt-1">
+            <p className="text-sm text-text-muted mt-1">
               Configure and manage your AI execution engines
             </p>
           </div>
