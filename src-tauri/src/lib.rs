@@ -12,7 +12,7 @@ mod project;
 mod pty;
 mod run_persistence;
 mod spec;
-mod workflow;
+pub mod workflow;
 
 use cli_state::{cli_list_sessions, cli_prune_sessions, cli_read_session_logs};
 use config::{load_or_create_config, save_config, AppConfigState};

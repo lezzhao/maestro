@@ -1,3 +1,5 @@
+pub mod events;
+
 use crate::config::{AppConfigState, AppConfig};
 use crate::engine::EngineRuntimeState;
 use crate::headless::HeadlessProcessState;
