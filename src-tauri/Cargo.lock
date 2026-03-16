@@ -2269,6 +2269,7 @@ dependencies = [
  "tauri-plugin-fs",
  "tauri-plugin-shell",
  "tauri-plugin-sql",
+ "thiserror 2.0.18",
  "tokio",
  "toml 0.8.2",
  "uuid",
