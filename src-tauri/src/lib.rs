@@ -1,8 +1,11 @@
 mod api_provider;
-mod config;
 mod cli_state;
+pub mod config;
 mod engine;
+pub mod engines;
 mod headless;
+pub mod ipc;
+pub mod plugin_engine;
 mod process;
 mod project;
 mod pty;
@@ -10,18 +13,20 @@ mod run_persistence;
 mod spec;
 mod workflow;
 
-use config::{load_or_create_config, save_config, AppConfigState};
 use cli_state::{cli_list_sessions, cli_prune_sessions, cli_read_session_logs};
+use config::{load_or_create_config, save_config, AppConfigState};
 use engine::{
-    engine_get_active, engine_list, engine_list_models, engine_preflight, engine_set_active, engine_set_active_profile,
-    engine_switch_session, engine_upsert, engine_upsert_profile,
+    engine_get_active, engine_list, engine_list_models, engine_preflight, engine_set_active,
+    engine_set_active_profile, engine_switch_session, engine_upsert, engine_upsert_profile,
     EngineRuntimeState,
 };
 use headless::HeadlessProcessState;
-use process::{process_get_stats, process_start_monitor, process_stop_monitor, ProcessMonitorState};
+use process::{
+    process_get_stats, process_start_monitor, process_stop_monitor, ProcessMonitorState,
+};
 use project::{
-    project_detect_stack, project_git_diff, project_git_status, project_list_files, project_recommend_engine,
-    project_read_file, project_set_current,
+    project_detect_stack, project_git_diff, project_git_status, project_list_files,
+    project_read_file, project_recommend_engine, project_set_current,
 };
 use pty::{
     pty_active_session, pty_kill, pty_kill_all, pty_resize, pty_spawn, pty_write, PtyManagerState,
