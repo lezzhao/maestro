@@ -59,6 +59,8 @@ pub struct IpcResponse {
     pub id: Option<String>,
     pub result: Option<serde_json::Value>,
     pub error: Option<String>,
+    #[serde(default)]
+    pub is_stream: bool,
 }
 
 pub fn get_socket_path() -> PathBuf {
@@ -72,11 +74,11 @@ pub mod unix {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::net::{UnixListener, UnixStream};
 
-    // NOTE: This signature expects a handler that returns a BoxFuture or simply takes arc-handler.
+    // NOTE: This signature expects a handler that takes a message and a channel to send responses.
     pub async fn start_server<F, Fut>(handler: Arc<F>) -> Result<(), String>
     where
-        F: Fn(IpcMessage) -> Fut + Send + Sync + 'static,
-        Fut: std::future::Future<Output = IpcResponse> + Send,
+        F: Fn(IpcMessage, tokio::sync::mpsc::Sender<IpcResponse>) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = ()> + Send,
     {
         let socket_path = get_socket_path();
         if socket_path.exists() {
@@ -95,12 +97,26 @@ pub mod unix {
                         let mut lines = BufReader::new(reader).lines();
                         while let Ok(Some(line)) = lines.next_line().await {
                             if let Ok(msg) = serde_json::from_str::<IpcMessage>(&line) {
-                                let resp = h(msg).await;
-                                if let Ok(resp_json) = serde_json::to_string(&resp) {
-                                    let _ = writer
-                                        .write_all(format!("{}\n", resp_json).as_bytes())
-                                        .await;
+                                let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+                                let run_handle = tokio::spawn({
+                                    let h_clone = Arc::clone(&h);
+                                    let msg_clone = msg.clone();
+                                    async move {
+                                        h_clone(msg_clone, tx).await;
+                                    }
+                                });
+
+                                while let Some(resp) = rx.recv().await {
+                                    if let Ok(resp_json) = serde_json::to_string(&resp) {
+                                        let _ = writer
+                                            .write_all(format!("{}\n", resp_json).as_bytes())
+                                            .await;
+                                    }
+                                    if !resp.is_stream {
+                                        break; // End of this request
+                                    }
                                 }
+                                let _ = run_handle.await;
                             }
                         }
                     });
@@ -122,12 +138,49 @@ pub mod unix {
         stream.write_all(payload.as_bytes()).await.unwrap();
 
         let mut reader = BufReader::new(stream);
-        let mut response = String::new();
-        reader
-            .read_line(&mut response)
-            .await
-            .map_err(|e| e.to_string())?;
+        // Since it's not a streaming call, we loop until we get a non-stream response
+        loop {
+            let mut line = String::new();
+            match reader.read_line(&mut line).await {
+                 Ok(0) => return Err("Unexpected EOF from daemon".to_string()),
+                 Ok(_) => {
+                     let resp: IpcResponse = serde_json::from_str(&line).map_err(|e| format!("parse response failed: {}", e))?;
+                     if !resp.is_stream {
+                         return Ok(resp);
+                     }
+                 }
+                 Err(e) => return Err(e.to_string()),
+            }
+        }
+    }
 
-        serde_json::from_str(&response).map_err(|e| format!("parse response failed: {}", e))
+    pub async fn send_request_stream<F>(msg: IpcMessage, mut on_chunk: F) -> Result<IpcResponse, String>
+    where
+        F: FnMut(IpcResponse),
+    {
+        let socket_path = get_socket_path();
+        let mut stream = UnixStream::connect(socket_path)
+            .await
+            .map_err(|e| format!("failed to connect to daemon: {}", e))?;
+
+        let payload = serde_json::to_string(&msg).unwrap() + "\n";
+        stream.write_all(payload.as_bytes()).await.unwrap();
+
+        let mut reader = BufReader::new(stream);
+        loop {
+            let mut line = String::new();
+            match reader.read_line(&mut line).await {
+                Ok(0) => return Err("Unexpected EOF from daemon stream".to_string()),
+                Ok(_) => {
+                    let resp: IpcResponse = serde_json::from_str(&line).map_err(|e| format!("parse response failed: {}", e))?;
+                    if !resp.is_stream {
+                        return Ok(resp);
+                    } else {
+                        on_chunk(resp);
+                    }
+                }
+                Err(e) => return Err(e.to_string()),
+            }
+        }
     }
 }

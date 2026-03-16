@@ -2,7 +2,8 @@ use crate::workflow::types::ChatApiMessage;
 use futures::StreamExt;
 use reqwest::Client;
 use serde_json::json;
-use tauri::ipc::Channel;
+use crate::core::events::StringStream;
+use std::sync::Arc;
 use tokio::sync::oneshot;
 
 fn normalize_base_url(input: &str) -> String {
@@ -33,7 +34,7 @@ async fn stream_openai_compatible(
     model: &str,
     messages: &[ChatApiMessage],
     cancel_rx: &mut oneshot::Receiver<()>,
-    on_data: &Channel<String>,
+    on_data: &Arc<dyn StringStream>,
 ) -> Result<(), String> {
     let endpoint = format!("{}/chat/completions", normalize_base_url(base_url));
     let body = json!({
@@ -84,11 +85,11 @@ async fn stream_openai_compatible(
                             };
                             if let Some(text) = value.pointer("/choices/0/delta/content").and_then(|v| v.as_str()) {
                                 if !text.is_empty() {
-                                    let _ = on_data.send(text.to_string());
+                                    let _ = on_data.send_string(text.to_string());
                                 }
                             } else if let Some(text) = value.pointer("/choices/0/delta/content/0/text").and_then(|v| v.as_str()) {
                                 if !text.is_empty() {
-                                    let _ = on_data.send(text.to_string());
+                                    let _ = on_data.send_string(text.to_string());
                                 }
                             }
                         }
@@ -104,7 +105,7 @@ async fn stream_openai_compatible(
 fn flush_anthropic_event(
     event_name: &str,
     data_lines: &[String],
-    on_data: &Channel<String>,
+    on_data: &Arc<dyn StringStream>,
 ) -> Result<bool, String> {
     if event_name == "message_stop" {
         return Ok(true);
@@ -118,7 +119,7 @@ fn flush_anthropic_event(
     if event_name == "content_block_delta" {
         if let Some(text) = value.pointer("/delta/text").and_then(|v| v.as_str()) {
             if !text.is_empty() {
-                let _ = on_data.send(text.to_string());
+                let _ = on_data.send_string(text.to_string());
             }
         }
     } else if event_name.is_empty() {
@@ -129,7 +130,7 @@ fn flush_anthropic_event(
             if event_type == "content_block_delta" {
                 if let Some(text) = value.pointer("/delta/text").and_then(|v| v.as_str()) {
                     if !text.is_empty() {
-                        let _ = on_data.send(text.to_string());
+                        let _ = on_data.send_string(text.to_string());
                     }
                 }
             }
@@ -145,7 +146,7 @@ async fn stream_anthropic(
     model: &str,
     messages: &[ChatApiMessage],
     cancel_rx: &mut oneshot::Receiver<()>,
-    on_data: &Channel<String>,
+    on_data: &Arc<dyn StringStream>,
 ) -> Result<(), String> {
     let endpoint = format!("{}/v1/messages", normalize_base_url(base_url));
     let body = json!({
@@ -224,7 +225,7 @@ pub async fn stream_chat(
     model: &str,
     messages: &[ChatApiMessage],
     mut cancel_rx: oneshot::Receiver<()>,
-    on_data: Channel<String>,
+    on_data: Arc<dyn StringStream>,
 ) -> Result<(), String> {
     if api_key.trim().is_empty() {
         return Err("API Key 未配置".to_string());
