@@ -23,16 +23,22 @@ pub async fn run_cli_mode(args: Vec<String>) {
         Commands::Daemon => {
             println!("Starting Maestro Daemon...");
             let config = tauri_app_lib::config::load_or_create_config_headless().unwrap();
-            let _core = Arc::new(tauri_app_lib::core::MaestroCore::new(config));
+            let core = Arc::new(tauri_app_lib::core::MaestroCore::new(config));
             
-            // Handler takes an Arc of MaestroCore, but we don't necessarily use it in `ping`.
-            // For now, implement simple ping responder.
-            let handler = Arc::new(|msg: IpcMessage| {
+            let handler = Arc::new(move |msg: IpcMessage| {
+                let core_clone = Arc::clone(&core);
                 Box::pin(async move {
                     if msg.method == "ping" {
                         return IpcResponse {
                             id: msg.id,
                             result: Some(serde_json::Value::String("pong".to_string())),
+                            error: None,
+                        };
+                    } else if msg.method == "list_sessions" {
+                        let sessions = core_clone.pty_state.list_sessions();
+                        return IpcResponse {
+                            id: msg.id,
+                            result: Some(serde_json::to_value(&sessions).unwrap_or(serde_json::Value::Null)),
                             error: None,
                         };
                     }
@@ -58,8 +64,25 @@ pub async fn run_cli_mode(args: Vec<String>) {
                 return;
             }
 
-            // In the future: call daemon via IPC to get the list
-            println!("TODO: get active sessions from daemon proxy...");
+            #[cfg(unix)]
+            {
+                let msg = IpcMessage {
+                    method: "list_sessions".to_string(),
+                    payload: serde_json::Value::Null,
+                    id: Some("cli-list".to_string()),
+                };
+                match tauri_app_lib::ipc::unix::send_request(msg).await {
+                    Ok(resp) => {
+                        if let Some(err) = resp.error {
+                            eprintln!("Daemon returned error: {}", err);
+                        } else if let Some(res) = resp.result {
+                            // we get the session payload, just print it directly to let CLI parse it
+                            println!("{}", serde_json::to_string_pretty(&res).unwrap_or_default());
+                        }
+                    }
+                    Err(e) => eprintln!("Failed to communicate with daemon: {}", e),
+                }
+            }
         }
     }
 }

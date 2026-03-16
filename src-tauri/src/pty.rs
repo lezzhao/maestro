@@ -133,6 +133,18 @@ impl PtyManagerState {
         })
     }
 
+    pub fn list_sessions(&self) -> Vec<PtySessionInfo> {
+        self.sessions
+            .read()
+            .expect("sessions read lock poisoned")
+            .values()
+            .map(|s| PtySessionInfo {
+                session_id: s.id,
+                os_pid: s.os_pid,
+            })
+            .collect()
+    }
+
     pub fn active_os_pid(&self, session_id: Option<u32>) -> Option<u32> {
         self.get_session(session_id).ok().and_then(|s| s.os_pid)
     }
