@@ -10,7 +10,7 @@ use tauri::{command, AppHandle, Emitter, Manager};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProcessStats {
-    pub session_id: Option<u32>,
+    pub session_id: Option<String>,
     pub os_pid: Option<u32>,
     pub cpu_percent: f32,
     pub memory_mb: u64,
@@ -20,7 +20,7 @@ pub struct ProcessStats {
 #[derive(Default)]
 pub struct ProcessMonitorState {
     running: AtomicBool,
-    latest: RwLock<HashMap<Option<u32>, ProcessStats>>,
+    latest: RwLock<HashMap<Option<String>, ProcessStats>>,
     stopper: Mutex<Option<Arc<AtomicBool>>>,
 }
 
@@ -35,10 +35,10 @@ impl ProcessMonitorState {
 
 #[command]
 pub fn process_get_stats(
-    session_id: Option<u32>,
+    session_id: Option<String>,
     pty_state: tauri::State<'_, PtyManagerState>,
 ) -> ProcessStats {
-    let os_pid = active_os_pid(&pty_state, session_id);
+    let os_pid = active_os_pid(&pty_state, session_id.clone());
     if let Some(pid_u32) = os_pid {
         let mut sys = System::new_with_specifics(
             RefreshKind::nothing()
@@ -68,7 +68,7 @@ pub fn process_get_stats(
 #[command]
 pub fn process_start_monitor(
     app: AppHandle,
-    session_id: Option<u32>,
+    session_id: Option<String>,
     interval_ms: Option<u64>,
     monitor_state: tauri::State<'_, ProcessMonitorState>,
 ) -> Result<(), String> {
@@ -83,7 +83,7 @@ pub fn process_start_monitor(
         while !stop_flag.load(Ordering::Relaxed) {
             let stats = {
                 let pty = app_handle.state::<PtyManagerState>();
-                let os_pid = active_os_pid(&pty, session_id);
+                let os_pid = active_os_pid(&pty, session_id.clone());
                 if let Some(pid_u32) = os_pid {
                     let mut sys = System::new_with_specifics(
                         RefreshKind::nothing()
@@ -93,7 +93,7 @@ pub fn process_start_monitor(
                     sys.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
                     if let Some(process) = sys.process(pid) {
                         ProcessStats {
-                            session_id,
+                            session_id: session_id.clone(),
                             os_pid,
                             cpu_percent: process.cpu_usage(),
                             memory_mb: process.memory() / 1024 / 1024,
@@ -101,7 +101,7 @@ pub fn process_start_monitor(
                         }
                     } else {
                         ProcessStats {
-                            session_id,
+                            session_id: session_id.clone(),
                             os_pid,
                             cpu_percent: 0.0,
                             memory_mb: 0,
@@ -110,7 +110,7 @@ pub fn process_start_monitor(
                     }
                 } else {
                     ProcessStats {
-                        session_id,
+                        session_id: session_id.clone(),
                         os_pid: None,
                         cpu_percent: 0.0,
                         memory_mb: 0,
@@ -124,7 +124,7 @@ pub fn process_start_monitor(
                 .latest
                 .write()
                 .expect("latest write lock poisoned")
-                .insert(session_id, stats.clone());
+                .insert(session_id.clone(), stats.clone());
             let _ = app_handle.emit("perf://stats", stats);
             thread::sleep(Duration::from_millis(interval));
         }

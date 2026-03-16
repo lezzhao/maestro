@@ -2271,6 +2271,7 @@ dependencies = [
  "tauri-plugin-sql",
  "tokio",
  "toml 0.8.2",
+ "uuid",
  "which",
 ]
 

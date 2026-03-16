@@ -418,7 +418,9 @@ async fn execute_workflow_step(
             Ok(())
         });
 
+        let session_id = uuid::Uuid::new_v4().to_string();
         let spawn = pty_state.spawn_session(
+            session_id,
             profile.command().clone(),
             args_for_pty,
             if cfg.project.path.trim().is_empty() {
@@ -447,7 +449,7 @@ async fn execute_workflow_step(
             }
         }
 
-        pty_state.write_to_session(Some(spawn.session_id), &format!("{}\n", step.prompt))?;
+        pty_state.write_to_session(Some(spawn.session_id.clone()), &format!("{}\n", step.prompt))?;
 
         let timeout = step.timeout_ms.unwrap_or(30_000).max(500);
         let deadline = Instant::now() + Duration::from_millis(timeout);
@@ -462,7 +464,7 @@ async fn execute_workflow_step(
                 matched = true;
                 break;
             }
-            if pty_state.try_wait_exit_status(spawn.session_id).is_some() {
+            if pty_state.try_wait_exit_status(&spawn.session_id).is_some() {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(120)).await;
@@ -471,7 +473,7 @@ async fn execute_workflow_step(
             timed_out = true;
         }
 
-        let _ = pty_state.kill_session(spawn.session_id);
+        let _ = pty_state.kill_session(&spawn.session_id);
         let final_output = output_buf
             .lock()
             .expect("workflow output lock poisoned")

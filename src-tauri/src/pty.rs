@@ -2,7 +2,6 @@ use portable_pty::{native_pty_system, Child, ChildKiller, CommandBuilder, Master
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -10,12 +9,12 @@ use tauri::{command, ipc::Channel};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PtySessionInfo {
-    pub session_id: u32,
+    pub session_id: String,
     pub os_pid: Option<u32>,
 }
 
 struct PtySession {
-    id: u32,
+    id: String,
     os_pid: Option<u32>,
     master: Mutex<Box<dyn MasterPty + Send>>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
@@ -25,28 +24,28 @@ struct PtySession {
 
 #[derive(Default)]
 pub struct PtyManagerState {
-    next_id: AtomicU32,
-    sessions: RwLock<HashMap<u32, Arc<PtySession>>>,
-    active_session_id: Mutex<Option<u32>>,
+    sessions: RwLock<HashMap<String, Arc<PtySession>>>,
+    active_session_id: Mutex<Option<String>>,
 }
 
 impl PtyManagerState {
     fn add_session(&self, session: Arc<PtySession>) {
         let mut sessions = self.sessions.write().expect("sessions write lock poisoned");
-        sessions.insert(session.id, session.clone());
+        sessions.insert(session.id.clone(), session.clone());
         *self
             .active_session_id
             .lock()
-            .expect("active_session lock poisoned") = Some(session.id);
+            .expect("active_session lock poisoned") = Some(session.id.clone());
     }
 
-    fn get_session(&self, session_id: Option<u32>) -> Result<Arc<PtySession>, String> {
+    fn get_session(&self, session_id: Option<String>) -> Result<Arc<PtySession>, String> {
         let id = if let Some(id) = session_id {
             id
         } else {
             self.active_session_id
                 .lock()
                 .expect("active_session lock poisoned")
+                .clone()
                 .ok_or("no active PTY session")?
         };
         self.sessions
@@ -57,30 +56,30 @@ impl PtyManagerState {
             .ok_or_else(|| format!("session not found: {id}"))
     }
 
-    fn remove_session(&self, session_id: u32) {
+    fn remove_session(&self, session_id: &str) {
         self.sessions
             .write()
             .expect("sessions write lock poisoned")
-            .remove(&session_id);
+            .remove(session_id);
         let mut active = self
             .active_session_id
             .lock()
             .expect("active_session lock poisoned");
-        if *active == Some(session_id) {
+        if active.as_deref() == Some(session_id) {
             *active = None;
         }
     }
 
     pub fn kill_all(&self) {
-        let ids: Vec<u32> = self
+        let ids: Vec<String> = self
             .sessions
             .read()
             .expect("sessions read lock poisoned")
             .keys()
-            .copied()
+            .cloned()
             .collect();
         for id in ids {
-            let _ = self.kill_session(id);
+            let _ = self.kill_session(&id);
         }
     }
 
@@ -90,18 +89,18 @@ impl PtyManagerState {
             let sessions = self.sessions.read().expect("sessions read lock poisoned");
             for (id, session) in sessions.iter() {
                 if let Ok(Some(_)) = session.child.lock().expect("child lock poisoned").try_wait() {
-                    dead_ids.push(*id);
+                    dead_ids.push(id.clone());
                 }
             }
         }
         let count = dead_ids.len();
         for id in dead_ids {
-            self.remove_session(id);
+            self.remove_session(&id);
         }
         count
     }
 
-    pub fn write_to_session(&self, session_id: Option<u32>, data: &str) -> Result<(), String> {
+    pub fn write_to_session(&self, session_id: Option<String>, data: &str) -> Result<(), String> {
         let session = self.get_session(session_id)?;
         session
             .writer
@@ -114,7 +113,7 @@ impl PtyManagerState {
 
     pub fn resize_session(
         &self,
-        session_id: Option<u32>,
+        session_id: Option<String>,
         cols: u16,
         rows: u16,
     ) -> Result<(), String> {
@@ -134,17 +133,18 @@ impl PtyManagerState {
     }
 
     pub fn active_session(&self) -> Option<PtySessionInfo> {
-        let active_id = *self
+        let active_id = self
             .active_session_id
             .lock()
-            .expect("active_session lock poisoned");
+            .expect("active_session lock poisoned")
+            .clone();
         active_id.and_then(|id| {
             self.sessions
                 .read()
                 .expect("sessions read lock poisoned")
                 .get(&id)
                 .map(|session| PtySessionInfo {
-                    session_id: session.id,
+                    session_id: session.id.clone(),
                     os_pid: session.os_pid,
                 })
         })
@@ -156,22 +156,22 @@ impl PtyManagerState {
             .expect("sessions read lock poisoned")
             .values()
             .map(|s| PtySessionInfo {
-                session_id: s.id,
+                session_id: s.id.clone(),
                 os_pid: s.os_pid,
             })
             .collect()
     }
 
-    pub fn active_os_pid(&self, session_id: Option<u32>) -> Option<u32> {
+    pub fn active_os_pid(&self, session_id: Option<String>) -> Option<u32> {
         self.get_session(session_id).ok().and_then(|s| s.os_pid)
     }
 
-    pub fn try_wait_exit_status(&self, session_id: u32) -> Option<i32> {
+    pub fn try_wait_exit_status(&self, session_id: &str) -> Option<i32> {
         let session = self
             .sessions
             .read()
             .expect("sessions read lock poisoned")
-            .get(&session_id)
+            .get(session_id)
             .cloned()?;
         let status = session
             .child
@@ -183,12 +183,12 @@ impl PtyManagerState {
         status.map(|s| s.exit_code() as i32)
     }
 
-    pub fn kill_session(&self, session_id: u32) -> Result<(), String> {
+    pub fn kill_session(&self, session_id: &str) -> Result<(), String> {
         let session = self
             .sessions
             .read()
             .expect("sessions read lock poisoned")
-            .get(&session_id)
+            .get(session_id)
             .cloned()
             .ok_or_else(|| format!("session not found: {session_id}"))?;
         session
@@ -203,6 +203,7 @@ impl PtyManagerState {
 
     pub fn spawn_session(
         &self,
+        session_id: String,
         file: String,
         args: Vec<String>,
         cwd: Option<String>,
@@ -248,9 +249,8 @@ impl PtyManagerState {
             .try_clone_reader()
             .map_err(|e| format!("try_clone_reader failed: {e}"))?;
 
-        let session_id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
         let session = Arc::new(PtySession {
-            id: session_id,
+            id: session_id.clone(),
             os_pid,
             master: Mutex::new(pair.master),
             writer: Arc::new(Mutex::new(writer)),
@@ -297,6 +297,7 @@ impl PtyManagerState {
 
 #[command]
 pub fn pty_spawn(
+    session_id: String,
     file: String,
     args: Vec<String>,
     cwd: Option<String>,
@@ -306,12 +307,12 @@ pub fn pty_spawn(
     on_data: Channel<String>,
     state: tauri::State<'_, PtyManagerState>,
 ) -> Result<PtySessionInfo, String> {
-    state.spawn_session(file, args, cwd, env, cols, rows, on_data)
+    state.spawn_session(session_id, file, args, cwd, env, cols, rows, on_data)
 }
 
 #[command]
 pub fn pty_write(
-    session_id: Option<u32>,
+    session_id: Option<String>,
     data: String,
     state: tauri::State<'_, PtyManagerState>,
 ) -> Result<(), String> {
@@ -320,7 +321,7 @@ pub fn pty_write(
 
 #[command]
 pub fn pty_resize(
-    session_id: Option<u32>,
+    session_id: Option<String>,
     cols: u16,
     rows: u16,
     state: tauri::State<'_, PtyManagerState>,
@@ -329,8 +330,8 @@ pub fn pty_resize(
 }
 
 #[command]
-pub fn pty_kill(session_id: u32, state: tauri::State<'_, PtyManagerState>) -> Result<(), String> {
-    state.kill_session(session_id)
+pub fn pty_kill(session_id: String, state: tauri::State<'_, PtyManagerState>) -> Result<(), String> {
+    state.kill_session(&session_id)
 }
 
 #[command]
@@ -362,10 +363,10 @@ pub fn resolve_exit_payload(exit_command: &str) -> String {
     }
 }
 
-pub fn active_os_pid(state: &PtyManagerState, session_id: Option<u32>) -> Option<u32> {
+pub fn active_os_pid(state: &PtyManagerState, session_id: Option<String>) -> Option<u32> {
     state.active_os_pid(session_id)
 }
 
-pub fn wait_exit_status(state: &PtyManagerState, session_id: u32) -> Option<i32> {
+pub fn wait_exit_status(state: &PtyManagerState, session_id: &str) -> Option<i32> {
     state.try_wait_exit_status(session_id)
 }

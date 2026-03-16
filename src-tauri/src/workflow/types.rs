@@ -217,19 +217,19 @@ pub struct ChatSpawnRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatSendRequest {
-    pub session_id: u32,
+    pub session_id: String,
     pub content: String,
     pub append_newline: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatStopRequest {
-    pub session_id: u32,
+    pub session_id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ChatSessionMeta {
-    pub session_id: u32,
+    pub session_id: String,
     pub engine_id: String,
     pub profile_id: String,
     pub ready_signal: Option<String>,
@@ -251,7 +251,7 @@ pub struct ChatApiRequest {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ChatExecuteApiResult {
-    pub exec_id: u32,
+    pub exec_id: String,
     pub run_id: String,
     pub engine_id: String,
     pub profile_id: String,
@@ -268,7 +268,7 @@ pub struct ChatExecuteCliRequest {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ChatExecuteCliResult {
-    pub exec_id: u32,
+    pub exec_id: String,
     pub run_id: String,
     pub pid: Option<u32>,
     pub engine_id: String,
@@ -277,5 +277,5 @@ pub struct ChatExecuteCliResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatExecuteStopRequest {
-    pub exec_id: u32,
+    pub exec_id: String,
 }
