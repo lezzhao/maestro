@@ -1,4 +1,4 @@
-use crate::config::{write_config_to_disk, AppConfigState};
+use crate::config::write_config_to_disk;
 use serde::Serialize;
 
 use std::path::{Path, PathBuf};
@@ -317,18 +317,18 @@ pub fn project_detect_stack(project_path: String) -> Result<ProjectStackResult, 
 pub fn project_set_current(
     app: AppHandle,
     project_path: String,
-    state: State<'_, AppConfigState>,
+    core_state: State<'_, crate::core::MaestroCore>,
 ) -> Result<ProjectSetResult, String> {
     let path = PathBuf::from(&project_path);
     if !path.exists() || !path.is_dir() {
         return Err(format!("project path invalid: {project_path}"));
     }
     let stacks = detect_stack(&path);
-    let mut config = state.get();
+    let mut config = core_state.inner().config.get();
     config.project.path = project_path.clone();
     config.project.detected_stack = stacks.clone();
     write_config_to_disk(&app, &config)?;
-    state.set(config);
+    core_state.inner().config.set(config);
     Ok(ProjectSetResult {
         path: project_path,
         stacks,
@@ -433,7 +433,7 @@ pub async fn project_read_file(
 #[command]
 pub fn project_recommend_engine(
     project_path: String,
-    state: State<'_, AppConfigState>,
+    core_state: State<'_, crate::core::MaestroCore>,
 ) -> Result<EngineRecommendation, String> {
     let path = PathBuf::from(&project_path);
     if !path.exists() || !path.is_dir() {
@@ -441,7 +441,7 @@ pub fn project_recommend_engine(
     }
 
     let stacks = detect_stack(&path);
-    let cfg = state.get();
+    let cfg = core_state.inner().config.get();
 
     if stacks.iter().any(|s| s == "rust") && cfg.engines.contains_key("codex") {
         return Ok(EngineRecommendation {

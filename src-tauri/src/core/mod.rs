@@ -3,11 +3,16 @@ pub mod events;
 pub mod execution;
 
 use crate::config::{AppConfigState, AppConfig};
+use crate::core::events::EventStream;
 use crate::engine::EngineRuntimeState;
 use crate::headless::HeadlessProcessState;
 use crate::process::ProcessMonitorState;
 use crate::pty::PtyManagerState;
-
+use crate::workflow::types::{ChatApiRequest, ChatExecuteCliRequest, StepRunRequest, WorkflowRunRequest};
+use crate::workflow::chat::{chat_execute_api_core, chat_execute_cli_core};
+use crate::workflow::run::{workflow_run_core, workflow_run_step_core};
+use crate::core::events::StringStream;
+use std::sync::Arc;
 
 pub struct MaestroCore {
     pub config: AppConfigState,
@@ -28,19 +33,62 @@ impl MaestroCore {
         }
     }
 
-    /// Use-Case: Start a new execution
-    pub fn start_execution(&self, _execution: crate::core::execution::Execution) -> Result<(), error::CoreError> {
-        // Implementation delegates to proper modes (PTY/Headless/API)
-        Ok(())
+
+    /// Workflow run - creates Execution at start, persists at end
+    pub async fn workflow_run(
+        &self,
+        emitter: Arc<dyn EventStream>,
+        request: WorkflowRunRequest,
+    ) -> Result<crate::workflow::types::WorkflowRunResult, String> {
+        workflow_run_core(
+            emitter,
+            request,
+            &self.engine_runtime,
+            &self.config.get(),
+            &self.pty_state,
+        )
+        .await
+    }
+
+    /// Workflow run single step
+    pub async fn workflow_run_step(
+        &self,
+        emitter: Arc<dyn EventStream>,
+        request: StepRunRequest,
+    ) -> Result<crate::workflow::types::StepRunResult, String> {
+        workflow_run_step_core(
+            emitter,
+            request,
+            &self.engine_runtime,
+            &self.config.get(),
+            &self.pty_state,
+        )
+        .await
+    }
+
+    /// Chat execute via API - creates Execution, registers with headless, spawns
+    pub async fn chat_execute_api(
+        &self,
+        request: ChatApiRequest,
+        on_data: Arc<dyn StringStream>,
+    ) -> Result<crate::workflow::types::ChatExecuteApiResult, error::CoreError> {
+        chat_execute_api_core(request, self.config.get(), &self.headless_state, on_data).await
+    }
+
+    /// Chat execute via CLI - creates Execution, registers with headless, spawns
+    pub async fn chat_execute_cli(
+        &self,
+        request: ChatExecuteCliRequest,
+        on_data: Arc<dyn StringStream>,
+    ) -> Result<crate::workflow::types::ChatExecuteCliResult, error::CoreError> {
+        chat_execute_cli_core(request, self.config.get(), &self.headless_state, on_data).await
     }
 
     /// Use-Case: Cancel an active execution
     pub fn cancel_execution(&self, id: &str) -> Result<(), error::CoreError> {
-        // Try PTY
         if self.pty_state.kill_session(id).is_ok() {
             return Ok(());
         }
-        // Try Headless
         self.headless_state.cancel(id).map_err(|e| error::CoreError::CancelFailed { id: id.to_string(), reason: e })
     }
 

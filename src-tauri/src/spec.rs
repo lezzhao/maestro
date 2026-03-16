@@ -1,4 +1,4 @@
-use crate::config::{AppConfigState, SpecProviderBmad};
+use crate::config::SpecProviderBmad;
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -281,8 +281,8 @@ fn ensure_parent(path: &PathBuf) -> Result<(), String> {
 }
 
 #[command]
-pub fn spec_list(state: tauri::State<'_, AppConfigState>) -> Vec<SpecDescriptor> {
-    let cfg = state.get();
+pub fn spec_list(core_state: tauri::State<'_, crate::core::MaestroCore>) -> Vec<SpecDescriptor> {
+    let cfg = core_state.inner().config.get();
     vec![
         SpecDescriptor {
             id: "none".to_string(),
@@ -308,12 +308,12 @@ pub fn spec_inject(
     project_path: String,
     mode: String,
     target_ide: String,
-    state: tauri::State<'_, AppConfigState>,
+    core_state: tauri::State<'_, crate::core::MaestroCore>,
 ) -> Result<(), String> {
     if provider == "none" {
         return Ok(());
     }
-    let cfg = state.get();
+    let cfg = core_state.inner().config.get();
     let registry = SpecProviderRegistry::new(&cfg);
     let p = registry.get(&provider).ok_or_else(|| format!("unsupported provider: {provider}"))?;
     let project = PathBuf::from(project_path);
@@ -324,12 +324,12 @@ pub fn spec_inject(
 pub fn spec_remove(
     provider: String,
     project_path: String,
-    state: tauri::State<'_, AppConfigState>,
+    core_state: tauri::State<'_, crate::core::MaestroCore>,
 ) -> Result<(), String> {
     if provider == "none" {
         return Ok(());
     }
-    let cfg = state.get();
+    let cfg = core_state.inner().config.get();
     let registry = SpecProviderRegistry::new(&cfg);
     let p = registry.get(&provider).ok_or_else(|| format!("unsupported provider: {provider}"))?;
     let project = PathBuf::from(project_path);
@@ -339,9 +339,9 @@ pub fn spec_remove(
 #[command]
 pub fn spec_detect(
     project_path: String,
-    state: tauri::State<'_, AppConfigState>,
+    core_state: tauri::State<'_, crate::core::MaestroCore>,
 ) -> Vec<SpecDetectResult> {
-    let cfg = state.get();
+    let cfg = core_state.inner().config.get();
     let project = PathBuf::from(project_path);
     let registry = SpecProviderRegistry::new(&cfg);
     registry
@@ -358,12 +358,12 @@ pub fn spec_preview(
     provider: String,
     mode: String,
     target_ide: String,
-    state: tauri::State<'_, AppConfigState>,
+    core_state: tauri::State<'_, crate::core::MaestroCore>,
 ) -> Result<Vec<SpecPreviewResult>, String> {
     if provider == "none" {
         return Ok(Vec::new());
     }
-    let cfg = state.get();
+    let cfg = core_state.inner().config.get();
     let registry = SpecProviderRegistry::new(&cfg);
     let p = registry.get(&provider).ok_or_else(|| format!("unsupported provider: {provider}"))?;
     p.preview(&mode, &target_ide)

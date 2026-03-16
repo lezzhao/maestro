@@ -527,11 +527,11 @@ pub fn load_or_create_config(app: AppHandle) -> Result<AppConfig, String> {
 pub fn save_config(
     app: AppHandle,
     config: AppConfig,
-    state: tauri::State<'_, AppConfigState>,
+    core_state: tauri::State<'_, crate::core::MaestroCore>,
 ) -> Result<(), String> {
     let mut config = config;
     migrate_engine_profiles(&mut config);
     write_config_to_disk(&app, &config)?;
-    state.set(config);
+    core_state.inner().config.set(config);
     Ok(())
 }

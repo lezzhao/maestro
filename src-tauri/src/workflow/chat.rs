@@ -1,11 +1,10 @@
 use super::types::*;
 use super::util::{completion_matched, with_model_args};
 use crate::core::events::{ChannelStringStream, StringStream};
-use crate::config::{AppConfig, AppConfigState};
+use crate::config::AppConfig;
 use crate::core::error::CoreError;
-use crate::engine::EngineRuntimeState;
 use crate::headless::HeadlessProcessState;
-use crate::pty::{PtyManagerState, PtySessionInfo};
+use crate::pty::PtySessionInfo;
 use crate::core::execution::{Execution, ExecutionMode, ExecutionStatus};
 use crate::run_persistence::{
     append_run_record, current_time_ms, resolve_root_dir_from_project_path,
@@ -172,7 +171,9 @@ where
                         text.drain(..drop_prefix);
                     }
                 }
-                let _ = on_data.send_string(chunk);
+                if on_data.send_string(chunk).is_err() {
+                    break; // Channel closed, stop forwarding
+                }
             }
             Err(_) => break,
         }
@@ -211,16 +212,12 @@ pub async fn chat_load_last_conversation(
 #[command]
 pub async fn chat_execute_api(
     request: ChatApiRequest,
-    config_state: State<'_, AppConfigState>,
-    headless_state: State<'_, HeadlessProcessState>,
+    core_state: State<'_, crate::core::MaestroCore>,
     on_data: Channel<String>,
 ) -> Result<ChatExecuteApiResult, CoreError> {
-    chat_execute_api_core(
-        request,
-        config_state.get(),
-        &headless_state,
-        Arc::new(ChannelStringStream(on_data)),
-    ).await
+    core_state
+        .chat_execute_api(request, Arc::new(ChannelStringStream(on_data)))
+        .await
 }
 
 pub async fn chat_execute_api_core(
@@ -262,13 +259,8 @@ pub async fn chat_execute_api_core(
     };
     let run_id_for_return = execution.id.clone();
     let exec_id = headless_state.register(execution, cancel_tx);
-    let run_id = exec_id.clone();
     let on_data_clone = on_data.clone();
     let root_dir = resolve_root_dir_from_project_path(&cfg.project.path).ok();
-    let engine_id = request.engine_id.clone();
-    let profile_command = profile.command().clone();
-    let profile_model = profile.model().clone();
-    let cwd = cfg.project.path.clone();
     let _ = on_data.send_string(format!("\u{0}RUN_ID:{run_id_for_return}"));
 
     let exec_id_for_spawn = exec_id.clone();
@@ -285,63 +277,29 @@ pub async fn chat_execute_api_core(
             on_data_clone.clone(),
         )
         .await;
-        match run_result {
-            Ok(_) => {
-                let _ = on_data_clone.send_string("\u{0}DONE".to_string());
-                if let (Some(root), Ok(now_ms)) = (root_dir.as_ref(), current_time_ms()) {
-                    let _ = append_run_record(
-                        root,
-                        &Execution {
-                            id: run_id.clone(),
-                            engine_id: engine_id.clone(),
-                            task_id: task_id.clone(),
-                            source: "chat_execute_api".to_string(),
-                            mode: ExecutionMode::Api,
-                            status: ExecutionStatus::Completed,
-                            command: profile_command.clone(),
-                            cwd: cwd.clone(),
-                            model: profile_model.clone(),
-                            created_at: now_ms,
-                            updated_at: now_ms,
-                            log_path: None,
-                            output_preview: String::new(),
-                            verification: None,
-                            error: None,
-                            result: None,
-                            native_ref: None,
-                        },
-                    );
-                }
-            }
-            Err(err) => {
-                let _ = on_data_clone.send_string(format!("\u{0}ERROR:{err}"));
-                if let (Some(root), Ok(now_ms)) = (root_dir.as_ref(), current_time_ms()) {
-                    let _ = append_run_record(
-                        root,
-                        &Execution {
-                            id: run_id.clone(),
-                            engine_id: engine_id.clone(),
-                            task_id: task_id.clone(),
-                            source: "chat_execute_api".to_string(),
-                            mode: ExecutionMode::Api,
-                            status: ExecutionStatus::Failed,
-                            command: profile_command.clone(),
-                            cwd: cwd.clone(),
-                            model: profile_model.clone(),
-                            created_at: now_ms,
-                            updated_at: now_ms,
-                            log_path: None,
-                            output_preview: err.chars().take(300).collect(),
-                            verification: None,
-                            error: Some(err),
-                            result: None,
-                            native_ref: None,
-                        },
-                    );
-                }
+        if let Err(e) = match &run_result {
+            Ok(_) => on_data_clone.send_string("\u{0}DONE".to_string()),
+            Err(err) => on_data_clone.send_string(format!("\u{0}ERROR:{err}")),
+        } {
+            eprintln!("chat_execute_api: send DONE/ERROR failed: {e}");
+        }
+        let execution = match &run_result {
+            Ok(_) => headless_state_clone.complete_and_extract(
+                &exec_id_for_spawn,
+                String::new(),
+                None,
+            ),
+            Err(err) => headless_state_clone.fail_and_extract(
+                &exec_id_for_spawn,
+                err.clone(),
+                err.chars().take(300).collect::<String>(),
+            ),
+        };
+        if let (Some(root), Ok(exec)) = (root_dir.as_ref(), execution) {
+            if let Err(e) = append_run_record(root, &exec) {
+                eprintln!("chat_execute_api: append_run_record failed: {e}");
             }
         }
-        headless_state_clone.remove(&exec_id_for_spawn);
     });
 
     Ok(ChatExecuteApiResult {
@@ -355,24 +313,20 @@ pub async fn chat_execute_api_core(
 #[command]
 pub fn chat_execute_api_stop(
     request: ChatExecuteStopRequest,
-    headless_state: State<'_, HeadlessProcessState>,
+    core_state: State<'_, crate::core::MaestroCore>,
 ) -> Result<(), CoreError> {
-    headless_state.cancel(&request.exec_id.to_string()).map_err(|e| CoreError::CancelFailed { id: request.exec_id.to_string(), reason: e })
+    core_state.inner().headless_state.cancel(&request.exec_id.to_string()).map_err(|e| CoreError::CancelFailed { id: request.exec_id.to_string(), reason: e })
 }
 
 #[command]
 pub async fn chat_execute_cli(
     request: ChatExecuteCliRequest,
-    config_state: State<'_, AppConfigState>,
-    headless_state: State<'_, HeadlessProcessState>,
+    core_state: State<'_, crate::core::MaestroCore>,
     on_data: Channel<String>,
 ) -> Result<ChatExecuteCliResult, CoreError> {
-    chat_execute_cli_core(
-        request,
-        config_state.get(),
-        &headless_state,
-        Arc::new(ChannelStringStream(on_data)),
-    ).await
+    core_state
+        .chat_execute_cli(request, Arc::new(ChannelStringStream(on_data)))
+        .await
 }
 
 pub async fn chat_execute_cli_core(
@@ -451,14 +405,9 @@ pub async fn chat_execute_cli_core(
     };
     let run_id_for_return = execution.id.clone();
     let exec_id = headless_state.register(execution, cancel_tx);
-    let run_id = exec_id.clone();
     let on_data_clone = on_data.clone();
     let aggregate = Arc::new(Mutex::new(String::new()));
     let root_dir = resolve_root_dir_from_project_path(&cfg.project.path).ok();
-    let engine_id = request.engine_id.clone();
-    let profile_command = profile.command().clone();
-    let profile_model = profile.model().clone();
-    let cwd = cfg.project.path.clone();
     let _ = on_data.send_string(format!("\u{0}RUN_ID:{run_id_for_return}"));
 
     let exec_id_for_spawn = exec_id.clone();
@@ -492,75 +441,52 @@ pub async fn chat_execute_cli_core(
             .expect("chat aggregate lock poisoned")
             .clone();
         let verification = extract_verification_summary(&output_snapshot);
-        if let Some(verification) = verification.clone() {
-            if let Ok(json) = serde_json::to_string(&verification) {
-                let _ = on_data_clone.send_string(format!("\u{0}VERIFICATION:{json}"));
+        if let Some(ref v) = verification {
+            if let Ok(json) = serde_json::to_string(v) {
+                if on_data_clone.send_string(format!("\u{0}VERIFICATION:{json}")).is_err() {
+                    eprintln!("chat_execute_cli: send VERIFICATION failed");
+                }
             }
         }
 
-        match wait_result {
+        if let Err(e) = match &wait_result {
+            Ok(status) => on_data_clone.send_string(format!(
+                "\u{0}EXIT:{}",
+                status.code().unwrap_or(-1)
+            )),
+            Err(err) => on_data_clone.send_string(format!("\u{0}ERROR:wait failed: {err}")),
+        } {
+            eprintln!("chat_execute_cli: send EXIT/ERROR failed: {e}");
+        }
+        let output_preview = output_snapshot.chars().take(300).collect::<String>();
+        let execution = match &wait_result {
             Ok(status) => {
                 let code = status.code().unwrap_or(-1);
-                let _ = on_data_clone.send_string(format!("\u{0}EXIT:{code}"));
-                if let (Some(root), Ok(now_ms)) = (root_dir.as_ref(), current_time_ms()) {
-                    let _ = append_run_record(
-                        root,
-                        &Execution {
-                            id: run_id.clone(),
-                            engine_id: engine_id.clone(),
-                            task_id: task_id.clone(),
-                            source: "chat_execute_cli".to_string(),
-                            mode: ExecutionMode::Cli,
-                            status: if code == 0 {
-                                ExecutionStatus::Completed
-                            } else {
-                                ExecutionStatus::Failed
-                            },
-                            command: profile_command.clone(),
-                            cwd: cwd.clone(),
-                            model: profile_model.clone(),
-                            created_at: now_ms,
-                            updated_at: now_ms,
-                            log_path: None,
-                            output_preview: output_snapshot.chars().take(300).collect(),
-                            verification: verification.clone(),
-                            error: if code == 0 { None } else { Some(format!("exit code: {code}")) },
-                            result: None,
-                            native_ref: None,
-                        },
-                    );
+                if code == 0 {
+                    headless_state_clone.complete_and_extract(
+                        &exec_id_for_spawn,
+                        output_preview,
+                        verification.clone(),
+                    )
+                } else {
+                    headless_state_clone.fail_and_extract(
+                        &exec_id_for_spawn,
+                        format!("exit code: {code}"),
+                        output_preview,
+                    )
                 }
             }
-            Err(err) => {
-                let _ = on_data_clone.send_string(format!("\u{0}ERROR:wait failed: {err}"));
-                if let (Some(root), Ok(now_ms)) = (root_dir.as_ref(), current_time_ms()) {
-                    let _ = append_run_record(
-                        root,
-                        &Execution {
-                            id: run_id.clone(),
-                            engine_id: engine_id.clone(),
-                            task_id: task_id.clone(),
-                            source: "chat_execute_cli".to_string(),
-                            mode: ExecutionMode::Cli,
-                            status: ExecutionStatus::Failed,
-                            command: profile_command.clone(),
-                            cwd: cwd.clone(),
-                            model: profile_model.clone(),
-                            created_at: now_ms,
-                            updated_at: now_ms,
-                            log_path: None,
-                            output_preview: err.to_string().chars().take(300).collect(),
-                            verification: verification.clone(),
-                            error: Some(err.to_string()),
-                            result: None,
-                            native_ref: None,
-                        },
-                    );
-                }
+            Err(err) => headless_state_clone.fail_and_extract(
+                &exec_id_for_spawn,
+                err.to_string(),
+                err.to_string().chars().take(300).collect::<String>(),
+            ),
+        };
+        if let (Some(root), Ok(exec)) = (root_dir.as_ref(), execution) {
+            if let Err(e) = append_run_record(root, &exec) {
+                eprintln!("chat_execute_cli: append_run_record failed: {e}");
             }
         }
-
-        headless_state_clone.remove(&exec_id_for_spawn);
     });
 
     Ok(ChatExecuteCliResult {
@@ -575,20 +501,18 @@ pub async fn chat_execute_cli_core(
 #[command]
 pub fn chat_execute_cli_stop(
     request: ChatExecuteStopRequest,
-    headless_state: State<'_, HeadlessProcessState>,
+    core_state: State<'_, crate::core::MaestroCore>,
 ) -> Result<(), CoreError> {
-    headless_state.cancel(&request.exec_id.to_string()).map_err(|e| CoreError::CancelFailed { id: request.exec_id.to_string(), reason: e })
+    core_state.inner().headless_state.cancel(&request.exec_id.to_string()).map_err(|e| CoreError::CancelFailed { id: request.exec_id.to_string(), reason: e })
 }
 
 #[command]
 pub async fn chat_spawn(
     request: ChatSpawnRequest,
-    runtime_state: State<'_, EngineRuntimeState>,
-    config_state: State<'_, AppConfigState>,
-    pty_state: State<'_, PtyManagerState>,
+    core_state: State<'_, crate::core::MaestroCore>,
     on_data: Channel<String>,
 ) -> Result<ChatSessionMeta, CoreError> {
-    let cfg = config_state.get();
+    let cfg = core_state.inner().config.get();
     let engine = cfg
         .engines
         .get(&request.engine_id)
@@ -602,7 +526,9 @@ pub async fn chat_spawn(
         engine.active_profile()
     };
 
-    *runtime_state
+    *core_state
+        .inner()
+        .engine_runtime
         .active_engine_id
         .lock()
         .expect("active_engine lock poisoned") = Some(request.engine_id.clone());
@@ -628,7 +554,7 @@ pub async fn chat_spawn(
 
     let session_id = uuid::Uuid::new_v4().to_string();
 
-    let spawn: PtySessionInfo = pty_state.spawn_session(
+    let spawn: PtySessionInfo = core_state.inner().pty_state.spawn_session(
         session_id,
         profile.command().clone(),
         with_model_args(profile.args().clone(), &request.engine_id, &profile.model()),
@@ -670,20 +596,20 @@ pub async fn chat_spawn(
 #[command]
 pub fn chat_send(
     request: ChatSendRequest,
-    pty_state: State<'_, PtyManagerState>,
+    core_state: State<'_, crate::core::MaestroCore>,
 ) -> Result<(), CoreError> {
     let payload = if request.append_newline.unwrap_or(true) {
         format!("{}\n", request.content)
     } else {
         request.content
     };
-    pty_state.write_to_session(Some(request.session_id.to_string()), &payload).map_err(|e| CoreError::ExecutionFailed { id: request.session_id.clone(), reason: e })
+    core_state.inner().pty_state.write_to_session(Some(request.session_id.to_string()), &payload).map_err(|e| CoreError::ExecutionFailed { id: request.session_id.clone(), reason: e })
 }
 
 #[command]
 pub fn chat_stop(
     request: ChatStopRequest,
-    pty_state: State<'_, PtyManagerState>,
+    core_state: State<'_, crate::core::MaestroCore>,
 ) -> Result<(), CoreError> {
-    pty_state.kill_session(&request.session_id.to_string()).map_err(|e| CoreError::ExecutionFailed { id: request.session_id.clone(), reason: e })
+    core_state.inner().pty_state.kill_session(&request.session_id.to_string()).map_err(|e| CoreError::ExecutionFailed { id: request.session_id.clone(), reason: e })
 }

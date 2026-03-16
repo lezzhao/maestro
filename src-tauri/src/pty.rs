@@ -305,18 +305,18 @@ pub fn pty_spawn(
     cols: u16,
     rows: u16,
     on_data: Channel<String>,
-    state: tauri::State<'_, PtyManagerState>,
+    core_state: tauri::State<'_, crate::core::MaestroCore>,
 ) -> Result<PtySessionInfo, String> {
-    state.spawn_session(session_id, file, args, cwd, env, cols, rows, on_data)
+    core_state.inner().pty_state.spawn_session(session_id, file, args, cwd, env, cols, rows, on_data)
 }
 
 #[command]
 pub fn pty_write(
     session_id: Option<String>,
     data: String,
-    state: tauri::State<'_, PtyManagerState>,
+    core_state: tauri::State<'_, crate::core::MaestroCore>,
 ) -> Result<(), String> {
-    state.write_to_session(session_id, &data)
+    core_state.inner().pty_state.write_to_session(session_id, &data)
 }
 
 #[command]
@@ -324,29 +324,29 @@ pub fn pty_resize(
     session_id: Option<String>,
     cols: u16,
     rows: u16,
-    state: tauri::State<'_, PtyManagerState>,
+    core_state: tauri::State<'_, crate::core::MaestroCore>,
 ) -> Result<(), String> {
-    state.resize_session(session_id, cols, rows)
+    core_state.inner().pty_state.resize_session(session_id, cols, rows)
 }
 
 #[command]
-pub fn pty_kill(session_id: String, state: tauri::State<'_, PtyManagerState>) -> Result<(), String> {
-    state.kill_session(&session_id)
+pub fn pty_kill(session_id: String, core_state: tauri::State<'_, crate::core::MaestroCore>) -> Result<(), String> {
+    core_state.inner().pty_state.kill_session(&session_id)
 }
 
 #[command]
-pub fn pty_kill_all(state: tauri::State<'_, PtyManagerState>) {
-    state.kill_all();
+pub fn pty_kill_all(core_state: tauri::State<'_, crate::core::MaestroCore>) {
+    core_state.inner().pty_state.kill_all();
 }
 
 #[command]
-pub fn pty_cleanup_dead_sessions(state: tauri::State<'_, PtyManagerState>) -> usize {
-    state.cleanup_dead_sessions()
+pub fn pty_cleanup_dead_sessions(core_state: tauri::State<'_, crate::core::MaestroCore>) -> usize {
+    core_state.inner().pty_state.cleanup_dead_sessions()
 }
 
 #[command]
-pub fn pty_active_session(state: tauri::State<'_, PtyManagerState>) -> Option<PtySessionInfo> {
-    state.active_session()
+pub fn pty_active_session(core_state: tauri::State<'_, crate::core::MaestroCore>) -> Option<PtySessionInfo> {
+    core_state.inner().pty_state.active_session()
 }
 
 pub fn resolve_exit_payload(exit_command: &str) -> String {

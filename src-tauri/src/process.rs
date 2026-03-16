@@ -1,4 +1,4 @@
-use crate::pty::{active_os_pid, PtyManagerState};
+use crate::pty::active_os_pid;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -36,9 +36,10 @@ impl ProcessMonitorState {
 #[command]
 pub fn process_get_stats(
     session_id: Option<String>,
-    pty_state: tauri::State<'_, PtyManagerState>,
+    core_state: tauri::State<'_, crate::core::MaestroCore>,
 ) -> ProcessStats {
-    let os_pid = active_os_pid(&pty_state, session_id.clone());
+    let pty_state = &core_state.inner().pty_state;
+    let os_pid = active_os_pid(pty_state, session_id.clone());
     if let Some(pid_u32) = os_pid {
         let mut sys = System::new_with_specifics(
             RefreshKind::nothing()
@@ -70,20 +71,22 @@ pub fn process_start_monitor(
     app: AppHandle,
     session_id: Option<String>,
     interval_ms: Option<u64>,
-    monitor_state: tauri::State<'_, ProcessMonitorState>,
+    core_state: tauri::State<'_, crate::core::MaestroCore>,
 ) -> Result<(), String> {
     let interval = interval_ms.unwrap_or(2000).max(500);
-    monitor_state.stop_all();
-    monitor_state.running.store(true, Ordering::Relaxed);
+    let core = core_state.inner();
+    core.process_monitor.stop_all();
+    core.process_monitor.running.store(true, Ordering::Relaxed);
     let stop_flag = Arc::new(AtomicBool::new(false));
-    *monitor_state.stopper.lock().expect("stopper lock poisoned") = Some(stop_flag.clone());
+    *core.process_monitor.stopper.lock().expect("stopper lock poisoned") = Some(stop_flag.clone());
 
     let app_handle = app.clone();
     thread::spawn(move || {
         while !stop_flag.load(Ordering::Relaxed) {
             let stats = {
-                let pty = app_handle.state::<PtyManagerState>();
-                let os_pid = active_os_pid(&pty, session_id.clone());
+                let core = app_handle.state::<crate::core::MaestroCore>();
+                let pty = &core.inner().pty_state;
+                let os_pid = active_os_pid(pty, session_id.clone());
                 if let Some(pid_u32) = os_pid {
                     let mut sys = System::new_with_specifics(
                         RefreshKind::nothing()
@@ -120,7 +123,9 @@ pub fn process_start_monitor(
             };
 
             app_handle
-                .state::<ProcessMonitorState>()
+                .state::<crate::core::MaestroCore>()
+                .inner()
+                .process_monitor
                 .latest
                 .write()
                 .expect("latest write lock poisoned")
@@ -134,6 +139,6 @@ pub fn process_start_monitor(
 }
 
 #[command]
-pub fn process_stop_monitor(monitor_state: tauri::State<'_, ProcessMonitorState>) {
-    monitor_state.stop_all();
+pub fn process_stop_monitor(core_state: tauri::State<'_, crate::core::MaestroCore>) {
+    core_state.inner().process_monitor.stop_all();
 }

@@ -1,4 +1,4 @@
-use crate::config::AppConfigState;
+use crate::core::MaestroCore;
 use crate::core::execution::{Execution, ExecutionStatus};
 use crate::run_persistence::{read_run_records, rewrite_run_records};
 use serde::Serialize;
@@ -34,8 +34,8 @@ pub struct CliPruneResult {
     pub deleted_logs: usize,
 }
 
-fn resolve_root_dir(config_state: &AppConfigState) -> Result<PathBuf, String> {
-    let cfg = config_state.get();
+fn resolve_root_dir(core: &MaestroCore) -> Result<PathBuf, String> {
+    let cfg = core.config.get();
     let configured = cfg.project.path.trim();
     if !configured.is_empty() {
         return Ok(PathBuf::from(configured));
@@ -114,9 +114,9 @@ fn map_run_records(
 #[command]
 pub fn cli_list_sessions(
     engine_id: Option<String>,
-    config_state: State<'_, AppConfigState>,
+    core_state: State<'_, MaestroCore>,
 ) -> Result<Vec<CliSessionListItem>, String> {
-    let root = resolve_root_dir(&config_state)?;
+    let root = resolve_root_dir(core_state.inner())?;
     let log_dir = cli_log_dir(&root);
     let run_records = read_run_records(&root).unwrap_or_default();
     Ok(map_run_records(
@@ -131,9 +131,9 @@ pub fn cli_read_session_logs(
     engine_id: String,
     session_id: Option<String>,
     _limit: Option<usize>,
-    config_state: State<'_, AppConfigState>,
+    core_state: State<'_, MaestroCore>,
 ) -> Result<String, String> {
-    let root = resolve_root_dir(&config_state)?;
+    let root = resolve_root_dir(core_state.inner())?;
     let run_records = read_run_records(&root).unwrap_or_default();
     
     let target = if let Some(id) = session_id {
@@ -166,9 +166,9 @@ pub fn cli_prune_sessions(
     engine_id: Option<String>,
     status: Option<String>,
     older_than_hours: Option<u64>,
-    config_state: State<'_, AppConfigState>,
+    core_state: State<'_, MaestroCore>,
 ) -> Result<CliPruneResult, String> {
-    let root = resolve_root_dir(&config_state)?;
+    let root = resolve_root_dir(core_state.inner())?;
     let log_dir = cli_log_dir(&root);
     let run_records = read_run_records(&root).unwrap_or_default();
     
@@ -213,9 +213,9 @@ pub fn cli_prune_sessions(
 
 #[command]
 pub fn cli_reconcile_active_sessions(
-    config_state: State<'_, AppConfigState>,
+    core_state: State<'_, MaestroCore>,
 ) -> Result<usize, String> {
-    let root = resolve_root_dir(&config_state)?;
+    let root = resolve_root_dir(core_state.inner())?;
     let mut reconciled = 0;
 
     let run_records = read_run_records(&root).unwrap_or_default();
