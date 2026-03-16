@@ -1,6 +1,7 @@
 use super::types::*;
 use super::util::{completion_matched, with_model_args};
-use crate::config::AppConfigState;
+use crate::core::events::{ChannelStringStream, StringStream};
+use crate::config::{AppConfig, AppConfigState};
 use crate::engine::EngineRuntimeState;
 use crate::headless::HeadlessProcessState;
 use crate::pty::{PtyManagerState, PtySessionInfo};
@@ -150,7 +151,7 @@ fn extract_verification_summary(output: &str) -> Option<VerificationSummary> {
     })
 }
 
-async fn forward_output<R>(reader: R, on_data: Channel<String>, aggregate: Arc<Mutex<String>>)
+async fn forward_output<R>(reader: R, on_data: Arc<dyn StringStream>, aggregate: Arc<Mutex<String>>)
 where
     R: tokio::io::AsyncRead + Unpin,
 {
@@ -169,7 +170,7 @@ where
                         text.drain(..drop_prefix);
                     }
                 }
-                let _ = on_data.send(chunk);
+                let _ = on_data.send_string(chunk);
             }
             Err(_) => break,
         }
@@ -212,7 +213,20 @@ pub async fn chat_execute_api(
     headless_state: State<'_, HeadlessProcessState>,
     on_data: Channel<String>,
 ) -> Result<ChatExecuteApiResult, String> {
-    let cfg = config_state.get();
+    chat_execute_api_core(
+        request,
+        config_state.get(),
+        &headless_state,
+        Arc::new(ChannelStringStream(on_data)),
+    ).await
+}
+
+pub async fn chat_execute_api_core(
+    request: ChatApiRequest,
+    cfg: AppConfig,
+    headless_state: &HeadlessProcessState,
+    on_data: Arc<dyn StringStream>,
+) -> Result<ChatExecuteApiResult, String> {
     let profile = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
     let provider = profile
         .api_provider()
@@ -233,7 +247,7 @@ pub async fn chat_execute_api(
     let profile_command = profile.command().clone();
     let profile_model = profile.model().clone();
     let cwd = cfg.project.path.clone();
-    let _ = on_data.send(format!("\u{0}RUN_ID:{run_id_for_return}"));
+    let _ = on_data.send_string(format!("\u{0}RUN_ID:{run_id_for_return}"));
 
     tokio::spawn(async move {
         let run_result = crate::api_provider::stream_chat(
@@ -248,7 +262,7 @@ pub async fn chat_execute_api(
         .await;
         match run_result {
             Ok(_) => {
-                let _ = on_data_clone.send("\u{0}DONE".to_string());
+                let _ = on_data_clone.send_string("\u{0}DONE".to_string());
                 if let (Some(root), Ok(now_ms)) = (root_dir.as_ref(), current_time_ms()) {
                     let _ = append_run_record(
                         root,
@@ -271,7 +285,7 @@ pub async fn chat_execute_api(
                 }
             }
             Err(err) => {
-                let _ = on_data_clone.send(format!("\u{0}ERROR:{err}"));
+                let _ = on_data_clone.send_string(format!("\u{0}ERROR:{err}"));
                 if let (Some(root), Ok(now_ms)) = (root_dir.as_ref(), current_time_ms()) {
                     let _ = append_run_record(
                         root,
@@ -323,7 +337,20 @@ pub async fn chat_execute_cli(
     headless_state: State<'_, HeadlessProcessState>,
     on_data: Channel<String>,
 ) -> Result<ChatExecuteCliResult, String> {
-    let cfg = config_state.get();
+    chat_execute_cli_core(
+        request,
+        config_state.get(),
+        &headless_state,
+        Arc::new(ChannelStringStream(on_data)),
+    ).await
+}
+
+pub async fn chat_execute_cli_core(
+    request: ChatExecuteCliRequest,
+    cfg: AppConfig,
+    headless_state: &HeadlessProcessState,
+    on_data: Arc<dyn StringStream>,
+) -> Result<ChatExecuteCliResult, String> {
     let profile = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
     let fallback_headless_args = builtin_headless_defaults(&request.engine_id);
     let supports_headless = profile.supports_headless() || fallback_headless_args.is_some();
@@ -385,7 +412,7 @@ pub async fn chat_execute_cli(
     let profile_command = profile.command().clone();
     let profile_model = profile.model().clone();
     let cwd = cfg.project.path.clone();
-    let _ = on_data.send(format!("\u{0}RUN_ID:{run_id_for_return}"));
+    let _ = on_data.send_string(format!("\u{0}RUN_ID:{run_id_for_return}"));
 
     tokio::spawn(async move {
         let stdout_aggregate = Arc::clone(&aggregate);
@@ -417,14 +444,14 @@ pub async fn chat_execute_cli(
         let verification = extract_verification_summary(&output_snapshot);
         if let Some(verification) = verification.clone() {
             if let Ok(json) = serde_json::to_string(&verification) {
-                let _ = on_data_clone.send(format!("\u{0}VERIFICATION:{json}"));
+                let _ = on_data_clone.send_string(format!("\u{0}VERIFICATION:{json}"));
             }
         }
 
         match wait_result {
             Ok(status) => {
                 let code = status.code().unwrap_or(-1);
-                let _ = on_data_clone.send(format!("\u{0}EXIT:{code}"));
+                let _ = on_data_clone.send_string(format!("\u{0}EXIT:{code}"));
                 if let (Some(root), Ok(now_ms)) = (root_dir.as_ref(), current_time_ms()) {
                     let _ = append_run_record(
                         root,
@@ -451,7 +478,7 @@ pub async fn chat_execute_cli(
                 }
             }
             Err(err) => {
-                let _ = on_data_clone.send(format!("\u{0}ERROR:wait failed: {err}"));
+                let _ = on_data_clone.send_string(format!("\u{0}ERROR:wait failed: {err}"));
                 if let (Some(root), Ok(now_ms)) = (root_dir.as_ref(), current_time_ms()) {
                     let _ = append_run_record(
                         root,

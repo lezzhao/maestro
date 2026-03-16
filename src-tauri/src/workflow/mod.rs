@@ -1,9 +1,9 @@
-mod archive;
-mod chat;
-mod history;
-mod run;
-pub(crate) mod types;
-mod util;
+pub mod archive;
+pub mod chat;
+pub mod history;
+pub mod run;
+pub mod types;
+pub mod util;
 
 pub use archive::{
     workflow_export_archives, workflow_get_archive, workflow_get_full_archive,

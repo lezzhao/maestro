@@ -15,8 +15,9 @@ use std::time::{Duration, Instant};
 use tauri::{
     command,
     ipc::{Channel, InvokeResponseBody},
-    AppHandle, Emitter, State,
+    AppHandle, State,
 };
+use crate::core::events::EventStream;
 
 fn parse_case_counts(output: &str) -> (usize, usize, usize, usize) {
     let passed_re = Regex::new(r"(?i)\b(\d+)\s+passed\b").expect("regex must compile");
@@ -205,17 +206,16 @@ fn merge_verification_summary(step_results: &[WorkflowStepResult]) -> Option<Ver
 }
 
 async fn execute_workflow_step(
-    app: &AppHandle,
+    emitter: Arc<dyn EventStream>,
     workflow_name: &str,
     step: &WorkflowRunStep,
     step_index: usize,
     total_steps: usize,
-    runtime_state: &State<'_, EngineRuntimeState>,
-    config_state: &State<'_, AppConfigState>,
-    pty_state: &State<'_, PtyManagerState>,
+    runtime_state: &EngineRuntimeState,
+    cfg: &crate::config::AppConfig,
+    pty_state: &PtyManagerState,
 ) -> Result<(WorkflowStepResult, String), String> {
     let step_started = Instant::now();
-    let cfg = config_state.get();
     let engine = cfg
         .engines
         .get(&step.engine)
@@ -234,9 +234,9 @@ async fn execute_workflow_step(
         .lock()
         .expect("active_engine lock poisoned") = Some(step.engine.clone());
 
-    app.emit(
+    emitter.send_event(
         "workflow://progress",
-        WorkflowProgressEvent {
+        serde_json::to_value(WorkflowProgressEvent {
             workflow_name: workflow_name.to_string(),
             step_index,
             total_steps,
@@ -244,7 +244,7 @@ async fn execute_workflow_step(
             status: "starting".to_string(),
             message: "starting step".to_string(),
             token_estimate: None,
-        },
+        }).map_err(|e| format!("serialize failed: {e}"))?,
     )
     .map_err(|e| format!("emit workflow progress failed: {e}"))?;
 
@@ -253,9 +253,9 @@ async fn execute_workflow_step(
     } else {
         "pty-fallback"
     };
-    app.emit(
+    emitter.send_event(
         "workflow://progress",
-        WorkflowProgressEvent {
+        serde_json::to_value(WorkflowProgressEvent {
             workflow_name: workflow_name.to_string(),
             step_index,
             total_steps,
@@ -263,7 +263,7 @@ async fn execute_workflow_step(
             status: "running".to_string(),
             message: format!("starting step {} with {}", step_index + 1, step.engine),
             token_estimate: None,
-        },
+        }).map_err(|e| format!("serialize failed: {e}"))?,
     )
     .map_err(|e| format!("emit workflow progress failed: {e}"))?;
 
@@ -497,9 +497,9 @@ async fn execute_workflow_step(
     };
 
     let token_estimate = estimate_tokens(&step.prompt, &result.output);
-    app.emit(
+    emitter.send_event(
         "workflow://progress",
-        WorkflowProgressEvent {
+        serde_json::to_value(WorkflowProgressEvent {
             workflow_name: workflow_name.to_string(),
             step_index,
             total_steps,
@@ -513,7 +513,7 @@ async fn execute_workflow_step(
                 "step failed".to_string()
             },
             token_estimate: Some(token_estimate),
-        },
+        }).map_err(|e| format!("serialize failed: {e}"))?,
     )
     .map_err(|e| format!("emit workflow progress failed: {e}"))?;
 
@@ -528,22 +528,37 @@ pub async fn workflow_run_step(
     config_state: State<'_, AppConfigState>,
     pty_state: State<'_, PtyManagerState>,
 ) -> Result<StepRunResult, String> {
+    workflow_run_step_core(
+        Arc::new(app.clone()),
+        request,
+        &runtime_state,
+        &config_state.get(),
+        &pty_state,
+    ).await
+}
+
+pub async fn workflow_run_step_core(
+    emitter: Arc<dyn EventStream>,
+    request: StepRunRequest,
+    runtime_state: &EngineRuntimeState,
+    cfg: &crate::config::AppConfig,
+    pty_state: &PtyManagerState,
+) -> Result<StepRunResult, String> {
     let total_steps = request.total_steps.max(1);
     let step_index = request.step_index.min(total_steps.saturating_sub(1));
     let (result, profile_id): (WorkflowStepResult, String) = execute_workflow_step(
-        &app,
+        emitter.clone(),
         &request.workflow_name,
         &request.step,
         step_index,
         total_steps,
-        &runtime_state,
-        &config_state,
-        &pty_state,
+        runtime_state,
+        cfg,
+        pty_state,
     )
     .await?;
 
     if let Err(err) = persist_engine_history(
-        &app,
         &request.step.engine,
         &profile_id,
         &request.workflow_name,
@@ -553,9 +568,9 @@ pub async fn workflow_run_step(
     )
     .await
     {
-        let _ = app.emit(
+        let _ = emitter.send_event(
             "workflow://progress",
-            WorkflowProgressEvent {
+            serde_json::to_value(WorkflowProgressEvent {
                 workflow_name: request.workflow_name.clone(),
                 step_index,
                 total_steps,
@@ -563,7 +578,7 @@ pub async fn workflow_run_step(
                 status: "warning".to_string(),
                 message: format!("history persistence failed: {err}"),
                 token_estimate: None,
-            },
+            }).unwrap_or_default()
         );
     }
 
@@ -590,8 +605,23 @@ pub async fn workflow_run(
     config_state: State<'_, AppConfigState>,
     pty_state: State<'_, PtyManagerState>,
 ) -> Result<WorkflowRunResult, String> {
+    workflow_run_core(
+        Arc::new(app.clone()),
+        request,
+        &runtime_state,
+        &config_state.get(),
+        &pty_state,
+    ).await
+}
+
+pub async fn workflow_run_core(
+    emitter: Arc<dyn EventStream>,
+    request: WorkflowRunRequest,
+    runtime_state: &EngineRuntimeState,
+    cfg: &crate::config::AppConfig,
+    pty_state: &PtyManagerState,
+) -> Result<WorkflowRunResult, String> {
     let workflow_name = request.name.clone();
-    let cfg = config_state.get();
     let total = request.steps.len();
     if total == 0 {
         return Err("workflow has no steps".to_string());
@@ -601,20 +631,19 @@ pub async fn workflow_run(
 
     for (idx, step) in request.steps.iter().enumerate() {
         let (result, profile_id): (WorkflowStepResult, String) = execute_workflow_step(
-            &app,
+            emitter.clone(),
             &workflow_name,
             step,
             idx,
             total,
-            &runtime_state,
-            &config_state,
-            &pty_state,
+            runtime_state,
+            cfg,
+            pty_state,
         )
         .await?;
         used_fallback = used_fallback || result.fallback;
 
         if let Err(err) = persist_engine_history(
-            &app,
             &step.engine,
             &profile_id,
             &workflow_name,
@@ -624,9 +653,9 @@ pub async fn workflow_run(
         )
         .await
         {
-            let _ = app.emit(
+            let _ = emitter.send_event(
                 "workflow://progress",
-                WorkflowProgressEvent {
+                serde_json::to_value(WorkflowProgressEvent {
                     workflow_name: workflow_name.clone(),
                     step_index: idx,
                     total_steps: total,
@@ -634,16 +663,16 @@ pub async fn workflow_run(
                     status: "warning".to_string(),
                     message: format!("history persistence failed: {err}"),
                     token_estimate: None,
-                },
+                }).unwrap_or_default()
             );
         }
 
         step_results.push(result);
     }
 
-    app.emit(
+    let _ = emitter.send_event(
         "workflow://progress",
-        WorkflowProgressEvent {
+        serde_json::to_value(WorkflowProgressEvent {
             workflow_name: workflow_name.clone(),
             step_index: total,
             total_steps: total,
@@ -656,9 +685,8 @@ pub async fn workflow_run(
             status: "finished".to_string(),
             message: "workflow completed".to_string(),
             token_estimate: None,
-        },
-    )
-    .map_err(|e| format!("emit workflow progress failed: {e}"))?;
+        }).unwrap_or_default()
+    );
 
     let completed = step_results
         .iter()
@@ -673,7 +701,7 @@ pub async fn workflow_run(
     };
     run_result.verification = merge_verification_summary(&run_result.step_results);
 
-    run_result.archive_path = save_archive(&app, &request, &run_result)?;
+    run_result.archive_path = save_archive(&request, &run_result)?;
     let workflow_name_for_record = run_result.workflow_name.clone();
     if let Ok(root) = resolve_root_dir_from_project_path(&cfg.project.path) {
         if let Ok(now_ms) = current_time_ms() {
