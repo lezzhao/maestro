@@ -1,4 +1,5 @@
 use crate::config::SpecProviderBmad;
+use crate::project::validate_project_scope;
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -314,6 +315,10 @@ pub fn spec_inject(
         return Ok(());
     }
     let cfg = core_state.inner().config.get();
+    let allowed = cfg.project.path.clone();
+    if !allowed.is_empty() {
+        validate_project_scope(&project_path, &allowed)?;
+    }
     let registry = SpecProviderRegistry::new(&cfg);
     let p = registry.get(&provider).ok_or_else(|| format!("unsupported provider: {provider}"))?;
     let project = PathBuf::from(project_path);
@@ -330,6 +335,10 @@ pub fn spec_remove(
         return Ok(());
     }
     let cfg = core_state.inner().config.get();
+    let allowed = cfg.project.path.clone();
+    if !allowed.is_empty() {
+        validate_project_scope(&project_path, &allowed)?;
+    }
     let registry = SpecProviderRegistry::new(&cfg);
     let p = registry.get(&provider).ok_or_else(|| format!("unsupported provider: {provider}"))?;
     let project = PathBuf::from(project_path);
@@ -370,7 +379,14 @@ pub fn spec_preview(
 }
 
 #[command]
-pub fn spec_backup(project_path: String) -> Result<Vec<String>, String> {
+pub fn spec_backup(
+    project_path: String,
+    core_state: tauri::State<'_, crate::core::MaestroCore>,
+) -> Result<Vec<String>, String> {
+    let allowed = core_state.inner().config.get().project.path.clone();
+    if !allowed.is_empty() {
+        validate_project_scope(&project_path, &allowed)?;
+    }
     let project = PathBuf::from(project_path);
     let mut backed_up = Vec::new();
 
@@ -397,7 +413,14 @@ pub fn spec_backup(project_path: String) -> Result<Vec<String>, String> {
 }
 
 #[command]
-pub fn spec_restore(project_path: String) -> Result<Vec<String>, String> {
+pub fn spec_restore(
+    project_path: String,
+    core_state: tauri::State<'_, crate::core::MaestroCore>,
+) -> Result<Vec<String>, String> {
+    let allowed = core_state.inner().config.get().project.path.clone();
+    if !allowed.is_empty() {
+        validate_project_scope(&project_path, &allowed)?;
+    }
     let project = PathBuf::from(project_path);
     let mut restored = Vec::new();
 

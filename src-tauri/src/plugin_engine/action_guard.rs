@@ -16,7 +16,7 @@ impl Default for ActionGuardConfig {
                 "~/.ssh".to_string(),
             ],
             blocked_commands: vec![
-                r"(?i)\brm\s+-rf\s+(/|/etc|/var|~)\b".to_string(),
+                r"(?i)\brm\s+-rf\s+(/|/etc|/var|~)(\s|$)".to_string(),
                 r"(?i)\bmkfs\b".to_string(),
                 r"(?i)\bdd\s+if=.*of=/dev/.*".to_string(),
             ],
@@ -52,13 +52,51 @@ impl ActionGuard {
             }
         }
         
-        // rudimentary path check
+        // Path check: block commands that reference protected paths with dangerous operations
+        let lower = command.to_lowercase();
         for path in &self.config.protected_paths {
-            if command.contains(path) && (command.starts_with("rm ") || command.starts_with("chmod ") || command.starts_with("chown ")) {
-                 return Err(format!("Command affects protected path '{}'", path));
+            let path_lower = path.to_lowercase();
+            if !lower.contains(&path_lower) {
+                continue;
+            }
+            let dangerous = [
+                "rm ", "chmod ", "chown ", "mv ", "cp ", "dd ", "mkfs", "fdisk ",
+            ];
+            for prefix in &dangerous {
+                if lower.contains(prefix) {
+                    return Err(format!("Command affects protected path '{}'", path));
+                }
             }
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_action_guard_blocks_rm_rf() {
+        let guard = ActionGuard::unwrap_default();
+        assert!(guard.check_command("rm -rf /").is_err());
+        assert!(guard.check_command("rm -rf /etc").is_err());
+        assert!(guard.check_command("rm -rf ~").is_err());
+    }
+
+    #[test]
+    fn test_action_guard_blocks_protected_paths() {
+        let guard = ActionGuard::unwrap_default();
+        assert!(guard.check_command("chmod 777 /etc/passwd").is_err());
+        assert!(guard.check_command("rm -rf ~/.ssh").is_err());
+    }
+
+    #[test]
+    fn test_action_guard_allows_safe_commands() {
+        let guard = ActionGuard::unwrap_default();
+        assert!(guard.check_command("ls -la").is_ok());
+        assert!(guard.check_command("npm install").is_ok());
+        assert!(guard.check_command("cargo build").is_ok());
     }
 }
