@@ -3,8 +3,24 @@ use futures::StreamExt;
 use reqwest::Client;
 use serde_json::json;
 use crate::core::events::StringStream;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::oneshot;
+
+pub trait ApiProvider: Send + Sync {
+    fn id(&self) -> &str;
+    fn stream_chat<'a>(
+        &'a self,
+        client: &'a Client,
+        base_url: &'a str,
+        api_key: &'a str,
+        model: &'a str,
+        messages: &'a [ChatApiMessage],
+        cancel_rx: &'a mut oneshot::Receiver<()>,
+        on_data: &'a Arc<dyn StringStream>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>>;
+}
 
 fn normalize_base_url(input: &str) -> String {
     input.trim().trim_end_matches('/').to_string()
@@ -218,6 +234,72 @@ async fn stream_anthropic(
     }
 }
 
+pub struct OpenAiProvider;
+
+impl ApiProvider for OpenAiProvider {
+    fn id(&self) -> &str {
+        "openai" // Or rather, generic compatible
+    }
+
+    fn stream_chat<'a>(
+        &'a self,
+        client: &'a Client,
+        base_url: &'a str,
+        api_key: &'a str,
+        model: &'a str,
+        messages: &'a [ChatApiMessage],
+        cancel_rx: &'a mut oneshot::Receiver<()>,
+        on_data: &'a Arc<dyn StringStream>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(stream_openai_compatible(client, base_url, api_key, model, messages, cancel_rx, on_data))
+    }
+}
+
+pub struct AnthropicProvider;
+
+impl ApiProvider for AnthropicProvider {
+    fn id(&self) -> &str {
+        "anthropic"
+    }
+
+    fn stream_chat<'a>(
+        &'a self,
+        client: &'a Client,
+        base_url: &'a str,
+        api_key: &'a str,
+        model: &'a str,
+        messages: &'a [ChatApiMessage],
+        cancel_rx: &'a mut oneshot::Receiver<()>,
+        on_data: &'a Arc<dyn StringStream>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+        Box::pin(stream_anthropic(client, base_url, api_key, model, messages, cancel_rx, on_data))
+    }
+}
+
+pub struct ApiProviderRegistry {
+    providers: Vec<Box<dyn ApiProvider>>,
+}
+
+impl ApiProviderRegistry {
+    pub fn new() -> Self {
+        Self {
+            providers: vec![
+                Box::new(AnthropicProvider),
+                Box::new(OpenAiProvider),
+            ],
+        }
+    }
+
+    pub fn get(&self, id: &str) -> Option<&dyn ApiProvider> {
+        if id == "anthropic" {
+            self.providers.iter().find(|p| p.id() == "anthropic").map(|p| p.as_ref())
+        } else {
+            // default to openai compatible
+            self.providers.iter().find(|p| p.id() == "openai").map(|p| p.as_ref())
+        }
+    }
+}
+
 pub async fn stream_chat(
     provider: &str,
     base_url: &str,
@@ -237,30 +319,15 @@ pub async fn stream_chat(
         return Err("API Base URL 未配置".to_string());
     }
     let client = Client::new();
-    match provider {
-        "anthropic" => {
-            stream_anthropic(
-                &client,
-                base_url,
-                api_key,
-                model,
-                messages,
-                &mut cancel_rx,
-                &on_data,
-            )
-            .await
-        }
-        _ => {
-            stream_openai_compatible(
-                &client,
-                base_url,
-                api_key,
-                model,
-                messages,
-                &mut cancel_rx,
-                &on_data,
-            )
-            .await
-        }
-    }
+    let registry = ApiProviderRegistry::new();
+    let p = registry.get(provider).ok_or_else(|| format!("unsupported provider: {provider}"))?;
+    p.stream_chat(
+        &client,
+        base_url,
+        api_key,
+        model,
+        messages,
+        &mut cancel_rx,
+        &on_data,
+    ).await
 }

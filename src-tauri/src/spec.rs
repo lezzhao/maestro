@@ -18,6 +18,7 @@ pub trait SpecProvider: Send + Sync {
     fn inject(&self, project_path: &Path, mode: &str, target_ide: &str) -> Result<(), String>;
     fn remove(&self, project_path: &Path) -> Result<(), String>;
     fn detect(&self, project_path: &Path) -> bool;
+    fn preview(&self, mode: &str, target_ide: &str) -> Result<Vec<SpecPreviewResult>, String>;
 }
 
 #[derive(Clone)]
@@ -103,6 +104,133 @@ impl SpecProvider for BmadProvider {
             || project_path.join("CLAUDE.md").exists()
             || project_path.join("GEMINI.md").exists()
     }
+
+    fn preview(&self, mode: &str, target_ide: &str) -> Result<Vec<SpecPreviewResult>, String> {
+        let mut results = Vec::new();
+        if mode == "full" {
+            let src = self.conf.source_path.trim().to_string();
+            if src.is_empty() {
+                return Err("bmad full install requires providers.bmad.source_path to be set".to_string());
+            }
+            results.push(SpecPreviewResult {
+                file_path: "_bmad/".to_string(),
+                content: format!("Will copy directory from: {src}"),
+            });
+        } else {
+            let path = match target_ide {
+                "cursor" => ".cursor/rules/bmad.mdc",
+                "claude" => "CLAUDE.md",
+                "gemini" => "GEMINI.md",
+                _ => "AGENTS.md",
+            };
+            results.push(SpecPreviewResult {
+                file_path: path.to_string(),
+                content: BMAD_RULES_TEMPLATE.to_string(),
+            });
+        }
+        Ok(results)
+    }
+}
+
+pub struct CustomProvider {
+    conf: crate::config::SpecProviderCustom,
+}
+
+impl CustomProvider {
+    pub fn new(conf: crate::config::SpecProviderCustom) -> Self {
+        Self { conf }
+    }
+}
+
+impl SpecProvider for CustomProvider {
+    fn id(&self) -> &str {
+        "custom"
+    }
+
+    fn display_name(&self) -> &str {
+        &self.conf.display_name
+    }
+
+    fn inject(&self, project_path: &Path, _mode: &str, target_ide: &str) -> Result<(), String> {
+        let content = if self.conf.rules_content.trim().is_empty() {
+            CUSTOM_RULES_TEMPLATE
+        } else {
+            &self.conf.rules_content
+        };
+        let file = match target_ide {
+            "cursor" => project_path.join(".cursor/rules/custom.mdc"),
+            "claude" => project_path.join("CLAUDE.md"),
+            "gemini" => project_path.join("GEMINI.md"),
+            _ => project_path.join("AGENTS.md"),
+        };
+        ensure_parent(&file)?;
+        fs::write(file, content).map_err(|e| format!("write custom rules failed: {e}"))
+    }
+
+    fn remove(&self, project_path: &Path) -> Result<(), String> {
+        let maybe_paths = [
+            project_path.join(".cursor/rules/custom.mdc"),
+            project_path.join("CLAUDE.md"),
+            project_path.join("GEMINI.md"),
+            project_path.join("AGENTS.md"),
+        ];
+        for p in maybe_paths {
+            if p.exists() {
+                let _ = fs::remove_file(p);
+            }
+        }
+        Ok(())
+    }
+
+    fn detect(&self, project_path: &Path) -> bool {
+        project_path.join(".cursor/rules/custom.mdc").exists()
+            || project_path.join("CLAUDE.md").exists()
+            || project_path.join("GEMINI.md").exists()
+            || project_path.join("AGENTS.md").exists()
+    }
+
+    fn preview(&self, _mode: &str, target_ide: &str) -> Result<Vec<SpecPreviewResult>, String> {
+        let mut results = Vec::new();
+        let content = if self.conf.rules_content.trim().is_empty() {
+            CUSTOM_RULES_TEMPLATE
+        } else {
+            &self.conf.rules_content
+        };
+        let path = match target_ide {
+            "cursor" => ".cursor/rules/custom.mdc",
+            "claude" => "CLAUDE.md",
+            "gemini" => "GEMINI.md",
+            _ => "AGENTS.md",
+        };
+        results.push(SpecPreviewResult {
+            file_path: path.to_string(),
+            content: content.to_string(),
+        });
+        Ok(results)
+    }
+}
+
+pub struct SpecProviderRegistry {
+    providers: Vec<Box<dyn SpecProvider>>,
+}
+
+impl SpecProviderRegistry {
+    pub fn new(cfg: &crate::config::AppConfig) -> Self {
+        Self {
+            providers: vec![
+                Box::new(BmadProvider::new(cfg.providers.bmad.clone())),
+                Box::new(CustomProvider::new(cfg.providers.custom.clone())),
+            ],
+        }
+    }
+
+    pub fn get(&self, id: &str) -> Option<&dyn SpecProvider> {
+        self.providers.iter().find(|p| p.id() == id).map(|p| p.as_ref())
+    }
+
+    pub fn all(&self) -> impl Iterator<Item = &dyn SpecProvider> {
+        self.providers.iter().map(|p| p.as_ref())
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -182,29 +310,14 @@ pub fn spec_inject(
     target_ide: String,
     state: tauri::State<'_, AppConfigState>,
 ) -> Result<(), String> {
-    let cfg = state.get();
-    let project = PathBuf::from(project_path);
-    match provider.as_str() {
-        "none" => Ok(()),
-        "bmad" => BmadProvider::new(cfg.providers.bmad).inject(&project, &mode, &target_ide),
-        "custom" => {
-            let custom = cfg.providers.custom;
-            let content = if custom.rules_content.trim().is_empty() {
-                CUSTOM_RULES_TEMPLATE
-            } else {
-                &custom.rules_content
-            };
-            let file = match target_ide.as_str() {
-                "cursor" => project.join(".cursor/rules/custom.mdc"),
-                "claude" => project.join("CLAUDE.md"),
-                "gemini" => project.join("GEMINI.md"),
-                _ => project.join("AGENTS.md"),
-            };
-            ensure_parent(&file)?;
-            fs::write(file, content).map_err(|e| format!("write custom rules failed: {e}"))
-        }
-        other => Err(format!("unsupported provider: {other}")),
+    if provider == "none" {
+        return Ok(());
     }
+    let cfg = state.get();
+    let registry = SpecProviderRegistry::new(&cfg);
+    let p = registry.get(&provider).ok_or_else(|| format!("unsupported provider: {provider}"))?;
+    let project = PathBuf::from(project_path);
+    p.inject(&project, &mode, &target_ide)
 }
 
 #[command]
@@ -213,26 +326,14 @@ pub fn spec_remove(
     project_path: String,
     state: tauri::State<'_, AppConfigState>,
 ) -> Result<(), String> {
-    let cfg = state.get();
-    let project = PathBuf::from(project_path);
-    match provider.as_str() {
-        "bmad" => BmadProvider::new(cfg.providers.bmad).remove(&project),
-        "custom" => {
-            let maybe_paths = [
-                project.join(".cursor/rules/custom.mdc"),
-                project.join("CLAUDE.md"),
-                project.join("GEMINI.md"),
-                project.join("AGENTS.md"),
-            ];
-            for p in maybe_paths {
-                if p.exists() {
-                    let _ = fs::remove_file(p);
-                }
-            }
-            Ok(())
-        }
-        _ => Ok(()),
+    if provider == "none" {
+        return Ok(());
     }
+    let cfg = state.get();
+    let registry = SpecProviderRegistry::new(&cfg);
+    let p = registry.get(&provider).ok_or_else(|| format!("unsupported provider: {provider}"))?;
+    let project = PathBuf::from(project_path);
+    p.remove(&project)
 }
 
 #[command]
@@ -242,20 +343,14 @@ pub fn spec_detect(
 ) -> Vec<SpecDetectResult> {
     let cfg = state.get();
     let project = PathBuf::from(project_path);
-    let bmad = BmadProvider::new(cfg.providers.bmad);
-    vec![
-        SpecDetectResult {
-            provider: "bmad".to_string(),
-            detected: bmad.detect(&project),
-        },
-        SpecDetectResult {
-            provider: "custom".to_string(),
-            detected: project.join(".cursor/rules/custom.mdc").exists()
-                || project.join("CLAUDE.md").exists()
-                || project.join("GEMINI.md").exists()
-                || project.join("AGENTS.md").exists(),
-        },
-    ]
+    let registry = SpecProviderRegistry::new(&cfg);
+    registry
+        .all()
+        .map(|p| SpecDetectResult {
+            provider: p.id().to_string(),
+            detected: p.detect(&project),
+        })
+        .collect()
 }
 
 #[command]
@@ -265,57 +360,13 @@ pub fn spec_preview(
     target_ide: String,
     state: tauri::State<'_, AppConfigState>,
 ) -> Result<Vec<SpecPreviewResult>, String> {
-    let cfg = state.get();
-    let mut results = Vec::new();
-
     if provider == "none" {
-        return Ok(results);
+        return Ok(Vec::new());
     }
-
-    if provider == "bmad" {
-        if mode == "full" {
-            let src = cfg.providers.bmad.source_path.trim().to_string();
-            if src.is_empty() {
-                return Err("bmad full install requires providers.bmad.source_path to be set".to_string());
-            }
-            results.push(SpecPreviewResult {
-                file_path: "_bmad/".to_string(),
-                content: format!("Will copy directory from: {src}"),
-            });
-        } else {
-            let path = match target_ide.as_str() {
-                "cursor" => ".cursor/rules/bmad.mdc",
-                "claude" => "CLAUDE.md",
-                "gemini" => "GEMINI.md",
-                _ => "AGENTS.md",
-            };
-            results.push(SpecPreviewResult {
-                file_path: path.to_string(),
-                content: BMAD_RULES_TEMPLATE.to_string(),
-            });
-        }
-    } else if provider == "custom" {
-        let custom = cfg.providers.custom;
-        let content = if custom.rules_content.trim().is_empty() {
-            CUSTOM_RULES_TEMPLATE
-        } else {
-            &custom.rules_content
-        };
-        let path = match target_ide.as_str() {
-            "cursor" => ".cursor/rules/custom.mdc",
-            "claude" => "CLAUDE.md",
-            "gemini" => "GEMINI.md",
-            _ => "AGENTS.md",
-        };
-        results.push(SpecPreviewResult {
-            file_path: path.to_string(),
-            content: content.to_string(),
-        });
-    } else {
-        return Err(format!("unsupported provider: {provider}"));
-    }
-
-    Ok(results)
+    let cfg = state.get();
+    let registry = SpecProviderRegistry::new(&cfg);
+    let p = registry.get(&provider).ok_or_else(|| format!("unsupported provider: {provider}"))?;
+    p.preview(&mode, &target_ide)
 }
 
 #[command]

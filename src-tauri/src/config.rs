@@ -288,7 +288,7 @@ impl EngineConfig {
         plugin_type: &str,
         override_args: Vec<String>,
     ) -> Self {
-        let mut profile = EngineProfile {
+        let profile = EngineProfile {
             id: "default".to_string(),
             display_name: "Default".to_string(),
             command: command.to_string(),
