@@ -118,6 +118,12 @@ pub struct SpecDetectResult {
     pub detected: bool,
 }
 
+#[derive(Debug, Serialize)]
+pub struct SpecPreviewResult {
+    pub file_path: String,
+    pub content: String,
+}
+
 fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
     if !src.exists() {
         return Err(format!("source path does not exist: {}", src.display()));
@@ -250,4 +256,120 @@ pub fn spec_detect(
                 || project.join("AGENTS.md").exists(),
         },
     ]
+}
+
+#[command]
+pub fn spec_preview(
+    provider: String,
+    mode: String,
+    target_ide: String,
+    state: tauri::State<'_, AppConfigState>,
+) -> Result<Vec<SpecPreviewResult>, String> {
+    let cfg = state.get();
+    let mut results = Vec::new();
+
+    if provider == "none" {
+        return Ok(results);
+    }
+
+    if provider == "bmad" {
+        if mode == "full" {
+            let src = cfg.providers.bmad.source_path.trim().to_string();
+            if src.is_empty() {
+                return Err("bmad full install requires providers.bmad.source_path to be set".to_string());
+            }
+            results.push(SpecPreviewResult {
+                file_path: "_bmad/".to_string(),
+                content: format!("Will copy directory from: {src}"),
+            });
+        } else {
+            let path = match target_ide.as_str() {
+                "cursor" => ".cursor/rules/bmad.mdc",
+                "claude" => "CLAUDE.md",
+                "gemini" => "GEMINI.md",
+                _ => "AGENTS.md",
+            };
+            results.push(SpecPreviewResult {
+                file_path: path.to_string(),
+                content: BMAD_RULES_TEMPLATE.to_string(),
+            });
+        }
+    } else if provider == "custom" {
+        let custom = cfg.providers.custom;
+        let content = if custom.rules_content.trim().is_empty() {
+            CUSTOM_RULES_TEMPLATE
+        } else {
+            &custom.rules_content
+        };
+        let path = match target_ide.as_str() {
+            "cursor" => ".cursor/rules/custom.mdc",
+            "claude" => "CLAUDE.md",
+            "gemini" => "GEMINI.md",
+            _ => "AGENTS.md",
+        };
+        results.push(SpecPreviewResult {
+            file_path: path.to_string(),
+            content: content.to_string(),
+        });
+    } else {
+        return Err(format!("unsupported provider: {provider}"));
+    }
+
+    Ok(results)
+}
+
+#[command]
+pub fn spec_backup(project_path: String) -> Result<Vec<String>, String> {
+    let project = PathBuf::from(project_path);
+    let mut backed_up = Vec::new();
+
+    let paths_to_backup = [
+        project.join(".cursor/rules/bmad.mdc"),
+        project.join(".cursor/rules/custom.mdc"),
+        project.join("CLAUDE.md"),
+        project.join("GEMINI.md"),
+        project.join("AGENTS.md"),
+    ];
+
+    for p in paths_to_backup {
+        if p.exists() && p.is_file() {
+            let mut backup_path = p.clone().into_os_string();
+            backup_path.push(".bmad-bak");
+            let backup_p = PathBuf::from(backup_path);
+            if fs::copy(&p, &backup_p).is_ok() {
+                backed_up.push(p.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    Ok(backed_up)
+}
+
+#[command]
+pub fn spec_restore(project_path: String) -> Result<Vec<String>, String> {
+    let project = PathBuf::from(project_path);
+    let mut restored = Vec::new();
+
+    let paths_to_restore = [
+        project.join(".cursor/rules/bmad.mdc"),
+        project.join(".cursor/rules/custom.mdc"),
+        project.join("CLAUDE.md"),
+        project.join("GEMINI.md"),
+        project.join("AGENTS.md"),
+    ];
+
+    for p in paths_to_restore {
+        let mut backup_path = p.clone().into_os_string();
+        backup_path.push(".bmad-bak");
+        let backup_p = PathBuf::from(backup_path);
+        
+        if backup_p.exists() && backup_p.is_file() {
+            if fs::copy(&backup_p, &p).is_ok() {
+                let _ = fs::remove_file(&backup_p);
+                restored.push(p.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    Ok(restored)
 }
