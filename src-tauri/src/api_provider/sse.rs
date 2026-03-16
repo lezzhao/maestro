@@ -69,6 +69,28 @@ impl AnthropicEvent {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_openai_line_done() {
+        let mut buf = "data: [DONE]\n".to_string();
+        let (content, done) = parse_openai_line(&mut buf).unwrap();
+        assert!(content.is_none());
+        assert!(done);
+    }
+
+    #[test]
+    fn test_parse_openai_line_content() {
+        let mut buf = r#"data: {"choices":[{"delta":{"content":"Hello"}}]}
+"#.to_string();
+        let (content, done) = parse_openai_line(&mut buf).unwrap();
+        assert_eq!(content.as_deref(), Some("Hello"));
+        assert!(!done);
+    }
+}
+
 /// Parse one line of Anthropic SSE into current event state.
 /// Returns true if a complete event was flushed (empty line separator).
 pub fn parse_anthropic_line(

@@ -1,5 +1,33 @@
 use std::path::{Path, PathBuf};
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_scoped_workspace_resolve_in_scope() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        let sub = root.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(root.join("a.txt"), "a").unwrap();
+        std::fs::write(sub.join("b.txt"), "b").unwrap();
+
+        let ws = ScopedWorkspace::new(&root).unwrap();
+        let a = ws.resolve_in_scope("a.txt").unwrap();
+        assert!(a.ends_with("a.txt"));
+        let b = ws.resolve_in_scope("sub/b.txt").unwrap();
+        assert!(b.ends_with("b.txt"));
+        // Path outside project should fail
+        let outside = root.join("../outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        let outside_file = outside.join("x.txt");
+        std::fs::write(&outside_file, "x").unwrap();
+        let abs_outside = std::fs::canonicalize(&outside_file).unwrap();
+        assert!(ws.resolve_in_scope(abs_outside.to_str().unwrap()).is_err());
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ScopedWorkspace {
     root: PathBuf,
