@@ -1,6 +1,7 @@
 use crate::config::EngineProfile;
 
 pub mod action_guard;
+pub mod maestro_engine;
 
 pub trait AgentEngine: Send + Sync {
     /// Check if the engine is ready and authenticated
