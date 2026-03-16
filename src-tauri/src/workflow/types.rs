@@ -32,8 +32,10 @@ pub struct WorkflowProgressEvent {
 pub struct WorkflowStepResult {
     pub engine: String,
     pub mode: String,
-    pub fallback: bool,
+    pub status: String,
+    #[serde(default)]
     pub success: bool,
+    pub fallback: bool,
     pub completion_matched: bool,
     pub failure_reason: Option<String>,
     pub duration_ms: u128,
@@ -71,8 +73,10 @@ pub struct StepRunRequest {
 pub struct StepRunResult {
     pub engine: String,
     pub mode: String,
-    pub fallback: bool,
+    pub status: String,
+    #[serde(default)]
     pub success: bool,
+    pub fallback: bool,
     pub completion_matched: bool,
     pub failure_reason: Option<String>,
     pub duration_ms: u128,
@@ -171,6 +175,8 @@ pub struct EngineHistoryEntry {
     pub workflow_name: String,
     pub step_index: usize,
     pub mode: String,
+    pub status: String,
+    #[serde(default)]
     pub success: bool,
     pub completion_matched: bool,
     pub failure_reason: Option<String>,

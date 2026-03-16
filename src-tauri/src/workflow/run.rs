@@ -281,6 +281,7 @@ async fn execute_workflow_step(
             return Ok((WorkflowStepResult {
                 engine: step.engine.clone(),
                 mode: "headless".to_string(),
+                status: "error".to_string(),
                 fallback: false,
                 success: false,
                 completion_matched: false,
@@ -352,6 +353,7 @@ async fn execute_workflow_step(
                 WorkflowStepResult {
                     engine: step.engine.clone(),
                     mode: "headless".to_string(),
+                    status: if success && matched { "done".to_string() } else { "error".to_string() },
                     fallback: false,
                     success,
                     completion_matched: matched,
@@ -372,6 +374,7 @@ async fn execute_workflow_step(
             Err(e) => WorkflowStepResult {
                 engine: step.engine.clone(),
                 mode: "headless".to_string(),
+                status: "error".to_string(),
                 fallback: false,
                 success: false,
                 completion_matched: false,
@@ -388,6 +391,7 @@ async fn execute_workflow_step(
             return Ok((WorkflowStepResult {
                 engine: step.engine.clone(),
                 mode: "pty-fallback".to_string(),
+                status: "error".to_string(),
                 fallback: true,
                 success: false,
                 completion_matched: false,
@@ -476,6 +480,7 @@ async fn execute_workflow_step(
         WorkflowStepResult {
             engine: step.engine.clone(),
             mode: "pty-fallback".to_string(),
+            status: if matched { "done".to_string() } else { "error".to_string() },
             fallback: true,
             success: matched,
             completion_matched: matched,
@@ -586,6 +591,7 @@ pub async fn workflow_run_step_core(
     Ok(StepRunResult {
         engine: result.engine,
         mode: result.mode,
+        status: result.status.clone(),
         fallback: result.fallback,
         success: result.success,
         completion_matched: result.completion_matched,

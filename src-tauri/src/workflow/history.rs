@@ -102,6 +102,7 @@ pub(crate) async fn persist_engine_history(
         workflow_name: workflow_name.to_string(),
         step_index,
         mode: step.mode.clone(),
+        status: step.status.clone(),
         success: step.success,
         completion_matched: step.completion_matched,
         failure_reason: step.failure_reason.clone(),

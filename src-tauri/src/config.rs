@@ -18,12 +18,38 @@ pub struct ProjectSection {
     pub detected_stack: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EngineProfile {
+    #[serde(default)]
     pub id: String,
+    #[serde(default)]
     pub display_name: String,
-    #[serde(flatten)]
-    pub extra: serde_json::Value,
+    #[serde(default)]
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
+    #[serde(default)]
+    pub exit_command: Option<String>,
+    #[serde(default)]
+    pub exit_timeout_ms: Option<u64>,
+    #[serde(default)]
+    pub supports_headless: bool,
+    #[serde(default)]
+    pub headless_args: Vec<String>,
+    #[serde(default)]
+    pub ready_signal: Option<String>,
+    #[serde(default)]
+    pub execution_mode: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub api_provider: Option<String>,
+    #[serde(default)]
+    pub api_base_url: Option<String>,
+    #[serde(default)]
+    pub api_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,7 +64,7 @@ pub struct EngineConfig {
     #[serde(default)]
     pub active_profile_id: String,
     #[serde(flatten)]
-    pub extra: serde_json::Value,
+    pub legacy_profile: EngineProfile,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -262,31 +288,23 @@ impl EngineConfig {
         plugin_type: &str,
         override_args: Vec<String>,
     ) -> Self {
-        let mut extra = serde_json::Map::new();
-        extra.insert("command".to_string(), serde_json::json!(command));
-        extra.insert("args".to_string(), serde_json::json!(override_args));
-        extra.insert("env".to_string(), serde_json::json!(serde_json::Map::new()));
-        extra.insert("exit_command".to_string(), serde_json::json!(exit_command));
-        extra.insert("exit_timeout_ms".to_string(), serde_json::json!(3000));
-        extra.insert(
-            "supports_headless".to_string(),
-            serde_json::json!(supports_headless),
-        );
-        extra.insert(
-            "headless_args".to_string(),
-            serde_json::json!(headless_args),
-        );
-        extra.insert("ready_signal".to_string(), serde_json::json!(ready_signal));
-        extra.insert("execution_mode".to_string(), serde_json::json!("cli"));
-
-        let profile_extra = extra.clone();
-        let profile = EngineProfile {
+        let mut profile = EngineProfile {
             id: "default".to_string(),
             display_name: "Default".to_string(),
-            extra: serde_json::Value::Object(profile_extra),
+            command: command.to_string(),
+            args: override_args,
+            env: BTreeMap::new(),
+            exit_command: Some(exit_command.to_string()),
+            exit_timeout_ms: Some(3000),
+            supports_headless,
+            headless_args,
+            ready_signal: Some(ready_signal.to_string()),
+            execution_mode: Some("cli".to_string()),
+            ..Default::default()
         };
+
         let mut profiles = BTreeMap::new();
-        profiles.insert("default".to_string(), profile);
+        profiles.insert("default".to_string(), profile.clone());
 
         Self {
             id: id.to_string(),
@@ -295,7 +313,7 @@ impl EngineConfig {
             icon: icon.to_string(),
             profiles,
             active_profile_id: "default".to_string(),
-            extra: serde_json::Value::Object(extra),
+            legacy_profile: profile,
         }
     }
 
@@ -306,130 +324,69 @@ impl EngineConfig {
         if let Some((_id, profile)) = self.profiles.iter().next() {
             return profile.clone();
         }
-        EngineProfile {
-            id: "default".to_string(),
-            display_name: "Default".to_string(),
-            extra: self.extra.clone(),
-        }
+        self.legacy_profile.clone()
     }
 
     pub fn exit_command(&self) -> String {
-        self.extra
-            .get("exit_command")
-            .and_then(|v| v.as_str())
-            .unwrap_or("ctrl-c")
-            .to_string()
+        self.active_profile().exit_command.clone().unwrap_or_else(|| "ctrl-c".to_string())
     }
 
     pub fn exit_timeout_ms(&self) -> u64 {
-        self.extra
-            .get("exit_timeout_ms")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(3000)
+        self.active_profile().exit_timeout_ms.unwrap_or(3000)
     }
 }
 
 impl EngineProfile {
     pub fn command(&self) -> String {
-        self.extra
-            .get("command")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string()
+        self.command.clone()
     }
 
     pub fn args(&self) -> Vec<String> {
-        self.extra
-            .get("args")
-            .and_then(|v| v.as_array())
-            .map(|a| {
-                a.iter()
-                    .filter_map(|x| x.as_str().map(|s| s.to_string()))
-                    .collect()
-            })
-            .unwrap_or_default()
+        self.args.clone()
     }
 
     pub fn env(&self) -> BTreeMap<String, String> {
-        self.extra
-            .get("env")
-            .and_then(|v| v.as_object())
-            .map(|o| {
-                o.iter()
-                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                    .collect()
-            })
-            .unwrap_or_default()
+        self.env.clone()
     }
 
     pub fn model(&self) -> String {
-        self.extra
-            .get("model")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string()
+        self.model.clone().unwrap_or_default()
     }
 
     pub fn supports_headless(&self) -> bool {
-        self.extra
-            .get("supports_headless")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false)
+        self.supports_headless
     }
 
     pub fn headless_args(&self) -> Vec<String> {
-        self.extra
-            .get("headless_args")
-            .and_then(|v| v.as_array())
-            .map(|a| {
-                a.iter()
-                    .filter_map(|x| x.as_str().map(|s| s.to_string()))
-                    .collect()
-            })
-            .unwrap_or_default()
+        self.headless_args.clone()
     }
 
     pub fn ready_signal(&self) -> Option<String> {
-        self.extra
-            .get("ready_signal")
-            .and_then(|v| v.as_str().map(|s| s.to_string()))
+        self.ready_signal.clone()
     }
 
     pub fn api_provider(&self) -> Option<String> {
-        self.extra
-            .get("api_provider")
-            .and_then(|v| v.as_str().map(|s| s.to_string()))
+        self.api_provider.clone()
     }
 
     pub fn api_base_url(&self) -> Option<String> {
-        self.extra
-            .get("api_base_url")
-            .and_then(|v| v.as_str().map(|s| s.to_string()))
+        self.api_base_url.clone()
     }
 
     pub fn api_key(&self) -> Option<String> {
-        self.extra
-            .get("api_key")
-            .and_then(|v| v.as_str().map(|s| s.to_string()))
+        self.api_key.clone()
     }
 }
 
 // Minimal migration pass: ensures we have a default profile and execution_mode.
 fn migrate_engine_profiles(config: &mut AppConfig) {
     for (_, engine) in config.engines.iter_mut() {
-        if !engine.extra.is_object() {
-            engine.extra = serde_json::Value::Object(serde_json::Map::new());
-        }
         if engine.profiles.is_empty() {
             let profile_id = "default".to_string();
-            engine.profiles.insert(
-                profile_id.clone(),
-                EngineProfile {
-                    id: profile_id.clone(),
-                    display_name: "Default".to_string(),
-                    extra: engine.extra.clone(),
-                },
-            );
+            let mut profile = engine.legacy_profile.clone();
+            profile.id = profile_id.clone();
+            profile.display_name = "Default".to_string();
+            engine.profiles.insert(profile_id.clone(), profile);
             engine.active_profile_id = profile_id;
         }
         if engine.active_profile_id.trim().is_empty()
@@ -439,9 +396,9 @@ fn migrate_engine_profiles(config: &mut AppConfig) {
                 engine.active_profile_id = first_key;
             }
         }
-        // Sync active profile's extra back to engine's extra for easy access
+        // Sync active profile's fields back to engine's legacy profile for easy access
         if let Some(active_profile) = engine.profiles.get(&engine.active_profile_id).cloned() {
-            engine.extra = active_profile.extra;
+            engine.legacy_profile = active_profile;
         }
     }
 }
@@ -451,6 +408,39 @@ fn config_path_core() -> Result<PathBuf, String> {
     let dir = home.join(".maestro");
     std::fs::create_dir_all(&dir).map_err(|e| format!("failed to create config dir: {}", e))?;
     Ok(dir.join("config.toml"))
+}
+
+fn sync_api_keys_to_keyring(config: &AppConfig) {
+    for (engine_id, engine) in config.engines.iter() {
+        for (profile_id, profile) in engine.profiles.iter() {
+            if let Ok(kr) = keyring::Entry::new("maestro", &format!("{}-{}", engine_id, profile_id)) {
+                if let Some(key) = &profile.api_key {
+                    if !key.trim().is_empty() {
+                        let _ = kr.set_password(key);
+                    } else {
+                        let _ = kr.delete_credential();
+                    }
+                } else {
+                    let _ = kr.delete_credential();
+                }
+            }
+        }
+    }
+}
+
+fn load_api_keys_from_keyring(config: &mut AppConfig) {
+    for (engine_id, engine) in config.engines.iter_mut() {
+        for (profile_id, profile) in engine.profiles.iter_mut() {
+            if let Ok(kr) = keyring::Entry::new("maestro", &format!("{}-{}", engine_id, profile_id)) {
+                if let Ok(pwd) = kr.get_password() {
+                    if !pwd.is_empty() {
+                        profile.api_key = Some(pwd);
+                    }
+                }
+            }
+        }
+    }
+    migrate_engine_profiles(config);
 }
 
 fn config_path(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -465,22 +455,44 @@ pub fn load_or_create_config_headless() -> Result<AppConfig, String> {
         let mut config = toml::from_str::<AppConfig>(&raw)
             .map_err(|e| format!("failed to parse config.toml: {}", e))?;
         migrate_engine_profiles(&mut config);
+        load_api_keys_from_keyring(&mut config);
         Ok(config)
     } else {
-        let default = AppConfig::default();
-        let content = toml::to_string_pretty(&default)
+        let mut default = AppConfig::default();
+        migrate_engine_profiles(&mut default);
+        load_api_keys_from_keyring(&mut default);
+        let mut safe_default = default.clone();
+        for engine in safe_default.engines.values_mut() {
+            engine.legacy_profile.api_key = None;
+            for profile in engine.profiles.values_mut() {
+                profile.api_key = None;
+            }
+        }
+        let content = toml::to_string_pretty(&safe_default)
             .map_err(|e| format!("toml serialize failed: {}", e))?;
         std::fs::write(&path, content).map_err(|e| format!("failed to write default config: {}", e))?;
         Ok(default)
     }
 }
 
-pub fn write_config_to_disk(app: &AppHandle, config: &AppConfig) -> Result<(), String> {
-    let path = config_path(app)?;
+pub fn write_config_to_disk_core(config: &AppConfig) -> Result<(), String> {
+    let path = config_path_core()?;
+    sync_api_keys_to_keyring(config);
+    let mut safe_config = config.clone();
+    for engine in safe_config.engines.values_mut() {
+        engine.legacy_profile.api_key = None;
+        for profile in engine.profiles.values_mut() {
+            profile.api_key = None;
+        }
+    }
     let content =
-        toml::to_string_pretty(config).map_err(|e| format!("toml serialize failed: {}", e))?;
+        toml::to_string_pretty(&safe_config).map_err(|e| format!("toml serialize failed: {}", e))?;
     fs::write(path, content).map_err(|e| format!("failed to save config: {}", e))?;
     Ok(())
+}
+
+pub fn write_config_to_disk(_app: &AppHandle, config: &AppConfig) -> Result<(), String> {
+    write_config_to_disk_core(config)
 }
 
 #[command]
@@ -491,10 +503,20 @@ pub fn load_or_create_config(app: AppHandle) -> Result<AppConfig, String> {
         let mut config = toml::from_str::<AppConfig>(&raw)
             .map_err(|e| format!("failed to parse config.toml: {}", e))?;
         migrate_engine_profiles(&mut config);
+        load_api_keys_from_keyring(&mut config);
         Ok(config)
     } else {
-        let default = AppConfig::default();
-        let content = toml::to_string_pretty(&default)
+        let mut default = AppConfig::default();
+        migrate_engine_profiles(&mut default);
+        load_api_keys_from_keyring(&mut default);
+        let mut safe_default = default.clone();
+        for engine in safe_default.engines.values_mut() {
+            engine.legacy_profile.api_key = None;
+            for profile in engine.profiles.values_mut() {
+                profile.api_key = None;
+            }
+        }
+        let content = toml::to_string_pretty(&safe_default)
             .map_err(|e| format!("toml serialize failed: {}", e))?;
         fs::write(path, content).map_err(|e| format!("failed to write default config: {}", e))?;
         Ok(default)

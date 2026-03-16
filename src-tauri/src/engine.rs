@@ -85,11 +85,31 @@ async fn cursor_status_check(profile_cmd: &str) -> StatusCheckResult {
 }
 
 async fn run_status_check_shell(command_line: &str, timeout_ms: u64) -> StatusCheckResult {
-    run_status_check("zsh", &["-lc", command_line], timeout_ms).await
+    let mut parts = shlex::split(command_line).unwrap_or_default();
+    if parts.is_empty() {
+        return StatusCheckResult {
+            ok: false,
+            detail: "empty command line".to_string(),
+        };
+    }
+    let cmd = parts.remove(0);
+    let args: Vec<&str> = parts.iter().map(|s| s.as_str()).collect();
+    run_status_check(&cmd, &args, timeout_ms).await
 }
 
 async fn run_capture_shell(command_line: &str, timeout_ms: u64) -> CaptureResult {
-    run_capture("zsh", &["-lc", command_line], timeout_ms).await
+    let mut parts = shlex::split(command_line).unwrap_or_default();
+    if parts.is_empty() {
+        return CaptureResult {
+            ok: false,
+            stdout: String::new(),
+            stderr: String::new(),
+            detail: "empty command line".to_string(),
+        };
+    }
+    let cmd = parts.remove(0);
+    let args: Vec<&str> = parts.iter().map(|s| s.as_str()).collect();
+    run_capture(&cmd, &args, timeout_ms).await
 }
 
 async fn run_status_check(cmd: &str, args: &[&str], timeout_ms: u64) -> StatusCheckResult {
