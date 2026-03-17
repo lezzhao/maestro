@@ -34,17 +34,12 @@ pub struct CliPruneResult {
     pub deleted_logs: usize,
 }
 
-fn resolve_root_dir(core: &MaestroCore) -> Result<PathBuf, String> {
-    let cfg = core.config.get();
-    let configured = cfg.project.path.trim();
-    if !configured.is_empty() {
-        return Ok(PathBuf::from(configured));
-    }
-    std::env::current_dir().map_err(|e| format!("resolve current dir failed: {e}"))
+fn resolve_workspace_io(core: &MaestroCore) -> Result<crate::workspace_io::WorkspaceIo, String> {
+    core.workspace_io()
 }
 
-fn cli_log_dir(root: &PathBuf) -> PathBuf {
-    root.join(".maestro-cli").join("logs")
+fn cli_log_dir(io: &crate::workspace_io::WorkspaceIo) -> PathBuf {
+    io.resolve(".maestro-cli/logs").unwrap_or_else(|_| PathBuf::from(".maestro-cli/logs"))
 }
 
 fn session_log_path(log_dir: &PathBuf, session_id: &str) -> PathBuf {
@@ -116,9 +111,9 @@ pub fn cli_list_sessions(
     engine_id: Option<String>,
     core_state: State<'_, MaestroCore>,
 ) -> Result<Vec<CliSessionListItem>, String> {
-    let root = resolve_root_dir(core_state.inner())?;
-    let log_dir = cli_log_dir(&root);
-    let run_records = read_run_records(&root).unwrap_or_default();
+    let io = resolve_workspace_io(core_state.inner())?;
+    let log_dir = cli_log_dir(&io);
+    let run_records = read_run_records(&io).unwrap_or_default();
     Ok(map_run_records(
         &run_records,
         &log_dir,
@@ -133,8 +128,8 @@ pub fn cli_read_session_logs(
     _limit: Option<usize>,
     core_state: State<'_, MaestroCore>,
 ) -> Result<String, String> {
-    let root = resolve_root_dir(core_state.inner())?;
-    let run_records = read_run_records(&root).unwrap_or_default();
+    let io = resolve_workspace_io(core_state.inner())?;
+    let run_records = read_run_records(&io).unwrap_or_default();
     
     let target = if let Some(id) = session_id {
         id
@@ -168,9 +163,9 @@ pub fn cli_prune_sessions(
     older_than_hours: Option<u64>,
     core_state: State<'_, MaestroCore>,
 ) -> Result<CliPruneResult, String> {
-    let root = resolve_root_dir(core_state.inner())?;
-    let log_dir = cli_log_dir(&root);
-    let run_records = read_run_records(&root).unwrap_or_default();
+    let io = resolve_workspace_io(core_state.inner())?;
+    let log_dir = cli_log_dir(&io);
+    let run_records = read_run_records(&io).unwrap_or_default();
     
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -197,7 +192,7 @@ pub fn cli_prune_sessions(
             keep.push(item);
         }
     }
-    rewrite_run_records(&root, &keep)?;
+    rewrite_run_records(&io, &keep)?;
     let mut deleted_logs = 0usize;
     for record in &remove {
         let log_path = session_log_path(&log_dir, &record.id);
@@ -215,10 +210,10 @@ pub fn cli_prune_sessions(
 pub fn cli_reconcile_active_sessions(
     core_state: State<'_, MaestroCore>,
 ) -> Result<usize, String> {
-    let root = resolve_root_dir(core_state.inner())?;
+    let io = resolve_workspace_io(core_state.inner())?;
     let mut reconciled = 0;
 
-    let run_records = read_run_records(&root).unwrap_or_default();
+    let run_records = read_run_records(&io).unwrap_or_default();
     if !run_records.is_empty() {
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -236,7 +231,7 @@ pub fn cli_reconcile_active_sessions(
             updated.push(item);
         }
         if reconciled > 0 {
-            rewrite_run_records(&root, &updated)?;
+            rewrite_run_records(&io, &updated)?;
         }
     }
 
