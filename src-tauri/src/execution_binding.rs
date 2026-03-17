@@ -304,6 +304,89 @@ mod tests {
     }
 
     #[test]
+    fn contract_prepare_creates_binding() {
+        let (_dir, db_path) = temp_db_path();
+        let cfg = AppConfig::default();
+        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None)
+            .expect("create_task");
+
+        let ctx = prepare_execution_binding_with_path(&db_path, "exec-1", &task_id, &cfg)
+            .expect("prepare");
+
+        let binding = crate::task_state::get_task_runtime_binding(&db_path, &task_id)
+            .expect("get binding")
+            .expect("binding exists");
+        assert_eq!(binding.engine_id, "cursor");
+        assert!(binding.runtime_snapshot_id.is_some());
+        assert_eq!(ctx.engine_id, binding.engine_id);
+    }
+
+    #[test]
+    fn contract_resolved_context_matches_snapshot() {
+        let (_dir, db_path) = temp_db_path();
+        let mut cfg = AppConfig::default();
+        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None)
+            .expect("create_task");
+
+        cfg.engines
+            .get_mut("cursor")
+            .unwrap()
+            .profiles
+            .get_mut("default")
+            .unwrap()
+            .command = "frozen-cmd".to_string();
+
+        let ctx = prepare_execution_binding_with_path(&db_path, "exec-1", &task_id, &cfg)
+            .expect("prepare");
+        let snapshot_id = ctx.snapshot_id.as_ref().expect("has snapshot");
+
+        let payload = crate::snapshot_repository::get_runtime_snapshot_payload(&db_path, snapshot_id)
+            .expect("get payload")
+            .expect("payload exists");
+
+        assert_eq!(ctx.command, payload.command);
+        assert_eq!(ctx.args, payload.args);
+        assert_eq!(ctx.execution_mode, payload.execution_mode);
+    }
+
+    #[test]
+    fn contract_binding_change_invalidates_snapshot() {
+        let (_dir, db_path) = temp_db_path();
+        let cfg = AppConfig::default();
+        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None)
+            .expect("create_task");
+
+        let _ = prepare_execution_binding_with_path(&db_path, "exec-1", &task_id, &cfg)
+            .expect("first prepare");
+
+        let binding_before = crate::task_state::get_task_runtime_binding(&db_path, &task_id)
+            .expect("get binding")
+            .expect("binding exists");
+        assert!(binding_before.runtime_snapshot_id.is_some());
+
+        crate::task_state::update_task_runtime_snapshot(&db_path, &task_id, None)
+            .expect("invalidate");
+
+        let binding_after = crate::task_state::get_task_runtime_binding(&db_path, &task_id)
+            .expect("get binding")
+            .expect("binding exists");
+        assert!(binding_after.runtime_snapshot_id.is_none());
+
+        let mut cfg2 = AppConfig::default();
+        cfg2.engines
+            .get_mut("cursor")
+            .unwrap()
+            .profiles
+            .get_mut("default")
+            .unwrap()
+            .command = "new-cmd".to_string();
+
+        let ctx = crate::task_runtime::resolve_task_runtime_context(&db_path, &task_id, &cfg2)
+            .expect("resolve");
+        assert_eq!(ctx.command, "new-cmd");
+    }
+
+    #[test]
     fn prepare_execution_returns_valid_execution_id_and_creates_binding() {
         let (_dir, db_path) = temp_db_path();
         let cfg = AppConfig::default();

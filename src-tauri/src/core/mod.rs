@@ -1,3 +1,12 @@
+//! MaestroCore: application facade. Does not absorb domain rules.
+//!
+//! Service boundaries (logical; implemented via delegation):
+//! - Task: task_create, task_transition, task_delete, task_list, task_switch_runtime_binding, task_update_runtime_binding
+//! - Execution: list_executions, cancel_execution, fetch_logs, reconcile, export_archive
+//! - Engine: engine_list, engine_upsert, engine_set_active_profile, engine_upsert_profile, engine_preflight
+//! - Workflow: workflow_run, workflow_run_step, chat_execute_api, chat_execute_cli, chat_spawn
+//! - WorkspaceIo: workspace_io (delegates to crate::workspace_io)
+
 pub mod error;
 pub mod events;
 pub mod execution;
