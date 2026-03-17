@@ -7,11 +7,10 @@ import { useChatStore } from "../stores/chatStore";
 import { useShallow } from "zustand/react/shallow";
 import { ChatPanel } from "./ChatPanel";
 import { useTaskRuntimeContext } from "../hooks/useTaskRuntimeContext";
-import type { AppTask, EngineConfig } from "../types";
+import type { AppTask, RunEvent } from "../types";
 
 type Props = {
   projectPath: string;
-  engines: Record<string, EngineConfig>;
   activeTask: AppTask | null;
   onSetExecutionMode: (mode: "api" | "cli") => Promise<void>;
 };
@@ -31,7 +30,6 @@ function formatTaskStatus(status: AppTask["status"]) {
 
 export function TaskWorkspace({
   projectPath,
-  engines,
   activeTask,
   onSetExecutionMode,
 }: Props) {
@@ -45,7 +43,7 @@ export function TaskWorkspace({
   const pendingAttachments = useChatStore((s) => s.getTaskPendingAttachments(activeId));
   const latestRun = useChatStore((s) => s.getLatestRun(activeId));
   const latestTranscript = useChatStore((s) => s.getRunTranscript(latestRun?.id || null));
-  const runEvents = useChatStore(useShallow((s) => s.getTaskRunEvents(activeId)));
+  const runEvents = useChatStore(useShallow((s: ReturnType<typeof useChatStore.getState>) => s.getTaskRunEvents(activeId) as RunEvent[]));
   const { engineId: activeEngineId, engine: activeEngine, executionMode } = useTaskRuntimeContext();
 
   const groupedRunEvents = useMemo(() => {
@@ -338,7 +336,6 @@ export function TaskWorkspace({
         <div className="flex-1 min-h-0 bg-bg-base">
           <ChatPanel
             projectPath={projectPath}
-            engines={engines}
             activeTask={activeTask}
             onSetExecutionMode={onSetExecutionMode}
           />

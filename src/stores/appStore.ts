@@ -150,7 +150,7 @@ export const useAppStore = create<AppStore>()(
     updateTaskRuntimeBinding: (id, patch) =>
       set((state) => ({
         tasks: state.tasks.map((t) =>
-          t.id === id ? { ...t, ...patch } : t
+          t.id === id ? ({ ...t, ...patch } as AppTask) : t
         ),
       })),
   })

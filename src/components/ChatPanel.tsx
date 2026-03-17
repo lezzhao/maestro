@@ -8,26 +8,23 @@ import { useChatSession } from "../hooks/useChatSession";
 import { MessageList } from "./chat/MessageList";
 import { ChatInput } from "./chat/ChatInput";
 import { useTaskRuntimeContext } from "../hooks/useTaskRuntimeContext";
-import type { AppTask, EngineConfig } from "../types";
+import type { AppTask } from "../types";
 
 type ChatPanelProps = {
   projectPath: string;
-  engines: Record<string, EngineConfig>;
   activeTask: AppTask | null;
   onSetExecutionMode: (mode: "api" | "cli") => Promise<void>;
 };
 
 export function ChatPanel({
   projectPath,
-  engines,
   activeTask,
   onSetExecutionMode,
 }: ChatPanelProps) {
   const { t } = useTranslation();
   
-  const { engineId: activeEngineId, engine: activeEngine, profile: activeProfile, executionMode } = useTaskRuntimeContext();
+  const { engineId: activeEngineId, engine: activeEngine, profile: activeProfile, executionMode, isReady } = useTaskRuntimeContext();
   const activeTaskId = activeTask?.id || null;
-  const enginePreflight = useAppStore((s) => s.enginePreflight);
   const setShowSettings = useAppStore((s) => s.setShowSettings);
   const isRunning = useChatStore((s) => s.getTaskRunning(activeTaskId));
   const clearMessages = useChatStore((s) => s.clearMessages);
@@ -80,27 +77,10 @@ export function ChatPanel({
             ? t("stage_done")
             : t("stage_idle");
 
-  const currentPreflight = enginePreflight[activeEngineId];
-  const apiInvalid =
-    executionMode === "api" &&
-    (!activeProfile?.api_key || !activeProfile?.api_base_url || !activeProfile?.model);
-  const isActiveEngineUnavailable =
-    apiInvalid ||
-    (executionMode !== "api" &&
-      Boolean(currentPreflight && (!currentPreflight.command_exists || !currentPreflight.auth_ok)));
-  const fallbackEngineId = useMemo(() => {
-    if (executionMode === "api") return undefined;
-    return Object.entries(enginePreflight).find(
-      ([engineId, result]) =>
-        engineId !== activeEngineId && result.command_exists && result.auth_ok,
-    )?.[0];
-  }, [activeEngineId, enginePreflight, executionMode]);
-  const fallbackEngineName = fallbackEngineId ? engines[fallbackEngineId]?.display_name || fallbackEngineId : undefined;
-  const sendBlockedReason = apiInvalid
-    ? `${t("api_key")} / ${t("api_base_url")} / ${t("model_required")}`
-    : isActiveEngineUnavailable
-      ? t("event_engine_unavailable", { engine: activeEngine?.display_name || activeEngineId })
-      : "";
+  const isActiveEngineUnavailable = !isReady;
+  const sendBlockedReason = isActiveEngineUnavailable
+    ? t("event_engine_unavailable", { engine: activeEngine?.display_name || activeEngineId })
+    : "";
 
   if (!activeTaskId) {
     return (
@@ -220,14 +200,8 @@ export function ChatPanel({
         placeholder={chatLabels.inputPlaceholder}
         sendBlocked={isActiveEngineUnavailable}
         sendBlockedReason={sendBlockedReason}
-        onRecoveryAction={
-          fallbackEngineId
-            ? undefined
-            : () => setShowSettings(true)
-        }
-        recoveryActionLabel={
-          fallbackEngineName ? t("switch_to_engine", { engine: fallbackEngineName }) : t("go_setup")
-        }
+        onRecoveryAction={() => setShowSettings(true)}
+        recoveryActionLabel={t("go_setup")}
       />
     </div>
   );

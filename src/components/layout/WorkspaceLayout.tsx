@@ -320,7 +320,7 @@ export function WorkspaceLayout() {
 
                   <div className="flex items-center gap-3">
                      <div className="text-right hidden sm:flex flex-col mr-1">
-                        <span className="text-[9px] font-black text-text-muted opacity-40 uppercase tracking-widest leading-tight">Active Engine</span>
+                        <span className="text-[9px] font-black text-text-muted opacity-40 uppercase tracking-widest leading-tight">Task Engine</span>
                         <span className="text-[11px] font-black text-primary-500 uppercase tracking-tighter leading-tight">{engines[activeEngineId]?.display_name || activeEngineId}</span>
                      </div>
                      <div className="h-8 w-8 rounded-full bg-primary-500/10 flex items-center justify-center text-primary-500 ring-4 ring-primary-500/5">
@@ -333,7 +333,6 @@ export function WorkspaceLayout() {
                   <Suspense fallback={<PanelFallback label="Workspace" />}>
                     <TaskWorkspace
                       projectPath={projectPath}
-                      engines={engines}
                       activeTask={activeTask || null}
                       onSetExecutionMode={handleSetExecutionMode}
                     />
