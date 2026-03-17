@@ -1,8 +1,12 @@
 //! Agent state persistence and event emission for "Logic to Rust" architecture.
 //! Emits `agent://state-update` events so the frontend can stay in sync with backend state.
 //!
-//! Event hierarchy: Prefer binding-level (TaskRuntimeBindingChanged, TaskRuntimeContextResolved)
-//! over field-level events. Do not add new field-level events (e.g. task_engine_changed).
+//! Event hierarchy: Runtime uses only projection events.
+//! - TaskRuntimeBindingChanged: TaskRuntimeContextResolved are the runtime main events.
+//! - Do not add field-level engine/profile patch events (e.g. task_engine_changed).
+//!
+//! Frontend consumption priority: resolved context > binding > other. Runtime display
+//! should prefer authoritative resolved context from backend, not self-assemble from binding.
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};

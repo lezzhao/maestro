@@ -1,11 +1,15 @@
 /**
  * Agent state reducer: applies backend events to appStore/chatStore.
+ *
  * Backend operations that MUST emit corresponding events for frontend sync:
  * - task_create -> task_created
  * - task_transition -> task_state_changed
  * - task_delete -> task_deleted
  * - task_switch_runtime_binding / task_update_runtime_binding -> task_runtime_binding_changed + task_runtime_context_resolved
- * DEPRECATED: task_engine_changed is never emitted; use task_runtime_binding_changed (binding includes engineId/profileId).
+ *
+ * Event consumption priority: resolved context > binding > other.
+ * Runtime display should prefer authoritative resolved context from backend, not self-assemble from binding.
+ * DEPRECATED: task_engine_changed is never emitted; use task_runtime_binding_changed.
  */
 import type { AppTask, ChatMessage, TaskRecord, TaskRun, TaskViewModel } from "../types";
 import {
