@@ -6,22 +6,7 @@ import type {
   EnginePreflightResult,
   AppTask,
 } from "../types";
-
-function mapTaskStateToStatus(
-  currentState: string
-): "idle" | "running" | "error" | "completed" | "needs_review" | "verified" {
-  switch (currentState) {
-    case "PLANNING":
-    case "IN_PROGRESS":
-      return "running";
-    case "CODE_REVIEW":
-      return "needs_review";
-    case "DONE":
-      return "completed";
-    default:
-      return "idle";
-  }
-}
+import { mapTaskStateToStatus } from "../lib/agentStateReducer";
 
 type AppStore = {
   currentStep: "setup" | "project" | "compose" | "review";
