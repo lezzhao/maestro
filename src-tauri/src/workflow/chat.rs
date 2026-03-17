@@ -179,9 +179,9 @@ pub async fn chat_execute_api_core(
                         p,
                     )
                 },
-                Err(_) => {
-                    let p = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
-                    (request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
+                Err(e) => {
+                    // When task_id is provided, execution must go through unified binding. Do not silently fallback.
+                    return Err(e);
                 }
             }
         } else {
@@ -361,9 +361,9 @@ pub async fn chat_execute_cli_core(
                         p,
                     )
                 },
-                Err(_) => {
-                    let p = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
-                    (request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
+                Err(e) => {
+                    // When task_id is provided, execution must go through unified binding. Do not silently fallback.
+                    return Err(e);
                 }
             }
         } else {

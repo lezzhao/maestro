@@ -1,5 +1,7 @@
 //! Profile snapshot: immutable copy of EngineProfile for reproducibility and audit.
-//! When a task executes, we can snapshot the profile so future runs use the same config.
+//!
+//! LEGACY: Do not use for new execution. Use runtime_snapshot (snapshot_repository) only.
+//! All reproducible execution should read from RuntimeSnapshotPayload via snapshot_repository.
 
 use crate::config::EngineProfile;
 use rusqlite::params;

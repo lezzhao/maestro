@@ -4,6 +4,7 @@ mod task_repository;
 mod task_state;
 mod task_runtime;
 mod task_runtime_service;
+/// LEGACY: Do not use for new execution. Use snapshot_repository (runtime_snapshots) only.
 mod profile_snapshot;
 mod cli_state;
 pub mod config;

@@ -468,7 +468,7 @@ export type ResolvedRuntimeContext = {
   readySignal?: string | null;
   exitCommand?: string | null;
   exitTimeoutMs?: number | null;
-  resolvedFrom: "Snapshot" | "LiveProfile" | "EngineFallback";
+  resolvedFrom: "Snapshot" | "LiveProfile" | "FallbackProfile";
 };
 
 /**

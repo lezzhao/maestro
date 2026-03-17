@@ -22,6 +22,7 @@ pub fn resolve_profile_id_for_update(
 }
 
 /// Update task's runtime context (engine_id + profile_id) in DB and emit event.
+/// Engine/profile change automatically invalidates runtime_snapshot_id (cleared by update_task_engine).
 /// Caller is responsible for session cleanup when needed (e.g. before calling for task_switch_engine).
 pub fn update_task_runtime_context(
     app: &AppHandle,

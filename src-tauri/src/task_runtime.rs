@@ -270,6 +270,7 @@ pub fn resolve_task_runtime_context_for_app(
 mod tests {
     use super::*;
     use crate::config::{EngineConfig, EngineProfile};
+    use crate::snapshot_repository;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
@@ -301,7 +302,7 @@ mod tests {
             "{}",
             Some("profile_b"),
         )
-        .expect("create_task");
+            .expect("create_task");
 
         let mut profiles = BTreeMap::new();
         profiles.insert("profile_a".to_string(), mock_profile("profile_a"));
@@ -322,8 +323,7 @@ mod tests {
 
         let resolved = resolve_task_runtime_context(&db_path, &task_id, &cfg).expect("resolve");
         assert_eq!(resolved.engine_id, "eng1");
-        assert_eq!(resolved.profile_id, "profile_b");
-        assert_eq!(resolved.profile.id, "profile_b");
+        assert_eq!(resolved.profile_id.as_deref(), Some("profile_b"));
     }
 
     #[test]
@@ -349,7 +349,7 @@ mod tests {
         cfg.engines = engines;
 
         let resolved = resolve_task_runtime_context(&db_path, &task_id, &cfg).expect("resolve");
-        assert_eq!(resolved.profile_id, "default");
+        assert_eq!(resolved.profile_id.as_deref(), Some("default"));
     }
 
     #[test]
@@ -358,16 +358,36 @@ mod tests {
         let task_id = task_state::create_task(&db_path, "Task", "", "eng1", "{}", Some("profile_a"))
             .expect("create_task");
 
-        // Create a snapshot with different profile content
-        let snap_profile = EngineProfile {
-            id: "profile_a".to_string(),
-            display_name: "Snapshot Profile".to_string(),
+        // Create runtime snapshot (not profile_snapshot) - the authoritative execution config
+        let snapshot_id = uuid::Uuid::new_v4().to_string();
+        let payload = RuntimeSnapshotPayload {
+            engine_id: "eng1".to_string(),
+            profile_id: Some("profile_a".to_string()),
             command: "snap-cmd".to_string(),
+            args: vec![],
+            env: BTreeMap::new(),
+            execution_mode: "cli".to_string(),
             model: Some("snapshot-model".to_string()),
-            ..mock_profile("profile_a")
+            api_provider: None,
+            api_base_url: None,
+            supports_headless: false,
+            ready_signal: None,
+            exit_command: None,
+            exit_timeout_ms: None,
         };
-        let snapshot_id = profile_snapshot::create_snapshot(&db_path, "eng1", "profile_a", &snap_profile)
-            .expect("create_snapshot");
+        let payload_json =
+            serde_json::to_string(&payload).expect("serialize payload");
+        let snapshot = RuntimeSnapshot {
+            id: snapshot_id.clone(),
+            task_id: task_id.clone(),
+            engine_id: "eng1".to_string(),
+            profile_id: Some("profile_a".to_string()),
+            payload_json,
+            reason: "first_execution".to_string(),
+            created_at: String::new(),
+        };
+        snapshot_repository::insert_runtime_snapshot(&db_path, &snapshot)
+            .expect("insert_runtime_snapshot");
         task_state::update_task_runtime_snapshot(&db_path, &task_id, Some(&snapshot_id))
             .expect("update_task_runtime_snapshot");
 
@@ -388,9 +408,10 @@ mod tests {
         cfg.engines = engines;
 
         let resolved = resolve_task_runtime_context(&db_path, &task_id, &cfg).expect("resolve");
-        assert_eq!(resolved.profile_id, "profile_a");
-        assert_eq!(resolved.profile.command, "snap-cmd");
-        assert_eq!(resolved.profile.model, Some("snapshot-model".to_string()));
+        assert_eq!(resolved.profile_id.as_deref(), Some("profile_a"));
+        assert_eq!(resolved.command, "snap-cmd");
+        assert_eq!(resolved.model, Some("snapshot-model".to_string()));
+        assert!(matches!(resolved.resolved_from, RuntimeResolvedFrom::Snapshot));
     }
 
     #[test]
