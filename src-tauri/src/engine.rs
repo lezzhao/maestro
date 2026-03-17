@@ -1,4 +1,4 @@
-use crate::config::{write_config_to_disk, AppConfig, EngineConfig, EngineProfile};
+use crate::config::{migrate_engine_profiles, write_config_to_disk, AppConfig, EngineConfig, EngineProfile};
 use crate::pty::{resolve_exit_payload, wait_exit_status};
 use regex::Regex;
 use serde::Serialize;
@@ -375,6 +375,7 @@ pub fn engine_upsert(
 ) -> Result<(), String> {
     let mut config = core_state.inner().config.get();
     config.engines.insert(id, engine);
+    migrate_engine_profiles(&mut config);
     write_config_to_disk(&app, &config)?;
     core_state.inner().config.set(config);
     Ok(())

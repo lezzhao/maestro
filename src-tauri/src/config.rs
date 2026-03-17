@@ -63,7 +63,7 @@ pub struct EngineConfig {
     pub profiles: BTreeMap<String, EngineProfile>,
     #[serde(default)]
     pub active_profile_id: String,
-    #[serde(flatten)]
+    #[serde(flatten, skip_serializing)]
     pub legacy_profile: EngineProfile,
 }
 
@@ -379,7 +379,7 @@ impl EngineProfile {
 }
 
 // Minimal migration pass: ensures we have a default profile and execution_mode.
-fn migrate_engine_profiles(config: &mut AppConfig) {
+pub(crate) fn migrate_engine_profiles(config: &mut AppConfig) {
     for (_, engine) in config.engines.iter_mut() {
         if engine.profiles.is_empty() {
             let profile_id = "default".to_string();
@@ -396,10 +396,7 @@ fn migrate_engine_profiles(config: &mut AppConfig) {
                 engine.active_profile_id = first_key;
             }
         }
-        // Sync active profile's fields back to engine's legacy profile for easy access
-        if let Some(active_profile) = engine.profiles.get(&engine.active_profile_id).cloned() {
-            engine.legacy_profile = active_profile;
-        }
+        // No longer sync to legacy_profile - profiles is the single source of truth
     }
 }
 

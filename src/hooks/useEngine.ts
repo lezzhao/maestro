@@ -10,48 +10,6 @@ import type {
   EngineProfile,
 } from "../types";
 
-function ensureEngineProfiles(engine: EngineConfig): EngineConfig {
-  const profiles = engine.profiles && Object.keys(engine.profiles).length > 0
-    ? engine.profiles
-    : {
-        default: {
-          id: "default",
-          display_name: "Default",
-          command: engine.command,
-          model: "",
-          args: engine.args,
-          env: engine.env,
-          supports_headless: engine.supports_headless,
-          headless_args: engine.headless_args,
-          ready_signal: engine.ready_signal ?? null,
-          execution_mode: engine.execution_mode || "cli",
-          api_provider: engine.api_provider ?? null,
-          api_base_url: engine.api_base_url ?? null,
-          api_key: engine.api_key ?? null,
-        },
-      };
-  const active_profile_id =
-    engine.active_profile_id && profiles[engine.active_profile_id]
-      ? engine.active_profile_id
-      : Object.keys(profiles)[0];
-  const active = profiles[active_profile_id];
-  return {
-    ...engine,
-    profiles,
-    active_profile_id,
-    command: active.command,
-    args: active.args,
-    env: active.env,
-    supports_headless: active.supports_headless,
-    headless_args: active.headless_args,
-    ready_signal: active.ready_signal ?? null,
-    execution_mode: active.execution_mode || "cli",
-    api_provider: active.api_provider ?? null,
-    api_base_url: active.api_base_url ?? null,
-    api_key: active.api_key ?? null,
-  };
-}
-
 export function useEngine() {
   const engines = useAppStore((s) => s.engines);
   const activeEngineId = useAppStore((s) => s.activeEngineId);
@@ -96,15 +54,15 @@ export function useEngine() {
 
   const refreshEngines = useCallback(async () => {
     const result = await invoke<Record<string, EngineConfig>>("engine_list");
-    const normalized = Object.fromEntries(
-      Object.entries(result).map(([id, cfg]) => [id, ensureEngineProfiles(cfg)]),
-    );
-    setEngines(normalized);
+    setEngines(result);
     const active = await invoke<string | null>("engine_get_active");
     if (active) {
       setActiveEngineId(active);
-    } else if (Object.keys(normalized).length > 0) {
-      setActiveEngineId(Object.keys(normalized)[0]);
+    } else {
+      const keys = Object.keys(result);
+      if (keys.length > 0) {
+        setActiveEngineId(keys[0]);
+      }
     }
   }, [setActiveEngineId, setEngines]);
 
@@ -187,7 +145,7 @@ export function useEngine() {
 
   const upsertEngine = useCallback(
     async (engineId: string, engine: EngineConfig) => {
-      await invoke("engine_upsert", { id: engineId, engine: ensureEngineProfiles(engine) });
+      await invoke("engine_upsert", { id: engineId, engine });
       await refreshEngines();
       await preflightEngine(engineId, { force: true });
     },
