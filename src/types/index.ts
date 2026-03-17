@@ -448,9 +448,10 @@ export type TaskStats = {
   approx_output_tokens: number;
 };
 
-/** 
- * Backend authoritative task runtime resolved context. 
- * Represents the exact parameters a task will execution with.
+/**
+ * Resolved execution projection. Backend authoritative.
+ * The exact parameters a task will execute with (command, args, env, model, etc.).
+ * Do not mix with TaskRecord or TaskRuntimeBinding in business logic.
  */
 export type ResolvedRuntimeContext = {
   taskId: string;
@@ -474,6 +475,7 @@ export type ResolvedRuntimeContext = {
 /**
  * Runtime binding projection. Backend authoritative when from events.
  * engineId, profileId, runtimeSnapshotId from binding; sessionId/activeExecId from CLI.
+ * Do not mix with TaskRecord or ResolvedRuntimeContext in business logic.
  */
 export type TaskRuntimeBinding = {
   /** Backend authoritative engine id (from binding change event) */
@@ -491,9 +493,9 @@ export type TaskRuntimeBinding = {
 };
 
 /**
- * Task view state. Combines:
- * - **Backend authoritative** (from DB/events): id, name, engineId, profileId, status, created_at, updated_at
- * - **UI-derived**: gitChanges, stats
+ * Task view state = TaskRecord projection + UI-derived fields.
+ * Backend authoritative: id, name, engineId, profileId, status, created_at, updated_at.
+ * UI-derived: gitChanges, stats.
  */
 export interface TaskViewState {
   /** @backend authoritative */
@@ -518,12 +520,19 @@ export interface TaskViewState {
 
 export type TaskViewModel = TaskViewState & TaskRuntimeBinding;
 
-/** Full task representation. Do not add fields without classifying: backend authoritative | runtime ephemeral | UI-only. */
+/**
+ * Full task representation. Composite of TaskRecord + TaskRuntimeBinding + ResolvedRuntimeContext.
+ * Use updateTask / updateTaskRuntimeBinding / setTaskResolvedRuntimeContext to update each layer.
+ * Do not add fields without classifying: backend authoritative | runtime ephemeral | UI-only.
+ */
 export type AppTask = TaskViewModel & {
   resolvedRuntimeContext?: ResolvedRuntimeContext | null;
 };
 
-/** Backend authoritative task entity projection. */
+/**
+ * Backend authoritative persisted task entity.
+ * From DB; use for create/update/delete. Do not mix with runtime binding or resolved context.
+ */
 export interface TaskRecord {
   id: string;
   title: string;

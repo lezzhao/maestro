@@ -79,6 +79,94 @@ pub fn ensure_runtime_snapshot(
     Ok(snapshot_id)
 }
 
+/// Prepares execution binding using db_path directly. Used for testing.
+#[cfg(test)]
+pub fn prepare_execution_binding_with_path(
+    db_path: &std::path::Path,
+    execution_id: &str,
+    task_id: &str,
+    config: &AppConfig,
+) -> Result<ResolvedRuntimeContext, CoreError> {
+    let snapshot_id = ensure_runtime_snapshot_with_path(db_path, task_id, config)?;
+    let ctx = resolve_task_runtime_context(db_path, task_id, config)?;
+    let binding = crate::task_runtime::ExecutionBinding {
+        execution_id: execution_id.to_string(),
+        task_id: task_id.to_string(),
+        snapshot_id,
+        engine_id: ctx.engine_id.clone(),
+        profile_id: ctx.profile_id.clone(),
+        created_at: "".to_string(),
+    };
+    crate::execution_binding_repository::insert_execution_binding(db_path, &binding).map_err(
+        |e| CoreError::Io {
+            message: format!("insert execution binding failed: {e}"),
+        },
+    )?;
+    Ok(ctx)
+}
+
+#[cfg(test)]
+fn ensure_runtime_snapshot_with_path(
+    db_path: &std::path::Path,
+    task_id: &str,
+    config: &AppConfig,
+) -> Result<String, CoreError> {
+    let binding = task_state::get_task_runtime_binding(db_path, task_id)
+        .map_err(|e| CoreError::Io {
+            message: format!("get task binding failed: {e}"),
+        })?
+        .ok_or_else(|| CoreError::NotFound {
+            resource: "task".to_string(),
+            id: task_id.to_string(),
+        })?;
+
+    if let Some(snapshot_id) = binding.runtime_snapshot_id {
+        if !snapshot_id.is_empty() {
+            return Ok(snapshot_id);
+        }
+    }
+
+    let ctx = resolve_task_runtime_context(db_path, task_id, config)?;
+    let payload = RuntimeSnapshotPayload {
+        engine_id: ctx.engine_id.clone(),
+        profile_id: ctx.profile_id.clone(),
+        command: ctx.command,
+        args: ctx.args,
+        env: ctx.env,
+        execution_mode: ctx.execution_mode,
+        model: ctx.model,
+        api_provider: ctx.api_provider,
+        api_base_url: ctx.api_base_url,
+        supports_headless: ctx.supports_headless,
+        ready_signal: ctx.ready_signal,
+        exit_command: ctx.exit_command,
+        exit_timeout_ms: ctx.exit_timeout_ms,
+    };
+    let payload_json = serde_json::to_string(&payload).map_err(|e| CoreError::Io {
+        message: format!("serialize payload failed: {e}"),
+    })?;
+    let snapshot_id = uuid::Uuid::new_v4().to_string();
+    let snapshot = RuntimeSnapshot {
+        id: snapshot_id.clone(),
+        task_id: task_id.to_string(),
+        engine_id: ctx.engine_id.clone(),
+        profile_id: ctx.profile_id.clone(),
+        payload_json,
+        reason: "first_execution".to_string(),
+        created_at: "".to_string(),
+    };
+    crate::snapshot_repository::insert_runtime_snapshot(db_path, &snapshot).map_err(|e| {
+        CoreError::Io {
+            message: format!("insert snapshot failed: {e}"),
+        }
+    })?;
+    task_state::update_task_runtime_snapshot(db_path, task_id, Some(&snapshot_id))
+        .map_err(|e| CoreError::Io {
+            message: format!("update task snapshot failed: {e}"),
+        })?;
+    Ok(snapshot_id)
+}
+
 /// Prepares the execution binding for a new run.
 /// 1. Ensures snapshot exists.
 /// 2. Records ExecutionBinding.
@@ -114,4 +202,68 @@ pub fn prepare_execution_binding(
     })?;
 
     Ok(ctx)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::AppConfig;
+    use std::path::PathBuf;
+
+    fn temp_db_path() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("test_bmad_state.db");
+        (dir, path)
+    }
+
+    #[test]
+    fn prepare_execution_binding_creates_snapshot_and_binding() {
+        let (_dir, db_path) = temp_db_path();
+        let cfg = AppConfig::default();
+        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None)
+            .expect("create_task");
+
+        let ctx = prepare_execution_binding_with_path(&db_path, "exec-1", &task_id, &cfg)
+            .expect("prepare_execution_binding");
+
+        assert_eq!(ctx.engine_id, "cursor");
+        assert!(matches!(
+            ctx.resolved_from,
+            crate::task_runtime::RuntimeResolvedFrom::Snapshot
+        ));
+
+        let binding = crate::task_state::get_task_runtime_binding(&db_path, &task_id)
+            .expect("get binding")
+            .expect("binding exists");
+        assert!(binding.runtime_snapshot_id.is_some());
+    }
+
+    #[test]
+    fn prepare_execution_binding_resolved_context_from_snapshot() {
+        let (_dir, db_path) = temp_db_path();
+        let mut cfg = AppConfig::default();
+        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None)
+            .expect("create_task");
+
+        let profile = cfg.engines.get_mut("cursor").unwrap().profiles.get_mut("default").unwrap();
+        profile.command = "original-cmd".to_string();
+
+        let ctx1 =
+            prepare_execution_binding_with_path(&db_path, "exec-1", &task_id, &cfg)
+                .expect("first prepare");
+        let snapshot_id = ctx1.snapshot_id.clone().expect("has snapshot");
+
+        cfg.engines.get_mut("cursor").unwrap().profiles.get_mut("default").unwrap().command =
+            "changed-cmd".to_string();
+
+        let ctx2 =
+            prepare_execution_binding_with_path(&db_path, "exec-2", &task_id, &cfg)
+                .expect("second prepare");
+
+        assert_eq!(
+            ctx2.command, ctx1.command,
+            "resolve should come from snapshot, not live config"
+        );
+        assert_eq!(ctx2.snapshot_id.as_deref(), Some(snapshot_id.as_str()));
+    }
 }

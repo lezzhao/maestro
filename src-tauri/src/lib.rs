@@ -1,6 +1,8 @@
 mod agent_state;
 mod api_provider;
 mod task_repository;
+mod task_commands;
+mod task_lifecycle;
 mod task_state;
 mod task_runtime;
 mod task_runtime_service;
@@ -45,7 +47,7 @@ use pty::{
 };
 use spec::{spec_detect, spec_inject, spec_list, spec_remove, spec_preview, spec_backup, spec_restore};
 use tauri::Manager;
-use task_state::{
+use task_commands::{
     task_create, task_delete, task_get_runtime_binding, task_get_runtime_context, task_get_state,
     task_list, task_refresh_runtime_snapshot, task_switch_runtime_binding, task_transition,
     task_update_runtime_binding,
