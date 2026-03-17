@@ -11,7 +11,6 @@ import type { AppTask, EngineConfig } from "../types";
 type Props = {
   projectPath: string;
   engines: Record<string, EngineConfig>;
-  activeEngineId: string;
   activeTask: AppTask | null;
   onSetExecutionMode: (mode: "api" | "cli") => Promise<void>;
 };
@@ -32,7 +31,6 @@ function formatTaskStatus(status: AppTask["status"]) {
 export function TaskWorkspace({
   projectPath,
   engines,
-  activeEngineId,
   activeTask,
   onSetExecutionMode,
 }: Props) {
@@ -47,6 +45,7 @@ export function TaskWorkspace({
   const latestRun = useChatStore((s) => s.getLatestRun(activeId));
   const latestTranscript = useChatStore((s) => s.getRunTranscript(latestRun?.id || null));
   const runEvents = useChatStore(useShallow((s) => s.getTaskRunEvents(activeId)));
+  const activeEngineId = activeTask?.engineId || Object.keys(engines)[0] || "";
   const activeEngine = engines[activeEngineId];
   const activeProfile = useMemo(() => {
     if (!activeEngine?.profiles) return null;
@@ -350,7 +349,7 @@ export function TaskWorkspace({
           <ChatPanel
             projectPath={projectPath}
             engines={engines}
-            activeEngineId={activeEngineId}
+            activeTask={activeTask}
             onSetExecutionMode={onSetExecutionMode}
           />
         </div>

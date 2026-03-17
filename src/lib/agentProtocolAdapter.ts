@@ -52,6 +52,7 @@ export function toTaskViewModel(p: TaskRecord): TaskViewModel {
   return {
     id: p.id,
     name: p.title,
+    engineId: p.engine_id,
     sessionId: null,
     activeExecId: null,
     activeRunId: null,

@@ -6,7 +6,6 @@ import type {
   EnginePreflightResult,
   AppTask,
 } from "../types";
-import { mapTaskStateToStatus } from "../lib/agentStateReducer";
 
 type AppStore = {
   currentStep: "setup" | "project" | "compose" | "review";
@@ -16,7 +15,6 @@ type AppStore = {
   projectPath: string;
   engines: Record<string, EngineConfig>;
   enginePreflight: Record<string, EnginePreflightResult>;
-  activeEngineId: string;
   specProvider: "none" | "bmad" | "custom";
   errorMessage: string | null;
   theme: "light" | "dark" | "system";
@@ -34,7 +32,6 @@ type AppStore = {
   setProjectPath: (path: string) => void;
   setEngines: (engines: Record<string, EngineConfig>) => void;
   setEnginePreflight: (engineId: string, result: EnginePreflightResult) => void;
-  setActiveEngineId: (id: string) => void;
   setSpecProvider: (provider: "none" | "bmad" | "custom") => void;
   setErrorMessage: (message: string | null) => void;
   setTheme: (theme: "light" | "dark" | "system") => void;
@@ -58,7 +55,6 @@ export const useAppStore = create<AppStore>()(
     projectPath: "",
     engines: {},
     enginePreflight: {},
-    activeEngineId: "cursor",
     specProvider: "none",
     errorMessage: null,
     theme: (() => {
@@ -91,7 +87,6 @@ export const useAppStore = create<AppStore>()(
       set((state) => ({
         enginePreflight: { ...state.enginePreflight, [engineId]: result },
       })),
-    setActiveEngineId: (activeEngineId) => set({ activeEngineId }),
     setSpecProvider: (specProvider) => set({ specProvider }),
     setErrorMessage: (errorMessage) => set({ errorMessage }),
     setTheme: (theme) => {
@@ -106,37 +101,20 @@ export const useAppStore = create<AppStore>()(
     addTask: async (name) => {
       const title = name || `Task ${get().tasks.length + 1}`;
       try {
-        const result = await invoke<{
-          id: string;
-          title: string;
-          description: string;
-          currentState: string;
-          workspaceBoundary: string;
-        }>("task_create", {
+        // Find a default engine since we removed activeEngineId.
+        const engines = get().engines;
+        const defaultEngine = Object.keys(engines)[0] || "cursor";
+
+        await invoke("task_create", {
           title,
           description: "",
+          engine_id: defaultEngine,
           workspaceBoundary: "",
         });
-        const now = Date.now();
-        const newTask: AppTask = {
-          id: result.id,
-          name: result.title,
-          sessionId: null,
-          activeExecId: null,
-          activeRunId: null,
-          status: mapTaskStateToStatus(result.currentState),
-          gitChanges: [],
-          stats: {
-            cpu_percent: 0,
-            memory_mb: 0,
-            approx_input_tokens: 0,
-            approx_output_tokens: 0,
-          },
-          created_at: now,
-          updated_at: now,
-        };
-        set({ activeTaskId: result.id });
-        return newTask;
+        
+        // We no longer manually create the TaskState here, we let the backend state broadcast 
+        // the `TaskCreated` event which will be picked up by `agentStateReducer`.
+        return null;
       } catch (e) {
         set({ errorMessage: String(e) });
         return null;

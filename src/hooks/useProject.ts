@@ -11,7 +11,6 @@ import type {
 export function useProject() {
   const projectPath = useAppStore((s) => s.projectPath);
   const setProjectPath = useAppStore((s) => s.setProjectPath);
-  const setActiveEngineId = useAppStore((s) => s.setActiveEngineId);
   const gitStatusCacheRef = useRef<Map<string, { value: FileChange[]; ts: number }>>(
     new Map(),
   );
@@ -30,10 +29,9 @@ export function useProject() {
         { projectPath: path },
       );
       setProjectPath(path);
-      setActiveEngineId(recommendation.engine_id);
       return { stack, recommendation };
     },
-    [setActiveEngineId, setProjectPath],
+    [setProjectPath],
   );
 
   const gitStatus = useCallback(

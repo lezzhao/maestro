@@ -7,6 +7,7 @@ function mockTaskRecord(id: string) {
     id,
     title: `task-${id}`,
     description: "",
+    engine_id: "cursor",
     current_state: "BACKLOG",
     workspace_boundary: "{}",
     created_at: new Date().toISOString(),

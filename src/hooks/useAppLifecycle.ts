@@ -11,8 +11,8 @@ function runWhenIdle(task: () => void, timeout = 1200) {
   return () => window.clearTimeout(timer);
 }
 
-export function useAppLifecycle(activeExecutionMode: "api" | "cli") {
-  const { engines, enginePreflight, activeEngineId, preflightAll, switchEngine } = useEngine();
+export function useAppLifecycle(activeExecutionMode: "api" | "cli", activeEngineId: string) {
+  const { engines, enginePreflight, preflightAll, switchEngine } = useEngine();
   const bootPreflightStartedRef = useRef(false);
   const autoSelectDoneRef = useRef(false);
   const autoSelectingRef = useRef(false);

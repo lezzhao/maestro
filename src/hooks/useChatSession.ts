@@ -26,7 +26,6 @@ export function useChatSession({
   const { t } = useTranslation();
   const updateTask = useAppStore((s) => s.updateTask);
   const setErrorMessage = useAppStore((s) => s.setErrorMessage);
-  const setActiveEngineId = useAppStore((s) => s.setActiveEngineId);
 
   const isRunning = useChatStore((s) => s.getTaskRunning(activeTaskId));
   const pendingAttachments = useChatStore((s) => s.getTaskPendingAttachments(activeTaskId));
@@ -457,8 +456,8 @@ export function useChatSession({
           ([engineId, result]) =>
             engineId !== activeEngineId && result.command_exists && result.auth_ok,
         )?.[0];
-        if (fallbackEngineId) {
-          setActiveEngineId(fallbackEngineId);
+        if (fallbackEngineId && activeTaskId) {
+          updateTask(activeTaskId, { engineId: fallbackEngineId });
           setErrorMessage(
             `${t("execution_error")}: \u5f53\u524d\u5f15\u64ce ${activeEngineId} \u4e0d\u53ef\u7528\uff08\u547d\u4ee4\u6216auth\u5931\u8d25\uff09\uff0c\u5df2\u5207\u6362\u5230 ${fallbackEngineId}\u3002\u8bf7\u91cd\u65b0\u53d1\u9001\u3002`,
           );

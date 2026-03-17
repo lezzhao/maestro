@@ -12,11 +12,9 @@ import type {
 
 export function useEngine() {
   const engines = useAppStore((s) => s.engines);
-  const activeEngineId = useAppStore((s) => s.activeEngineId);
   const setEngines = useAppStore((s) => s.setEngines);
   const enginePreflight = useAppStore((s) => s.enginePreflight);
   const setEnginePreflight = useAppStore((s) => s.setEnginePreflight);
-  const setActiveEngineId = useAppStore((s) => s.setActiveEngineId);
   
   const { activeTask, updateActiveTask } = useActiveTask();
   const sessionId = activeTask?.sessionId;
@@ -53,18 +51,13 @@ export function useEngine() {
   }, []);
 
   const refreshEngines = useCallback(async () => {
-    const result = await invoke<Record<string, EngineConfig>>("engine_list");
-    setEngines(result);
-    const active = await invoke<string | null>("engine_get_active");
-    if (active) {
-      setActiveEngineId(active);
-    } else {
-      const keys = Object.keys(result);
-      if (keys.length > 0) {
-        setActiveEngineId(keys[0]);
-      }
+    try {
+      const result = await invoke<Record<string, EngineConfig>>("engine_list");
+      setEngines(result);
+    } catch (e) {
+      console.error("Failed to list engines:", e);
     }
-  }, [setActiveEngineId, setEngines]);
+  }, [setEngines]);
 
   const preflightEngine = useCallback(
     async (engineId: string, options?: { force?: boolean }) => {
@@ -136,11 +129,11 @@ export function useEngine() {
         engineId,
         sessionId: sessionId ?? null,
       });
-      setActiveEngineId(engineId);
-      updateActiveTask({ sessionId: null });
+      // The frontend now updates the task's engine explicitly, global active doesn't exist.
+      updateActiveTask({ engineId, sessionId: null });
       void preflightEngine(engineId, { force: true });
     },
-    [preflightEngine, sessionId, setActiveEngineId, updateActiveTask],
+    [preflightEngine, sessionId, updateActiveTask],
   );
 
   const upsertEngine = useCallback(
@@ -231,7 +224,6 @@ export function useEngine() {
   return {
     engines,
     enginePreflight,
-    activeEngineId,
     refreshEngines,
     preflightEngine,
     preflightAll,

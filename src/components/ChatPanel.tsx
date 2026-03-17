@@ -7,26 +7,26 @@ import { cn } from "../lib/utils";
 import { useChatSession } from "../hooks/useChatSession";
 import { MessageList } from "./chat/MessageList";
 import { ChatInput } from "./chat/ChatInput";
-import type { EngineConfig } from "../types";
+import type { AppTask, EngineConfig } from "../types";
 
 type ChatPanelProps = {
   projectPath: string;
   engines: Record<string, EngineConfig>;
-  activeEngineId: string;
+  activeTask: AppTask | null;
   onSetExecutionMode: (mode: "api" | "cli") => Promise<void>;
 };
 
 export function ChatPanel({
   projectPath,
   engines,
-  activeEngineId,
+  activeTask,
   onSetExecutionMode,
 }: ChatPanelProps) {
   const { t } = useTranslation();
   
-  const activeTaskId = useAppStore((s) => s.activeTaskId);
+  const activeEngineId = activeTask?.engineId || "";
+  const activeTaskId = activeTask?.id || null;
   const enginePreflight = useAppStore((s) => s.enginePreflight);
-  const setActiveEngineId = useAppStore((s) => s.setActiveEngineId);
   const setShowSettings = useAppStore((s) => s.setShowSettings);
   const isRunning = useChatStore((s) => s.getTaskRunning(activeTaskId));
   const clearMessages = useChatStore((s) => s.clearMessages);
@@ -237,9 +237,7 @@ export function ChatPanel({
         sendBlockedReason={sendBlockedReason}
         onRecoveryAction={
           fallbackEngineId
-            ? () => {
-                setActiveEngineId(fallbackEngineId);
-              }
+            ? undefined
             : () => setShowSettings(true)
         }
         recoveryActionLabel={

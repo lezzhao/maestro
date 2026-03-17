@@ -457,9 +457,10 @@ export type TaskRuntimeBinding = {
   activeRunId?: string | null;
 };
 
-export type TaskViewState = {
+export interface TaskViewState {
   id: string;
   name: string;
+  engineId: string;
   status: "idle" | "running" | "error" | "completed" | "needs_review" | "verified";
   gitChanges: FileChange[];
   stats: TaskStats;
@@ -472,10 +473,11 @@ export type TaskViewModel = TaskViewState & TaskRuntimeBinding;
 export type AppTask = TaskViewModel;
 
 /** Backend authoritative task entity projection. */
-export type TaskRecord = {
+export interface TaskRecord {
   id: string;
   title: string;
   description: string;
+  engine_id: string;
   current_state: string;
   workspace_boundary: string;
   created_at: string;

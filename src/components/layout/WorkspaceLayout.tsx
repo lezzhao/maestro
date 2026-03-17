@@ -31,7 +31,6 @@ export function WorkspaceLayout() {
   const {
     engines,
     enginePreflight,
-    activeEngineId,
     switchEngine,
     preflightEngine,
     preflightAll,
@@ -41,7 +40,9 @@ export function WorkspaceLayout() {
     listModels,
   } = useEngine();
   const { projectPath, detectAndRecommend, gitStatus, gitDiff } = useProject();
-
+  const { activeTaskId, activeTask } = useActiveTask();
+  
+  const activeEngineId = activeTask?.engineId || Object.keys(engines)[0] || "";
   const {
     showSettings, setShowSettings,
     setCurrentStep, setSidebarCollapsed,
@@ -60,7 +61,6 @@ export function WorkspaceLayout() {
     setLang: s.setLang,
   })));
 
-  const { activeTaskId, activeTask } = useActiveTask();
   const updateTask = useAppStore((s) => s.updateTask);
   const gitChanges = activeTask?.gitChanges || [];
 
@@ -86,7 +86,7 @@ export function WorkspaceLayout() {
   
   const activeExecutionMode = ((activeProfile?.execution_mode || "cli") as "api" | "cli");
 
-  useAppLifecycle(activeExecutionMode);
+  useAppLifecycle(activeExecutionMode, activeEngineId);
 
   const { handleOpenProjectPicker } = useWorkspaceFlow({
     projectPath,
@@ -328,7 +328,6 @@ export function WorkspaceLayout() {
                     <TaskWorkspace
                       projectPath={projectPath}
                       engines={engines}
-                      activeEngineId={activeEngineId}
                       activeTask={activeTask || null}
                       onSetExecutionMode={handleSetExecutionMode}
                     />
