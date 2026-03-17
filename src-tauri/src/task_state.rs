@@ -207,6 +207,21 @@ pub fn transition(
     Ok(to_str.to_string())
 }
 
+/// Update a task's engine_id in the database.
+pub fn update_task_engine(db_path: &Path, task_id: &str, engine_id: &str) -> Result<(), String> {
+    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
+    ensure_tables(&conn)?;
+    conn.execute(
+        "UPDATE tasks SET engine_id = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
+        rusqlite::params![engine_id, task_id],
+    )
+    .map_err(|e| format!("update task engine failed: {e}"))?;
+    if conn.changes() == 0 {
+        return Err(format!("task not found: {task_id}"));
+    }
+    Ok(())
+}
+
 /// Delete a task from the database.
 pub fn delete_task(db_path: &Path, task_id: &str) -> Result<(), String> {
     let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
@@ -316,6 +331,22 @@ pub struct TaskGetStateRequest {
     pub task_id: String,
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskUpdateEngineRequest {
+    pub task_id: String,
+    pub engine_id: String,
+}
+
+#[tauri::command]
+pub async fn task_update_engine(
+    app: tauri::AppHandle,
+    request: TaskUpdateEngineRequest,
+) -> Result<(), String> {
+    let core = app.state::<crate::core::MaestroCore>();
+    core.task_update_engine(&app, request)
+}
+
 #[tauri::command]
 pub async fn task_delete(app: tauri::AppHandle, task_id: String) -> Result<(), String> {
     let core = app.state::<crate::core::MaestroCore>();
@@ -379,5 +410,66 @@ pub fn get_task_state(db_path: &Path, task_id: &str) -> Result<Option<String>, S
         Ok(Some(s))
     } else {
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn temp_db_path() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("test_bmad_state.db");
+        (dir, path)
+    }
+
+    #[test]
+    fn test_task_create_persists_engine_id() {
+        let (_dir, db_path) = temp_db_path();
+        let id = create_task(
+            &db_path,
+            "Test Task",
+            "",
+            "cursor",
+            "{}",
+        )
+        .expect("create_task");
+        let tasks = list_tasks(&db_path).expect("list_tasks");
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].id, id);
+        assert_eq!(tasks[0].engine_id, "cursor");
+    }
+
+    #[test]
+    fn test_task_update_engine_persists() {
+        let (_dir, db_path) = temp_db_path();
+        let id = create_task(&db_path, "Task", "", "cursor", "{}").expect("create_task");
+        update_task_engine(&db_path, &id, "claude").expect("update_task_engine");
+        let tasks = list_tasks(&db_path).expect("list_tasks");
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].engine_id, "claude");
+    }
+
+    #[test]
+    fn test_task_list_returns_engine_id() {
+        let (_dir, db_path) = temp_db_path();
+        create_task(&db_path, "A", "", "engine_x", "{}").expect("create");
+        create_task(&db_path, "B", "", "engine_y", "{}").expect("create");
+        let tasks = list_tasks(&db_path).expect("list_tasks");
+        assert_eq!(tasks.len(), 2);
+        let engine_ids: Vec<&str> = tasks.iter().map(|t| t.engine_id.as_str()).collect();
+        assert!(engine_ids.contains(&"engine_x"));
+        assert!(engine_ids.contains(&"engine_y"));
+    }
+
+    #[test]
+    fn test_update_task_engine_task_not_found() {
+        let (_dir, db_path) = temp_db_path();
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        ensure_tables(&conn).unwrap();
+        drop(conn);
+        let err = update_task_engine(&db_path, "nonexistent", "cursor").unwrap_err();
+        assert!(err.contains("task not found"));
     }
 }

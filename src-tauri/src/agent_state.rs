@@ -33,6 +33,10 @@ pub enum AgentStateUpdate {
         to_state: String,
     },
     TaskDeleted { task_id: String },
+    TaskEngineChanged {
+        task_id: String,
+        engine_id: String,
+    },
     ExecutionStarted {
         task_id: String,
         run_id: String,

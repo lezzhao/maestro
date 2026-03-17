@@ -54,5 +54,6 @@ commands.allow = [
   "cli_read_session_logs",
   "cli_prune_sessions",
   "task_transition",
-  "task_get_state"
+  "task_get_state",
+  "task_update_engine"
 ]

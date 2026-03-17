@@ -334,6 +334,28 @@ impl MaestroCore {
         crate::task_state::get_task_state(&db_path, &request.task_id)
     }
 
+    /// Use-Case: Update task's engine and broadcast state event.
+    pub fn task_update_engine(
+        &self,
+        app: &AppHandle,
+        request: crate::task_state::TaskUpdateEngineRequest,
+    ) -> Result<(), String> {
+        let config = self.config.get();
+        if !config.engines.contains_key(&request.engine_id) {
+            return Err(format!("engine not found: {}", request.engine_id));
+        }
+        let db_path = crate::task_state::bmad_db_path(app)?;
+        crate::task_state::update_task_engine(&db_path, &request.task_id, &request.engine_id)?;
+        emit_state_update(
+            Some(app),
+            AgentStateUpdate::TaskEngineChanged {
+                task_id: request.task_id,
+                engine_id: request.engine_id,
+            },
+        );
+        Ok(())
+    }
+
     pub fn spec_list(&self) -> Vec<SpecDescriptor> {
         crate::spec::spec_descriptors(&self.config.get())
     }
