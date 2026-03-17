@@ -1,6 +1,7 @@
 use super::MaestroCore;
 use tauri::AppHandle;
 use crate::agent_state::{emit_state_update, AgentStateUpdate, TaskRecordPayload};
+use crate::task_runtime_service;
 
 impl MaestroCore {
     /// Use-Case: Create task and broadcast state event.
@@ -150,13 +151,30 @@ impl MaestroCore {
                 &self.pty_state,
             )?;
         }
-        crate::task_runtime_service::update_task_runtime_context(
+        let result = task_runtime_service::update_task_runtime_context(
             app,
             &request.task_id,
             &request.engine_id,
             request.profile_id,
             &config,
-        )
+        )?;
+        emit_state_update(
+            Some(app),
+            AgentStateUpdate::TaskRuntimeBindingChanged {
+                task_id: request.task_id.clone(),
+                binding: result.binding,
+            },
+        );
+        if let Some(ctx) = result.resolved_context {
+            emit_state_update(
+                Some(app),
+                AgentStateUpdate::TaskRuntimeContextResolved {
+                    task_id: request.task_id,
+                    context: ctx,
+                },
+            );
+        }
+        Ok(())
     }
 
     /// Use-Case: Update task's engine and broadcast state event.
@@ -167,12 +185,29 @@ impl MaestroCore {
         request: crate::task_state::TaskUpdateRuntimeBindingRequest,
     ) -> Result<(), String> {
         let config = self.config.get();
-        crate::task_runtime_service::update_task_runtime_context(
+        let result = task_runtime_service::update_task_runtime_context(
             app,
             &request.task_id,
             &request.engine_id,
             request.profile_id,
             &config,
-        )
+        )?;
+        emit_state_update(
+            Some(app),
+            AgentStateUpdate::TaskRuntimeBindingChanged {
+                task_id: request.task_id.clone(),
+                binding: result.binding,
+            },
+        );
+        if let Some(ctx) = result.resolved_context {
+            emit_state_update(
+                Some(app),
+                AgentStateUpdate::TaskRuntimeContextResolved {
+                    task_id: request.task_id,
+                    context: ctx,
+                },
+            );
+        }
+        Ok(())
     }
 }

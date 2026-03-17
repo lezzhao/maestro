@@ -288,7 +288,9 @@ pub fn chat_execute_api_stop(
     request: ChatExecuteStopRequest,
     core_state: State<'_, crate::core::MaestroCore>,
 ) -> Result<(), CoreError> {
-    core_state.inner().cancel_execution(&request.exec_id)
+    core_state.inner().cancel_execution(crate::core::execution_app_service::CancelTarget::ExecutionId(
+        request.exec_id.clone(),
+    ))
 }
 
 #[command]
@@ -498,7 +500,9 @@ pub fn chat_execute_cli_stop(
     request: ChatExecuteStopRequest,
     core_state: State<'_, crate::core::MaestroCore>,
 ) -> Result<(), CoreError> {
-    core_state.inner().cancel_execution(&request.exec_id)
+    core_state.inner().cancel_execution(crate::core::execution_app_service::CancelTarget::ExecutionId(
+        request.exec_id.clone(),
+    ))
 }
 
 pub fn chat_spawn_core(

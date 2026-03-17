@@ -35,6 +35,8 @@ When **FallbackProfile** is hit, the system automatically writes the resolved `p
 | **Next minor** | Remove fallback execution capability. Migration scripts only. |
 | **Future** | Remove fallback code entirely. |
 
+See **MIGRATION_FALLBACK_REMOVAL.md** for executable removal criteria and checklist.
+
 ## Scope of Removal
 
 - **In scope**: FallbackProfile, resolve_profile_id_for_update fallback, engine active_profile_id auto-set

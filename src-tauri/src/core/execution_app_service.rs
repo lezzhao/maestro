@@ -1,13 +1,33 @@
 use super::MaestroCore;
 use super::error;
 
+/// Explicit target for cancel. Avoids ambiguous id (session vs execution).
+#[derive(Debug, Clone)]
+pub enum CancelTarget {
+    /// PTY session id (chat_spawn, interactive terminal)
+    SessionId(String),
+    /// Headless execution id (chat_execute_api, chat_execute_cli)
+    ExecutionId(String),
+}
+
 impl MaestroCore {
-    /// Use-Case: Cancel an active execution
-    pub fn cancel_execution(&self, id: &str) -> Result<(), error::CoreError> {
-        if self.pty_state.kill_session(id).is_ok() {
-            return Ok(());
+    /// Use-Case: Cancel an active execution. Caller must specify target type.
+    pub fn cancel_execution(&self, target: CancelTarget) -> Result<(), error::CoreError> {
+        match target {
+            CancelTarget::SessionId(id) => self.pty_state.kill_session(&id).map_err(|e| {
+                error::CoreError::CancelFailed {
+                    id: id.clone(),
+                    reason: e,
+                }
+            }),
+            CancelTarget::ExecutionId(id) => self
+                .headless_state
+                .cancel(&id)
+                .map_err(|e| error::CoreError::CancelFailed {
+                    id: id.clone(),
+                    reason: e,
+                }),
         }
-        self.headless_state.cancel(id).map_err(|e| error::CoreError::CancelFailed { id: id.to_string(), reason: e })
     }
 
     /// Use-Case: List all executions

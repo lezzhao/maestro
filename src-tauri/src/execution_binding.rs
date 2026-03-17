@@ -20,6 +20,15 @@ use crate::task_runtime::{
 use crate::task_state::{self, bmad_db_path};
 use tauri::AppHandle;
 
+/// Distinguishes bound (task + snapshot) vs ad-hoc (config fallback) execution.
+/// Bound: reproducible, has execution binding, snapshot frozen.
+/// Adhoc: no task binding, no snapshot, config-only resolution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionBindingKind {
+    BoundSnapshot,
+    AdhocConfig,
+}
+
 /// Opaque execution preparation result. Workflow/chat consume this without knowing
 /// whether it came from task binding or config resolution.
 #[derive(Debug, Clone)]
@@ -27,6 +36,8 @@ pub struct PreparedExecution {
     pub context: ResolvedRuntimeContext,
     /// Set when binding was created (task_id path).
     pub execution_id: Option<String>,
+    /// BoundSnapshot: task-bound, has snapshot; AdhocConfig: config fallback, no binding.
+    pub binding_kind: ExecutionBindingKind,
 }
 
 /// Ensures a runtime snapshot exists for the given task.
@@ -134,6 +145,7 @@ pub fn resolve_execution(
             return Ok(PreparedExecution {
                 context: ctx,
                 execution_id: Some(execution_id),
+                binding_kind: ExecutionBindingKind::BoundSnapshot,
             });
         }
     }
@@ -141,6 +153,7 @@ pub fn resolve_execution(
     Ok(PreparedExecution {
         context: ctx,
         execution_id: None,
+        binding_kind: ExecutionBindingKind::AdhocConfig,
     })
 }
 

@@ -62,6 +62,7 @@ pub struct EngineConfig {
     #[serde(default)]
     pub profiles: BTreeMap<String, EngineProfile>,
     /// Migration-only fallback when task binding has no profile_id. Task should be runtime owner.
+    /// REMOVAL: See docs/MIGRATION_FALLBACK_REMOVAL.md. Delete when: telemetry < 1%, all task_create pass profile_id.
     #[serde(default)]
     pub active_profile_id: String,
     #[serde(flatten, skip_serializing)]
