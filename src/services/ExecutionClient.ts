@@ -26,7 +26,7 @@ export type ExecutionEvent =
   | { type: "error"; message: string };
 
 export class ExecutionClient {
-  private execId: number | null = null;
+  private execId: string | null = null;
   private isStopped = false;
 
   constructor(
@@ -34,13 +34,13 @@ export class ExecutionClient {
     private onEvent: (event: ExecutionEvent) => void
   ) {}
 
-  public async start(request: any): Promise<{ exec_id: number; run_id?: string }> {
+  public async start(request: any): Promise<{ exec_id: string; run_id?: string }> {
     this.isStopped = false;
     const onData = new Channel<string>();
     onData.onmessage = this.handleChunk.bind(this);
 
     const command = this.mode === "api" ? "chat_execute_api" : "chat_execute_cli";
-    const result = await invoke<{ exec_id: number; run_id?: string }>(command, {
+    const result = await invoke<{ exec_id: string; run_id?: string }>(command, {
       request,
       onData,
     });

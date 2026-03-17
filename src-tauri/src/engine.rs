@@ -649,7 +649,7 @@ pub async fn engine_list_models(
 #[command]
 pub fn engine_switch_session(
     engine_id: String,
-    session_id: Option<u32>,
+    session_id: Option<String>,
     core_state: State<'_, crate::core::MaestroCore>,
 ) -> Result<EngineSwitchResult, String> {
     let config: AppConfig = core_state.inner().config.get();
@@ -662,18 +662,18 @@ pub fn engine_switch_session(
     let mut killed = false;
     if let Some(id) = session_id {
         let payload = resolve_exit_payload(&engine.exit_command());
-        let _ = pty_state.write_to_session(Some(id.to_string()), &payload);
+        let _ = pty_state.write_to_session(Some(id.clone()), &payload);
         let start = Instant::now();
         while start.elapsed() < Duration::from_millis(engine.exit_timeout_ms()) {
-            if wait_exit_status(pty_state, &id.to_string()).is_some() {
-                let _ = pty_state.kill_session(&id.to_string());
+            if wait_exit_status(pty_state, &id).is_some() {
+                let _ = pty_state.kill_session(&id);
                 killed = true;
                 break;
             }
             thread::sleep(Duration::from_millis(100));
         }
         if !killed {
-            let _ = pty_state.kill_session(&id.to_string());
+            let _ = pty_state.kill_session(&id);
             killed = true;
         }
     }

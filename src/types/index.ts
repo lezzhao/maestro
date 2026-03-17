@@ -60,12 +60,12 @@ export type EngineModelListState = EngineModelListResult & {
 };
 
 export type PtySessionInfo = {
-  session_id: number;
+  session_id: string;
   os_pid?: number | null;
 };
 
 export type ProcessStats = {
-  session_id?: number | null;
+  session_id?: string | null;
   os_pid?: number | null;
   cpu_percent: number;
   memory_mb: number;
@@ -247,17 +247,17 @@ export type ChatSpawnRequest = {
 };
 
 export type ChatSendRequest = {
-  session_id: number;
+  session_id: string;
   content: string;
   append_newline?: boolean;
 };
 
 export type ChatStopRequest = {
-  session_id: number;
+  session_id: string;
 };
 
 export type ChatSessionMeta = {
-  session_id: number;
+  session_id: string;
   engine_id: string;
   profile_id: string;
   ready_signal?: string | null;
@@ -279,7 +279,7 @@ export type ChatApiRequest = {
 };
 
 export type ChatExecuteApiResult = {
-  exec_id: number;
+  exec_id: string;
   run_id: string;
   engine_id: string;
   profile_id: string;
@@ -294,7 +294,7 @@ export type ChatExecuteCliRequest = {
 };
 
 export type ChatExecuteCliResult = {
-  exec_id: number;
+  exec_id: string;
   run_id: string;
   pid?: number | null;
   engine_id: string;
@@ -302,7 +302,7 @@ export type ChatExecuteCliResult = {
 };
 
 export type ChatExecuteStopRequest = {
-  exec_id: number;
+  exec_id: string;
 };
 
 export type StepRunRequest = {
@@ -448,8 +448,11 @@ export type TaskStats = {
 export type AppTask = {
   id: string;
   name: string;
-  sessionId: number | null;
-  activeExecId?: number | null;
+  /** View-model field: currently bound runtime session for the task. */
+  sessionId: string | null;
+  /** View-model field: currently bound execution id for the task. */
+  activeExecId?: string | null;
+  /** View-model field: currently active run id for the task. */
   activeRunId?: string | null;
   status: "idle" | "running" | "error" | "completed" | "needs_review" | "verified";
   gitChanges: FileChange[];
@@ -457,6 +460,20 @@ export type AppTask = {
   created_at: number;
   updated_at: number;
 };
+
+/** Backend authoritative task entity projection. */
+export type TaskRecord = {
+  id: string;
+  title: string;
+  description: string;
+  current_state: string;
+  workspace_boundary: string;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Frontend UI projection that can enrich TaskRecord with runtime-only fields. */
+export type TaskViewModel = AppTask;
 
 export type EngineRecommendation = {
   engine_id: string;

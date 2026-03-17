@@ -22,7 +22,7 @@ type ChatStore = {
   transcriptByRun: Record<string, RunTranscriptChunk[]>;
   artifactsByRun: Record<string, RunArtifact[]>;
   verificationsByRun: Record<string, VerificationSummary | null>;
-  activeSessionId: number | null;
+  activeSessionId: string | null;
   orchestrationMode: "direct" | "auto";
   autoRetryCount: number;
   maxAutoRetries: number;
@@ -49,7 +49,7 @@ type ChatStore = {
   setRunVerification: (runId: string, verification: VerificationSummary | null) => void;
   clearTaskRuns: (taskId: string) => void;
   clearRunEvents: (taskId: string) => void;
-  setActiveSessionId: (sessionId: number | null) => void;
+  setActiveSessionId: (sessionId: string | null) => void;
   setOrchestrationMode: (mode: "direct" | "auto") => void;
   setMaxAutoRetries: (count: number) => void;
   incrementAutoRetry: () => void;

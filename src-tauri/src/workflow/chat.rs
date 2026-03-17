@@ -271,7 +271,7 @@ pub fn chat_execute_api_stop(
     request: ChatExecuteStopRequest,
     core_state: State<'_, crate::core::MaestroCore>,
 ) -> Result<(), CoreError> {
-    core_state.inner().headless_state.cancel(&request.exec_id.to_string()).map_err(|e| CoreError::CancelFailed { id: request.exec_id.to_string(), reason: e })
+    core_state.inner().cancel_execution(&request.exec_id)
 }
 
 #[command]
@@ -462,7 +462,7 @@ pub fn chat_execute_cli_stop(
     request: ChatExecuteStopRequest,
     core_state: State<'_, crate::core::MaestroCore>,
 ) -> Result<(), CoreError> {
-    core_state.inner().headless_state.cancel(&request.exec_id.to_string()).map_err(|e| CoreError::CancelFailed { id: request.exec_id.to_string(), reason: e })
+    core_state.inner().cancel_execution(&request.exec_id)
 }
 
 #[command]
@@ -562,7 +562,7 @@ pub fn chat_send(
     } else {
         request.content
     };
-    core_state.inner().pty_state.write_to_session(Some(request.session_id.to_string()), &payload).map_err(|e| CoreError::ExecutionFailed { id: request.session_id.clone(), reason: e })
+    core_state.inner().pty_state.write_to_session(Some(request.session_id.clone()), &payload).map_err(|e| CoreError::ExecutionFailed { id: request.session_id.clone(), reason: e })
 }
 
 #[command]
@@ -570,5 +570,5 @@ pub fn chat_stop(
     request: ChatStopRequest,
     core_state: State<'_, crate::core::MaestroCore>,
 ) -> Result<(), CoreError> {
-    core_state.inner().pty_state.kill_session(&request.session_id.to_string()).map_err(|e| CoreError::ExecutionFailed { id: request.session_id.clone(), reason: e })
+    core_state.inner().pty_state.kill_session(&request.session_id).map_err(|e| CoreError::ExecutionFailed { id: request.session_id.clone(), reason: e })
 }
