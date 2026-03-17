@@ -1,6 +1,6 @@
-//! Profile snapshot: immutable copy of EngineProfile for audit and migration compatibility.
+//! DO NOT USE FOR EXECUTION. Legacy-only for audit/migration.
 //!
-//! LEGACY: Do not use for new execution.
+//! Profile snapshot: immutable copy of EngineProfile for audit and migration compatibility.
 //!
 //! Snapshot semantics:
 //! - Reproducible execution uses ONLY `runtime_snapshot` (RuntimeSnapshotPayload via snapshot_repository).
