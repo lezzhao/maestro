@@ -449,6 +449,15 @@ export type TaskStats = {
 };
 
 /**
+ * JSON protocol: snake_case. Backend RuntimeResolvedFrom serialization.
+ */
+export type RuntimeResolvedFrom =
+  | "snapshot"
+  | "live_profile"
+  | "fallback_profile"
+  | "config_fallback";
+
+/**
  * Resolved execution projection. Backend authoritative.
  * The exact parameters a task will execute with (command, args, env, model, etc.).
  * Do not mix with TaskRecord or TaskRuntimeBinding in business logic.
@@ -465,11 +474,13 @@ export type ResolvedRuntimeContext = {
   model?: string | null;
   apiProvider?: string | null;
   apiBaseUrl?: string | null;
+  apiKey?: string | null;
   supportsHeadless: boolean;
+  headlessArgs: string[];
   readySignal?: string | null;
   exitCommand?: string | null;
   exitTimeoutMs?: number | null;
-  resolvedFrom: "Snapshot" | "LiveProfile" | "FallbackProfile";
+  resolvedFrom: RuntimeResolvedFrom;
 };
 
 /**

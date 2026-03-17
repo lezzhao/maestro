@@ -1,6 +1,6 @@
 use crate::config::{AppConfig, EngineConfig, EngineProfile};
 use crate::execution_binding::prepare_execution_binding_with_path;
-use crate::task_runtime::{resolve_task_runtime_context, RuntimeResolvedFrom};
+use crate::task_runtime::{resolve_task_runtime_context, ResolvedRuntimeContext, RuntimeResolvedFrom};
 use crate::task_state;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -110,4 +110,66 @@ fn breakage_contract_old_snapshot_will_not_leak_to_new_binding() {
     let raw_ctx = resolve_task_runtime_context(&db_path, &task_id, &cfg).unwrap();
     assert_eq!(raw_ctx.profile_id.as_deref(), Some("custom"));
     assert!(matches!(raw_ctx.resolved_from, RuntimeResolvedFrom::LiveProfile));
+}
+
+// 4. JSON contract: RuntimeResolvedFrom serializes to snake_case; ResolvedRuntimeContext has all execution fields
+#[test]
+fn breakage_contract_resolved_from_json_snake_case() {
+    let ctx = ResolvedRuntimeContext {
+        task_id: "t1".to_string(),
+        engine_id: "eng1".to_string(),
+        profile_id: Some("default".to_string()),
+        snapshot_id: None,
+        command: "cmd".to_string(),
+        args: vec![],
+        env: BTreeMap::new(),
+        execution_mode: "cli".to_string(),
+        model: Some("model".to_string()),
+        api_provider: None,
+        api_base_url: None,
+        api_key: None,
+        supports_headless: true,
+        headless_args: vec![],
+        ready_signal: None,
+        exit_command: None,
+        exit_timeout_ms: None,
+        resolved_from: RuntimeResolvedFrom::ConfigFallback,
+    };
+    let json = serde_json::to_value(&ctx).expect("serialize");
+    let resolved_from = json.get("resolvedFrom").and_then(|v| v.as_str()).expect("resolvedFrom");
+    assert_eq!(resolved_from, "config_fallback", "RuntimeResolvedFrom must serialize to snake_case");
+}
+
+#[test]
+fn breakage_contract_resolved_runtime_context_json_has_execution_fields() {
+    let ctx = ResolvedRuntimeContext {
+        task_id: "t1".to_string(),
+        engine_id: "eng1".to_string(),
+        profile_id: Some("default".to_string()),
+        snapshot_id: None,
+        command: "cmd".to_string(),
+        args: vec!["a".to_string(), "b".to_string()],
+        env: BTreeMap::new(),
+        execution_mode: "cli".to_string(),
+        model: Some("m".to_string()),
+        api_provider: Some("openai".to_string()),
+        api_base_url: Some("https://api.example.com".to_string()),
+        api_key: None,
+        supports_headless: true,
+        headless_args: vec!["agent".to_string()],
+        ready_signal: Some(">".to_string()),
+        exit_command: Some("ctrl-c".to_string()),
+        exit_timeout_ms: Some(3000),
+        resolved_from: RuntimeResolvedFrom::Snapshot,
+    };
+    let json = serde_json::to_value(&ctx).expect("serialize");
+    assert!(json.get("command").and_then(|v| v.as_str()).is_some());
+    assert!(json.get("args").and_then(|v| v.as_array()).is_some());
+    assert!(json.get("env").is_some());
+    assert!(json.get("executionMode").and_then(|v| v.as_str()).is_some());
+    assert!(json.get("model").is_some());
+    assert!(json.get("apiProvider").is_some());
+    assert!(json.get("apiBaseUrl").is_some());
+    assert!(json.get("headlessArgs").and_then(|v| v.as_array()).is_some());
+    assert_eq!(json.get("resolvedFrom").and_then(|v| v.as_str()), Some("snapshot"));
 }

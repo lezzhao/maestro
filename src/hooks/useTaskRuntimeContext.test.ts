@@ -91,8 +91,9 @@ describe("resolveTaskRuntimeContextFromState", () => {
         env: {},
         executionMode: "api",
         supportsHeadless: true,
-        resolvedFrom: "Snapshot"
-      }
+        headlessArgs: [],
+        resolvedFrom: "snapshot",
+      },
     });
 
     const result = resolveTaskRuntimeContextFromState(

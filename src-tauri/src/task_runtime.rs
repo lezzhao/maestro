@@ -22,7 +22,7 @@ pub struct TaskRuntimeContext {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub enum RuntimeResolvedFrom {
     Snapshot,
     LiveProfile,
@@ -222,7 +222,8 @@ pub struct ResolvedTaskRuntimeContext {
 
 /// Resolve task runtime context from DB + config.
 /// - If task has runtime_snapshot_id, loads from snapshot table (reproducibility)
-/// - Else: reads task.engine_id, task.profile_id; fallback to engine.active_profile_id (migration-only)
+/// - Else: reads task.engine_id, task.profile_id; fallback to engine.active_profile_id (migration-only).
+///   REMOVAL: See docs/MIGRATION_FALLBACK_REMOVAL.md.
 /// - When FallbackProfile is hit, solidifies by writing profile_id back to task (except when called from ensure).
 pub fn resolve_task_runtime_context(
     db_path: &Path,

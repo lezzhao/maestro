@@ -155,15 +155,16 @@ pub async fn chat_execute_api_core(
             .unwrap_or_else(|| format!("chat-api-{}-{}", request.engine_id, uuid::Uuid::new_v4()));
         (id, prepared.context)
     };
+    let exec = resolved.to_execution_config();
 
-    let provider = resolved
+    let provider = exec
         .api_provider
         .clone()
         .unwrap_or_else(|| "openai-compatible".to_string());
-    let base_url = resolved.api_base_url.clone().unwrap_or_default();
-    let api_key = resolved.api_key.clone().unwrap_or_default();
-    let model = resolved.model.clone().unwrap_or_default();
-    let command = resolved.command.clone();
+    let base_url = exec.api_base_url.clone().unwrap_or_default();
+    let api_key = exec.api_key.clone().unwrap_or_default();
+    let model = exec.model.clone().unwrap_or_default();
+    let command = exec.command.clone();
     let engine_id = resolved.engine_id.clone();
     let profile_id = resolved.profile_id.clone().unwrap_or_else(|| "default".to_string());
     let context = super::context_manager::build_chat_context(app.as_ref(), &request)
@@ -324,27 +325,28 @@ pub async fn chat_execute_cli_core(
             .unwrap_or_else(|| format!("chat-cli-{}-{}", request.engine_id, uuid::Uuid::new_v4()));
         (id, prepared.context)
     };
+    let exec = resolved.to_execution_config();
 
     let fallback_headless_args = builtin_headless_defaults(&resolved.engine_id);
-    let supports_headless = resolved.supports_headless || fallback_headless_args.is_some();
+    let supports_headless = exec.supports_headless || fallback_headless_args.is_some();
     if !supports_headless {
         return Err(CoreError::Unsupported { feature: "headless mode".to_string() });
     }
 
-    let mut args = if !resolved.headless_args.is_empty() {
-        resolved.headless_args.clone()
+    let mut args = if !exec.headless_args.is_empty() {
+        exec.headless_args.clone()
     } else if let Some(default_headless_args) = fallback_headless_args {
         default_headless_args
     } else {
-        resolved.args.clone()
+        exec.args.clone()
     };
-    args = with_model_args(args, &resolved.engine_id, &resolved.model.clone().unwrap_or_default());
+    args = with_model_args(args, &resolved.engine_id, &exec.model.clone().unwrap_or_default());
     if request.is_continuation && engine_supports_continue(&resolved.engine_id) {
         args.push("--continue".to_string());
     }
     args.push(request.prompt.clone());
 
-    let command = resolved.command.clone();
+    let command = exec.command.clone();
     let full_command_str = format!("{} {}", command, args.join(" "));
     let engine_id = resolved.engine_id.clone();
     let profile_id = resolved.profile_id.clone().unwrap_or_else(|| "default".to_string());
@@ -365,7 +367,7 @@ pub async fn chat_execute_cli_core(
         status: ExecutionStatus::Running,
         command: command.clone(),
         cwd: cfg.project.path.clone(),
-        model: resolved.model.clone().unwrap_or_default(),
+        model: exec.model.clone().unwrap_or_default(),
         created_at: now_ms,
         updated_at: now_ms,
         log_path: None,
@@ -408,7 +410,7 @@ pub async fn chat_execute_cli_core(
     } else {
         Some(cfg.project.path.clone())
     };
-    let env = resolved
+    let env = exec
         .env
         .iter()
         .map(|(k, v): (&String, &String)| (k.clone(), v.clone()))
@@ -516,6 +518,7 @@ pub fn chat_spawn_core(
         cfg,
     )?;
     let resolved = prepared.context;
+    let exec = resolved.to_execution_config();
 
     let output_buf = Arc::new(Mutex::new(String::new()));
     let output_buf_ch = Arc::clone(&output_buf);
@@ -541,20 +544,20 @@ pub fn chat_spawn_core(
     let spawn: PtySessionInfo = pty_state.spawn_session(
         session_id,
         request.task_id.clone(),
-        resolved.command.clone(),
-        with_model_args(resolved.args.clone(), &resolved.engine_id, &resolved.model.clone().unwrap_or_default()),
+        exec.command.clone(),
+        with_model_args(exec.args.clone(), &resolved.engine_id, &exec.model.clone().unwrap_or_default()),
         if cfg.project.path.trim().is_empty() {
             None
         } else {
             Some(cfg.project.path.clone())
         },
-        resolved.env.clone().into_iter().collect(),
+        exec.env.clone().into_iter().collect(),
         request.cols.unwrap_or(120).clamp(60, 240),
         request.rows.unwrap_or(36).clamp(20, 80),
         bridge,
     ).map_err(|e| CoreError::ExecutionFailed { id: "chat_spawn".to_string(), reason: e })?;
 
-    if let Some(ready_signal) = resolved.ready_signal.as_deref() {
+    if let Some(ready_signal) = exec.ready_signal.as_deref() {
         if !ready_signal.trim().is_empty() {
             let deadline = Instant::now() + Duration::from_millis(10_000);
             while Instant::now() < deadline {
@@ -575,7 +578,7 @@ pub fn chat_spawn_core(
         task_id: request.task_id.clone(),
         engine_id: resolved.engine_id,
         profile_id: resolved.profile_id.unwrap_or_else(|| "default".to_string()),
-        ready_signal: resolved.ready_signal,
+        ready_signal: exec.ready_signal.clone(),
     })
 }
 
