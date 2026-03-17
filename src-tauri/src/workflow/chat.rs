@@ -37,26 +37,6 @@ async fn last_conversation_path(app: &AppHandle) -> Result<PathBuf, CoreError> {
     Ok(dir)
 }
 
-fn resolve_profile(
-    cfg: &crate::config::AppConfig,
-    engine_id: &str,
-    profile_id: Option<&str>,
-) -> Result<crate::config::EngineProfile, CoreError> {
-    let engine = cfg
-        .engines
-        .get(engine_id)
-        .ok_or_else(|| CoreError::NotFound { resource: "engine".to_string(), id: engine_id.to_string() })?
-        .clone();
-    if let Some(pid) = profile_id {
-        engine
-            .profiles
-            .get(pid)
-            .cloned()
-            .ok_or_else(|| CoreError::NotFound { resource: "profile".to_string(), id: pid.to_string() })
-    } else {
-        Ok(engine.active_profile())
-    }
-}
 
 fn engine_supports_continue(engine_id: &str) -> bool {
     matches!(engine_id, "opencode" | "claude" | "gemini" | "codex")
@@ -161,41 +141,29 @@ pub async fn chat_execute_api_core(
     headless_state: &HeadlessProcessState,
     on_data: Arc<dyn StringStream>,
 ) -> Result<ChatExecuteApiResult, CoreError> {
-    let (execution_id, engine_id, profile_id, profile) = if let (Some(ref app_handle), Some(ref tid)) = (app.as_ref(), request.task_id.as_ref()) {
+    let (execution_id, resolved) = if let (Some(ref app_handle), Some(ref tid)) = (app.as_ref(), request.task_id.as_ref()) {
         if !tid.is_empty() {
-            let (resolved, exec_id) = prepare_execution(app_handle, tid, "chat_api", &cfg)?;
-            let mut p = resolve_profile(&cfg, &resolved.engine_id, resolved.profile_id.as_deref()).unwrap_or_default();
-            p.command = resolved.command;
-            p.args = resolved.args;
-            p.env = resolved.env;
-            p.model = resolved.model;
-            p.api_provider = resolved.api_provider;
-            p.api_base_url = resolved.api_base_url;
-            (
-                exec_id,
-                resolved.engine_id,
-                resolved.profile_id.unwrap_or_else(|| "default".to_string()),
-                p,
-            )
+            let (r, id) = prepare_execution(app_handle, tid, "chat_api", &cfg)?;
+            (id, r)
         } else {
-            let execution_id = format!("chat-api-{}-{}", request.engine_id, uuid::Uuid::new_v4());
-            let p = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
-            (execution_id, request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
+            let id = format!("chat-api-{}-{}", request.engine_id, uuid::Uuid::new_v4());
+            (id, crate::execution_binding::fallback_runtime_context(&cfg, &request.engine_id, request.profile_id.as_deref(), "api")?)
         }
     } else {
-        let execution_id = format!("chat-api-{}-{}", request.engine_id, uuid::Uuid::new_v4());
-        let p = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
-        (execution_id, request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
+        let id = format!("chat-api-{}-{}", request.engine_id, uuid::Uuid::new_v4());
+        (id, crate::execution_binding::fallback_runtime_context(&cfg, &request.engine_id, request.profile_id.as_deref(), "api")?)
     };
 
-
-
-    let provider = profile
-        .api_provider()
+    let provider = resolved
+        .api_provider
+        .clone()
         .unwrap_or_else(|| "openai-compatible".to_string());
-    let base_url = profile.api_base_url().unwrap_or_default();
-    let api_key = profile.api_key().unwrap_or_default();
-    let model = profile.model().clone();
+    let base_url = resolved.api_base_url.clone().unwrap_or_default();
+    let api_key = resolved.api_key.clone().unwrap_or_default();
+    let model = resolved.model.clone().unwrap_or_default();
+    let command = resolved.command.clone();
+    let engine_id = resolved.engine_id.clone();
+    let profile_id = resolved.profile_id.clone().unwrap_or_else(|| "default".to_string());
     let context = super::context_manager::build_chat_context(app.as_ref(), &request)
         .await
         .map_err(|reason| CoreError::ExecutionFailed {
@@ -215,9 +183,9 @@ pub async fn chat_execute_api_core(
         source: "chat_execute_api".to_string(),
         mode: ExecutionMode::Api,
         status: ExecutionStatus::Running,
-        command: profile.command().clone(),
+        command: command.clone(),
         cwd: cfg.project.path.clone(),
-        model: profile.model().clone(),
+        model: model.clone(),
         created_at: now_ms,
         updated_at: now_ms,
         log_path: None,
@@ -339,54 +307,42 @@ pub async fn chat_execute_cli_core(
     headless_state: &HeadlessProcessState,
     on_data: Arc<dyn StringStream>,
 ) -> Result<ChatExecuteCliResult, CoreError> {
-    let (execution_id, engine_id, profile_id, profile) = if let (Some(ref app_handle), Some(ref tid)) = (app.as_ref(), request.task_id.as_ref()) {
+    let (execution_id, resolved) = if let (Some(ref app_handle), Some(ref tid)) = (app.as_ref(), request.task_id.as_ref()) {
         if !tid.is_empty() {
-            let (resolved, exec_id) = prepare_execution(app_handle, tid, "chat_cli", &cfg)?;
-            let mut p = resolve_profile(&cfg, &resolved.engine_id, resolved.profile_id.as_deref()).unwrap_or_default();
-            p.command = resolved.command;
-            p.args = resolved.args;
-            p.env = resolved.env;
-            p.model = resolved.model;
-            p.supports_headless = resolved.supports_headless;
-            (
-                exec_id,
-                resolved.engine_id,
-                resolved.profile_id.unwrap_or_else(|| "default".to_string()),
-                p,
-            )
+            let (r, id) = prepare_execution(app_handle, tid, "chat_cli", &cfg)?;
+            (id, r)
         } else {
-            let execution_id = format!("chat-cli-{}-{}", request.engine_id, uuid::Uuid::new_v4());
-            let p = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
-            (execution_id, request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
+            let id = format!("chat-cli-{}-{}", request.engine_id, uuid::Uuid::new_v4());
+            (id, crate::execution_binding::fallback_runtime_context(&cfg, &request.engine_id, request.profile_id.as_deref(), "cli")?)
         }
     } else {
-        let execution_id = format!("chat-cli-{}-{}", request.engine_id, uuid::Uuid::new_v4());
-        let p = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
-        (execution_id, request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
+        let id = format!("chat-cli-{}-{}", request.engine_id, uuid::Uuid::new_v4());
+        (id, crate::execution_binding::fallback_runtime_context(&cfg, &request.engine_id, request.profile_id.as_deref(), "cli")?)
     };
 
-
-
-    let fallback_headless_args = builtin_headless_defaults(&engine_id);
-    let supports_headless = profile.supports_headless() || fallback_headless_args.is_some();
+    let fallback_headless_args = builtin_headless_defaults(&resolved.engine_id);
+    let supports_headless = resolved.supports_headless || fallback_headless_args.is_some();
     if !supports_headless {
         return Err(CoreError::Unsupported { feature: "headless mode".to_string() });
     }
 
-    let mut args = if !profile.headless_args().is_empty() {
-        profile.headless_args().clone()
+    let mut args = if !resolved.headless_args.is_empty() {
+        resolved.headless_args.clone()
     } else if let Some(default_headless_args) = fallback_headless_args {
         default_headless_args
     } else {
-        profile.args().clone()
+        resolved.args.clone()
     };
-    args = with_model_args(args, &engine_id, &profile.model());
-    if request.is_continuation && engine_supports_continue(&engine_id) {
+    args = with_model_args(args, &resolved.engine_id, &resolved.model.clone().unwrap_or_default());
+    if request.is_continuation && engine_supports_continue(&resolved.engine_id) {
         args.push("--continue".to_string());
     }
     args.push(request.prompt.clone());
 
-    let full_command_str = format!("{} {}", profile.command(), args.join(" "));
+    let command = resolved.command.clone();
+    let full_command_str = format!("{} {}", command, args.join(" "));
+    let engine_id = resolved.engine_id.clone();
+    let profile_id = resolved.profile_id.clone().unwrap_or_else(|| "default".to_string());
     if let Err(reason) = crate::plugin_engine::action_guard::ActionGuard::unwrap_default().check_command(&full_command_str) {
         return Err(CoreError::PermissionDenied { reason: format!("Blocked by ActionGuard: {reason}") });
     }
@@ -402,9 +358,9 @@ pub async fn chat_execute_cli_core(
         source: "chat_execute_cli".to_string(),
         mode: ExecutionMode::Cli,
         status: ExecutionStatus::Running,
-        command: profile.command().clone(),
+        command: command.clone(),
         cwd: cfg.project.path.clone(),
-        model: profile.model().clone(),
+        model: resolved.model.clone().unwrap_or_default(),
         created_at: now_ms,
         updated_at: now_ms,
         log_path: None,
@@ -442,14 +398,13 @@ pub async fn chat_execute_cli_core(
     let app_for_emit = app.clone();
     let task_id_for_emit = task_id.clone();
     let run_id_for_emit = run_id_for_return.clone();
-    let command = profile.command().clone();
     let cwd = if cfg.project.path.trim().is_empty() {
         None
     } else {
         Some(cfg.project.path.clone())
     };
-    let env = profile
-        .env()
+    let env = resolved
+        .env
         .iter()
         .map(|(k, v): (&String, &String)| (k.clone(), v.clone()))
         .collect::<Vec<_>>();
@@ -540,22 +495,21 @@ pub fn chat_execute_cli_stop(
 }
 
 pub fn chat_spawn_core(
+    app: Option<&AppHandle>,
     request: ChatSpawnRequest,
     cfg: &crate::config::AppConfig,
     pty_state: &crate::pty::PtyManagerState,
     on_data: Channel<String>,
 ) -> Result<ChatSessionMeta, CoreError> {
-    let engine = cfg
-        .engines
-        .get(&request.engine_id)
-        .ok_or_else(|| CoreError::NotFound { resource: "engine".to_string(), id: request.engine_id.clone() })?
-        .clone();
-    let profile = if let Some(profile_id) = request.profile_id.as_deref() {
-        engine.profiles.get(profile_id).cloned().ok_or_else(|| {
-            CoreError::NotFound { resource: "profile".to_string(), id: profile_id.to_string() }
-        })?
+    let resolved = if let (Some(app_handle), Some(ref tid)) = (app, request.task_id.as_ref()) {
+        if !tid.is_empty() {
+            let (r, _) = prepare_execution(app_handle, tid, "chat_spawn", cfg)?;
+            r
+        } else {
+            crate::execution_binding::fallback_runtime_context(cfg, &request.engine_id, request.profile_id.as_deref(), "cli")?
+        }
     } else {
-        engine.active_profile()
+        crate::execution_binding::fallback_runtime_context(cfg, &request.engine_id, request.profile_id.as_deref(), "cli")?
     };
 
     let output_buf = Arc::new(Mutex::new(String::new()));
@@ -582,20 +536,20 @@ pub fn chat_spawn_core(
     let spawn: PtySessionInfo = pty_state.spawn_session(
         session_id,
         request.task_id.clone(),
-        profile.command().clone(),
-        with_model_args(profile.args().clone(), &request.engine_id, &profile.model()),
+        resolved.command.clone(),
+        with_model_args(resolved.args.clone(), &resolved.engine_id, &resolved.model.clone().unwrap_or_default()),
         if cfg.project.path.trim().is_empty() {
             None
         } else {
             Some(cfg.project.path.clone())
         },
-        profile.env().clone().into_iter().collect(),
+        resolved.env.clone().into_iter().collect(),
         request.cols.unwrap_or(120).clamp(60, 240),
         request.rows.unwrap_or(36).clamp(20, 80),
         bridge,
     ).map_err(|e| CoreError::ExecutionFailed { id: "chat_spawn".to_string(), reason: e })?;
 
-    if let Some(ready_signal) = profile.ready_signal().as_deref() {
+    if let Some(ready_signal) = resolved.ready_signal.as_deref() {
         if !ready_signal.trim().is_empty() {
             let deadline = Instant::now() + Duration::from_millis(10_000);
             while Instant::now() < deadline {
@@ -614,19 +568,20 @@ pub fn chat_spawn_core(
     Ok(ChatSessionMeta {
         session_id: spawn.session_id.clone(),
         task_id: request.task_id.clone(),
-        engine_id: request.engine_id,
-        profile_id: profile.id.clone(),
-        ready_signal: profile.ready_signal(),
+        engine_id: resolved.engine_id,
+        profile_id: resolved.profile_id.unwrap_or_else(|| "default".to_string()),
+        ready_signal: resolved.ready_signal,
     })
 }
 
 #[command]
 pub async fn chat_spawn(
+    app: AppHandle,
     request: ChatSpawnRequest,
     core_state: State<'_, crate::core::MaestroCore>,
     on_data: Channel<String>,
 ) -> Result<ChatSessionMeta, CoreError> {
-    core_state.inner().chat_spawn(request, on_data)
+    core_state.inner().chat_spawn(Some(app), request, on_data)
 }
 
 #[command]

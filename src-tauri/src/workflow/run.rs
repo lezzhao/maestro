@@ -217,19 +217,12 @@ async fn execute_workflow_step(
     pty_state: &PtyManagerState,
 ) -> Result<(WorkflowStepResult, String), String> {
     let step_started = Instant::now();
-    let engine = cfg
-        .engines
-        .get(&step.engine)
-        .ok_or_else(|| format!("engine not found: {}", step.engine))?
-        .clone();
-    let profile =
-        if let Some(profile_id) = step.profile_id.as_deref() {
-            engine.profiles.get(profile_id).cloned().ok_or_else(|| {
-                format!("profile not found for engine {}: {profile_id}", step.engine)
-            })?
-        } else {
-            engine.active_profile()
-        };
+    let resolved = crate::execution_binding::fallback_runtime_context(
+        cfg,
+        &step.engine,
+        step.profile_id.as_deref(),
+        "workflow"
+    ).map_err(|e| format!("resolve step engine failed: {e:?}"))?;
 
     emitter.send_event(
         "workflow://progress",
@@ -245,7 +238,7 @@ async fn execute_workflow_step(
     )
     .map_err(|e| format!("emit workflow progress failed: {e}"))?;
 
-    let _mode_hint = if profile.supports_headless() {
+    let _mode_hint = if resolved.supports_headless {
         "headless"
     } else {
         "pty-fallback"
@@ -264,16 +257,16 @@ async fn execute_workflow_step(
     )
     .map_err(|e| format!("emit workflow progress failed: {e}"))?;
 
-    let result = if profile.supports_headless() {
-        let mut args = if profile.headless_args().is_empty() {
-            profile.args().clone()
+    let result = if resolved.supports_headless {
+        let mut args = if resolved.headless_args.is_empty() {
+            resolved.args.clone()
         } else {
-            profile.headless_args().clone()
+            resolved.headless_args.clone()
         };
-        args = with_model_args(args, &step.engine, &profile.model());
+        args = with_model_args(args, &step.engine, &resolved.model.clone().unwrap_or_default());
         args.push(step.prompt.clone());
 
-        let full_command_str = format!("{} {}", profile.command(), args.join(" "));
+        let full_command_str = format!("{} {}", resolved.command, args.join(" "));
         if let Err(reason) = crate::plugin_engine::action_guard::ActionGuard::unwrap_default().check_command(&full_command_str) {
             return Ok((WorkflowStepResult {
                 engine: step.engine.clone(),
@@ -286,10 +279,10 @@ async fn execute_workflow_step(
                 duration_ms: step_started.elapsed().as_millis(),
                 output: format!("Blocked by ActionGuard: {reason}"),
                 verification: None,
-            }, profile.id));
+            }, resolved.profile_id.unwrap_or_else(|| "default".to_string())));
         }
 
-        let mut command = tokio::process::Command::new(&profile.command());
+        let mut command = tokio::process::Command::new(&resolved.command);
         #[cfg(unix)]
         {
             command.process_group(0);
@@ -299,7 +292,7 @@ async fn execute_workflow_step(
         if !cfg.project.path.trim().is_empty() {
             command.current_dir(&cfg.project.path);
         }
-        for (k, v) in &profile.env() {
+        for (k, v) in &resolved.env {
             command.env(k, v);
         }
 
@@ -382,8 +375,8 @@ async fn execute_workflow_step(
             },
         }
     } else {
-        let args_for_pty = with_model_args(profile.args().clone(), &step.engine, &profile.model());
-        let full_command_str = format!("{} {} {}", profile.command(), args_for_pty.join(" "), step.prompt);
+        let args_for_pty = with_model_args(resolved.args.clone(), &step.engine, &resolved.model.clone().unwrap_or_default());
+        let full_command_str = format!("{} {} {}", resolved.command, args_for_pty.join(" "), step.prompt);
         if let Err(reason) = crate::plugin_engine::action_guard::ActionGuard::unwrap_default().check_command(&full_command_str) {
             return Ok((WorkflowStepResult {
                 engine: step.engine.clone(),
@@ -396,7 +389,7 @@ async fn execute_workflow_step(
                 duration_ms: step_started.elapsed().as_millis(),
                 output: format!("Blocked by ActionGuard: {reason}"),
                 verification: None,
-            }, profile.id));
+            }, resolved.profile_id.clone().unwrap_or_else(|| "default".to_string())));
         }
 
         let output_buf = Arc::new(Mutex::new(String::new()));
@@ -419,20 +412,20 @@ async fn execute_workflow_step(
         let spawn = pty_state.spawn_session(
             session_id,
             None,
-            profile.command().clone(),
+            resolved.command.clone(),
             args_for_pty,
             if cfg.project.path.trim().is_empty() {
                 None
             } else {
                 Some(cfg.project.path.clone())
             },
-            profile.env().clone().into_iter().collect(),
+            resolved.env.clone().into_iter().collect(),
             120,
             36,
             on_data,
         )?;
 
-        if let Some(ready_signal) = profile.ready_signal().as_deref() {
+        if let Some(ready_signal) = resolved.ready_signal.as_deref() {
             let ready_deadline =
                 Instant::now() + Duration::from_millis(step.timeout_ms.unwrap_or(15_000) / 3);
             while Instant::now() < ready_deadline {
@@ -522,7 +515,7 @@ async fn execute_workflow_step(
     )
     .map_err(|e| format!("emit workflow progress failed: {e}"))?;
 
-    Ok((result, profile.id))
+    Ok((result, resolved.profile_id.unwrap_or_else(|| "default".to_string())))
 }
 
 #[command]
