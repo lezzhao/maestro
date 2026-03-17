@@ -6,14 +6,28 @@
 //!
 //! Snapshot semantics: snapshot freezes the resolved execution contract only (RuntimeSnapshotPayload),
 //! not a profile template. Reproducible execution uses runtime_snapshot exclusively.
+//!
+//! Freeze boundary: binding points to snapshot. Executor input = snapshot frozen content
+//! (command, args, env, headless_args, etc.) + api_key runtime-injected from config.
+//! Executor does NOT use live profile for critical params; command/args/env come from snapshot.
 
 use crate::config::AppConfig;
 use crate::core::error::CoreError;
 use crate::task_runtime::{
-    resolve_task_runtime_context, ResolvedRuntimeContext, RuntimeSnapshot, RuntimeSnapshotPayload,
+    resolve_task_runtime_context, resolve_task_runtime_context_no_solidify, ResolvedRuntimeContext,
+    RuntimeSnapshot,
 };
 use crate::task_state::{self, bmad_db_path};
 use tauri::AppHandle;
+
+/// Opaque execution preparation result. Workflow/chat consume this without knowing
+/// whether it came from task binding or config resolution.
+#[derive(Debug, Clone)]
+pub struct PreparedExecution {
+    pub context: ResolvedRuntimeContext,
+    /// Set when binding was created (task_id path).
+    pub execution_id: Option<String>,
+}
 
 /// Ensures a runtime snapshot exists for the given task.
 /// If it doesn't exist, resolves the live context and freezes it.
@@ -41,26 +55,12 @@ pub fn ensure_runtime_snapshot(
         }
     }
 
-    // Resolve context from config
-    let ctx = resolve_task_runtime_context(&db_path, task_id, config)?;
+    // Resolve context from config (no solidify: we're creating snapshot, task stays as-is)
+    let ctx = resolve_task_runtime_context_no_solidify(&db_path, task_id, config)?;
 
-    // Create snapshot payload
-    let payload = RuntimeSnapshotPayload {
-        engine_id: ctx.engine_id.clone(),
-        profile_id: ctx.profile_id.clone(),
-        command: ctx.command,
-        args: ctx.args,
-        env: ctx.env,
-        execution_mode: ctx.execution_mode,
-        model: ctx.model,
-        api_provider: ctx.api_provider,
-        api_base_url: ctx.api_base_url,
-        supports_headless: ctx.supports_headless,
-        headless_args: ctx.headless_args,
-        ready_signal: ctx.ready_signal,
-        exit_command: ctx.exit_command,
-        exit_timeout_ms: ctx.exit_timeout_ms,
-    };
+    // Create snapshot payload from ResolvedExecutionConfig (excludes api_key)
+    let exec_config = ctx.to_execution_config();
+    let payload = exec_config.to_snapshot_payload(&ctx.engine_id, ctx.profile_id.as_deref());
 
     let payload_json = serde_json::to_string(&payload).map_err(|e| CoreError::Io {
         message: format!("serialize payload failed: {e}"),
@@ -115,15 +115,44 @@ pub fn prepare_execution_binding_with_path(
     Ok(ctx)
 }
 
+/// Resolve execution config. Opaque API: callers do not know if binding or config path was used.
+/// - When task_id is Some and non-empty and app is Some: uses prepare_execution_binding path.
+/// - Otherwise: resolves from config (ad-hoc execution).
+pub fn resolve_execution(
+    app: Option<&AppHandle>,
+    engine_id: &str,
+    profile_id: Option<&str>,
+    execution_mode: &str,
+    task_id: Option<&str>,
+    source: &str,
+    config: &AppConfig,
+) -> Result<PreparedExecution, CoreError> {
+    if let (Some(app_handle), Some(tid)) = (app, task_id) {
+        if !tid.is_empty() {
+            let execution_id = format!("{}-{}", source, uuid::Uuid::new_v4());
+            let ctx = prepare_execution_binding(app_handle, &execution_id, tid, config)?;
+            return Ok(PreparedExecution {
+                context: ctx,
+                execution_id: Some(execution_id),
+            });
+        }
+    }
+    let ctx = resolve_execution_from_config(config, engine_id, profile_id, execution_mode)?;
+    Ok(PreparedExecution {
+        context: ctx,
+        execution_id: None,
+    })
+}
+
 /// Create a ResolvedRuntimeContext directly from config for ad-hoc executions
-/// that are not bound to a task.
-pub fn fallback_runtime_context(
-    cfg: &crate::config::AppConfig,
+/// that are not bound to a task. Internal only; use resolve_execution instead.
+pub(crate) fn resolve_execution_from_config(
+    config: &crate::config::AppConfig,
     engine_id: &str,
     profile_id: Option<&str>,
     execution_mode: &str,
 ) -> Result<crate::task_runtime::ResolvedRuntimeContext, CoreError> {
-    let engine = cfg
+    let engine = config
         .engines
         .get(engine_id)
         .ok_or_else(|| CoreError::NotFound { resource: "engine".to_string(), id: engine_id.to_string() })?
@@ -138,6 +167,12 @@ pub fn fallback_runtime_context(
         engine.active_profile()
     };
 
+    tracing::warn!(
+        engine_id = %engine_id,
+        profile_id = ?profile_id,
+        execution_mode = %execution_mode,
+        "config fallback: ad-hoc execution without task binding"
+    );
     Ok(crate::task_runtime::ResolvedRuntimeContext {
         task_id: String::new(),
         engine_id: engine_id.to_string(),
@@ -181,23 +216,9 @@ fn ensure_runtime_snapshot_with_path(
         }
     }
 
-    let ctx = resolve_task_runtime_context(db_path, task_id, config)?;
-    let payload = RuntimeSnapshotPayload {
-        engine_id: ctx.engine_id.clone(),
-        profile_id: ctx.profile_id.clone(),
-        command: ctx.command,
-        args: ctx.args,
-        env: ctx.env,
-        execution_mode: ctx.execution_mode,
-        model: ctx.model,
-        api_provider: ctx.api_provider,
-        api_base_url: ctx.api_base_url,
-        supports_headless: ctx.supports_headless,
-        headless_args: ctx.headless_args,
-        ready_signal: ctx.ready_signal,
-        exit_command: ctx.exit_command,
-        exit_timeout_ms: ctx.exit_timeout_ms,
-    };
+    let ctx = resolve_task_runtime_context_no_solidify(db_path, task_id, config)?;
+    let exec_config = ctx.to_execution_config();
+    let payload = exec_config.to_snapshot_payload(&ctx.engine_id, ctx.profile_id.as_deref());
     let payload_json = serde_json::to_string(&payload).map_err(|e| CoreError::Io {
         message: format!("serialize payload failed: {e}"),
     })?;
@@ -375,13 +396,10 @@ mod tests {
         let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None)
             .expect("create_task");
 
-        cfg.engines
-            .get_mut("cursor")
-            .unwrap()
-            .profiles
-            .get_mut("default")
-            .unwrap()
-            .command = "frozen-cmd".to_string();
+        let profile = cfg.engines.get_mut("cursor").unwrap().profiles.get_mut("default").unwrap();
+        profile.command = "frozen-cmd".to_string();
+        profile.headless_args = vec!["agent".to_string(), "--print".to_string()];
+        profile.env.insert("FROZEN_ENV".to_string(), "frozen".to_string());
 
         let ctx = prepare_execution_binding_with_path(&db_path, "exec-1", &task_id, &cfg)
             .expect("prepare");
@@ -391,9 +409,12 @@ mod tests {
             .expect("get payload")
             .expect("payload exists");
 
+        // Executor input must equal snapshot frozen content for reproducible execution
         assert_eq!(ctx.command, payload.command);
         assert_eq!(ctx.args, payload.args);
         assert_eq!(ctx.execution_mode, payload.execution_mode);
+        assert_eq!(ctx.headless_args, payload.headless_args);
+        assert_eq!(ctx.env, payload.env);
     }
 
     #[test]
