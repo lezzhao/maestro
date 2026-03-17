@@ -136,23 +136,22 @@ function ChatMessageItemBase({ message, minimalMode, labels, isRunning, onRetry,
   return (
     <div
       className={cn(
-        "group relative flex w-full gap-3 py-2",
-        isUser ? "flex-row-reverse" : "flex-row"
+        "group relative flex w-full gap-3 py-3 px-4 border-b border-border-muted/30 hover:bg-bg-subtle transition-colors",
+        isUser ? "bg-bg-base" : "bg-bg-surface"
       )}
     >
       {/* Avatar */}
       <div className={cn(
-        "shrink-0 w-7 h-7 rounded-lg flex items-center justify-center border select-none transition-colors",
+        "shrink-0 w-7 h-7 rounded-sm flex items-center justify-center select-none transition-colors border",
         isUser 
-          ? "bg-bg-elevated text-primary-500 border-primary-500/20" 
+          ? "bg-bg-elevated text-primary-500 border-border-muted" 
           : "bg-bg-elevated text-text-muted border-border-muted"
       )}>
         {isUser ? <User size={14} /> : isAssistant ? <Bot size={14} /> : <Sparkles size={14} />}
       </div>
 
       <div className={cn(
-        "flex flex-col gap-1 w-full",
-        isUser ? "items-end" : "items-start"
+        "flex flex-col gap-1.5 w-full min-w-0"
       )}>
         {/* Role labels - only if not minimal */}
         {!minimalMode && (
@@ -163,10 +162,7 @@ function ChatMessageItemBase({ message, minimalMode, labels, isRunning, onRetry,
 
         <div
           className={cn(
-            "relative group/bubble p-4 transition-all duration-200",
-            isUser
-              ? "rounded-2xl rounded-tr-none bg-primary-500 text-white max-w-[85%]"
-              : "rounded-2xl rounded-tl-none bg-bg-surface border border-border-muted text-text-main min-w-[60px] max-w-[90%]"
+            "relative group/bubble p-0 transition-all duration-200 w-full text-text-main"
           )}
         >
           {message.attachments && message.attachments.length > 0 && (
@@ -232,8 +228,7 @@ function ChatMessageItemBase({ message, minimalMode, labels, isRunning, onRetry,
 
           {/* Controls - more discrete */}
           <div className={cn(
-            "absolute -bottom-8 opacity-0 group-hover/bubble:opacity-100 transition-opacity",
-            isUser ? "right-0" : "left-0"
+            "absolute -top-2 opacity-0 group-hover/bubble:opacity-100 transition-opacity right-0"
           )}>
             <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-bg-surface border border-border-muted shadow-lg">
               <button 

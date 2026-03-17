@@ -82,8 +82,8 @@ export function ResourcePanel({
   }, [latestRun?.status, latestVerification]);
 
   return (
-    <Panel id="resource-panel" defaultSize={320} minSize={200} className="flex flex-col gap-2 p-2 bg-bg-elevated/5">
-      <div className="h-10 shrink-0 rounded-lg border border-border-muted/30 bg-bg-surface/50 px-2 flex items-center gap-2">
+    <Panel id="resource-panel" defaultSize={320} minSize={200} className="flex flex-col bg-bg-surface border-l border-border-muted z-10">
+      <div className="flex items-center gap-1 border-b border-border-muted px-2 py-1.5 shrink-0 bg-bg-surface">
         <Button
           size="sm"
           variant={rightPanelTab === "runs" ? "default" : "outline"}
@@ -123,7 +123,7 @@ export function ResourcePanel({
           <CliSessionPanel activeEngineId={activeEngineId} activeTaskId={activeTaskId} />
         </div>
       ) : rightPanelTab === "verification" ? (
-        <div className="flex-1 min-h-0 rounded-xl border border-border-muted/30 bg-bg-surface/30 p-3 overflow-y-auto custom-scrollbar">
+        <div className="flex-1 min-h-0 p-3 overflow-y-auto custom-scrollbar">
           <div className="text-[11px] font-semibold mb-2">结构化验证结果</div>
           {!latestVerification?.has_verification || !latestVerification.test_run ? (
             <div className="text-xs text-text-muted">本轮暂无结构化验证数据。</div>
@@ -196,7 +196,7 @@ export function ResourcePanel({
           />
         </div>
       ) : (
-        <div className="flex-1 min-h-0 rounded-xl border border-border-muted/30 bg-bg-surface/30 p-3 overflow-y-auto custom-scrollbar">
+        <div className="flex-1 min-h-0 p-3 overflow-y-auto custom-scrollbar">
           <div className="text-[11px] font-semibold mb-2">结论</div>
           <div className="space-y-3 text-xs">
             <div>

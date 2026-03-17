@@ -17,6 +17,7 @@ import { cn } from "../../lib/utils";
 import { SetupPanel } from "../SetupPanel";
 import { TaskWorkspace } from "../TaskWorkspace";
 import { MainSidebar } from "../MainSidebar";
+import { ActivityBar } from "./ActivityBar";
 import { ResourcePanel, type RightPanelTab } from "../ResourcePanel";
 import { useEngine } from "../../hooks/useEngine";
 import { useProject } from "../../hooks/useProject";
@@ -74,6 +75,7 @@ export function WorkspaceLayout() {
   const [activeFile, setActiveFile] = useState<string>("");
   const [activeDiff, setActiveDiff] = useState<string>("");
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>("runs");
+  const [sidebarTab, setSidebarTab] = useState<"explorer" | "tasks">("tasks");
   const sidebarPanelRef = useRef<any>(null);
 
   const activeTaskMessages = useChatStore((s) => s.getTaskMessages(activeTaskId));
@@ -214,25 +216,30 @@ export function WorkspaceLayout() {
   const trimmedProjectPath = projectPath?.trim();
 
   return (
-    <div className="flex-1 h-full min-h-0 overflow-hidden relative">
+    <div className="flex-1 h-full min-h-0 overflow-hidden relative flex">
+      {/* Column 1: Activity Bar */}
+      <ActivityBar
+        activeTab={sidebarTab}
+        onTabChange={setSidebarTab}
+        onOpenSettings={() => setShowSettings(true)}
+        onOpenProjectPicker={() => void handleOpenProjectPicker()}
+      />
+
       <Group 
         orientation="horizontal" 
         id="app-root-group" 
-        className="w-full h-full"
+        className="flex-1 min-w-0 h-full"
       >
+        {/* Column 2: Primary Left Sidebar */}
         <MainSidebar
           panelRef={sidebarPanelRef}
           projectName={projectName}
-          onOpenSettings={() => setShowSettings(true)}
-          onOpenProjectPicker={() => void handleOpenProjectPicker()}
+          activeTab={sidebarTab}
         />
 
         <Separator
-          className="w-2 bg-transparent hover:bg-primary-500/20 active:bg-primary-500/40 transition-colors cursor-col-resize flex items-center justify-center group relative z-50 -mx-1"
-        >
-          <div className="w-px h-full bg-border-muted/40 group-hover:bg-primary-500/50" />
-          <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-12 bg-primary-500/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
-        </Separator>
+          className="w-px bg-border-muted/50 hover:bg-primary-500 active:bg-primary-600 transition-colors cursor-col-resize z-50 -mx-[0.5px]"
+        />
 
         <Panel id="panel-main" defaultSize={800} minSize={400} className="flex flex-col min-h-0 bg-bg-surface">
           {showSettings ? (
@@ -247,7 +254,7 @@ export function WorkspaceLayout() {
                        {t("back_to_workspace")}
                     </Button>
                  </div>
-                 <div className="flex-1 overflow-y-auto custom-scrollbar rounded-2xl border border-border-muted bg-bg-base p-4 shadow-sm">
+                 <div className="flex-1 overflow-y-auto custom-scrollbar border border-border-muted bg-bg-base p-4">
                      <SetupPanel
                        engines={engines}
                        enginePreflight={enginePreflight}
@@ -282,7 +289,7 @@ export function WorkspaceLayout() {
                 </div>
                 <Button 
                   size="lg" 
-                  className="rounded-xl px-8 h-12 text-sm font-semibold tracking-wide"
+                  className="rounded-sm px-8 h-12 text-sm font-semibold tracking-wide"
                   onClick={() => void handleOpenProjectPicker()}
                 >
                   <Plus size={18} className="mr-2" />
@@ -293,7 +300,7 @@ export function WorkspaceLayout() {
             <div className="h-full flex flex-col min-h-0 relative">
                <div className="h-14 border-b border-border-muted flex items-center justify-between px-4 bg-bg-surface z-10 shrink-0">
                   <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-elevated rounded-lg border border-border-muted">
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-elevated rounded-sm border border-border-muted">
                       <div className={cn("h-1.5 w-1.5 rounded-full", isEngineReady ? "bg-emerald-500" : "bg-warning-500")} />
                       <span className="text-[10px] font-semibold text-text-muted">
                         {isEngineReady ? t("ready") : t("check_req")}
@@ -336,12 +343,11 @@ export function WorkspaceLayout() {
           )}
         </Panel>
 
+        {/* Column 4: Right ContextPanel (ResourcePanel / Chat) */}
         {activeTaskId && (
           <Separator
-            className="w-2 bg-transparent hover:bg-primary-500/20 active:bg-primary-500/40 transition-colors cursor-col-resize flex items-center justify-center group relative z-50 -mx-1"
-          >
-            <div className="w-px h-full bg-border-muted/40 group-hover:bg-primary-500/50" />
-          </Separator>
+            className="w-px bg-border-muted/50 hover:bg-primary-500 active:bg-primary-600 transition-colors cursor-col-resize z-50 -mx-[0.5px]"
+          />
         )}
         {activeTaskId && (
           <ResourcePanel

@@ -37,7 +37,7 @@ export const ChatInput = memo(function ChatInput({
 
   return (
     <div className="pb-3 px-2">
-      <div className="bg-bg-surface border border-border-muted/40 rounded-xl overflow-hidden shadow-sm transition-colors focus-within:border-primary-500/40">
+      <div className="bg-bg-surface border-t border-border-muted overflow-hidden transition-colors focus-within:border-border-strong">
         {sendBlocked && (
           <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-rose-500/20 bg-rose-500/5">
             <p className="text-[11px] leading-relaxed text-rose-400">{sendBlockedReason}</p>
@@ -95,7 +95,7 @@ export const ChatInput = memo(function ChatInput({
                 className={cn(
                   "w-8 h-8 flex items-center justify-center rounded-lg transition-all",
                   canSend
-                    ? "bg-primary-500 text-white shadow-sm hover:bg-primary-600"
+                    ? "bg-primary-500 text-white hover:bg-primary-600"
                     : "text-text-muted/20 cursor-not-allowed"
                 )}
               >
@@ -118,7 +118,7 @@ export const ChatInput = memo(function ChatInput({
                 </button>
                 <button
                   onClick={handleStop}
-                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all shadow-sm"
+                  className="w-8 h-8 flex items-center justify-center rounded-lg bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all"
                 >
                   <Square size={12} fill="currentColor" />
                 </button>

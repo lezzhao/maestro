@@ -119,8 +119,8 @@ export function ChatPanel({
   }
 
   return (
-    <div className="flex flex-col h-full gap-2 px-1 animate-in fade-in duration-500">
-      <div className="flex items-center justify-between h-10 px-2 border-b border-border-muted/10 shrink-0">
+    <div className="flex flex-col h-full bg-bg-surface animate-in fade-in duration-500">
+      <div className="flex items-center justify-between h-[42px] px-3 border-b border-border-muted/30 shrink-0">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <span
@@ -141,11 +141,11 @@ export function ChatPanel({
               <span className="ml-1 opacity-50">{activeProfile?.model || "Auto"}</span>
             </span>
           </div>
-          <div className="flex items-center gap-1 rounded-md border border-border-muted px-1 py-0.5">
+          <div className="flex items-center gap-1">
             <button
               type="button"
               className={cn(
-                "px-2 py-0.5 text-[10px] rounded transition-colors",
+                "px-2 py-0.5 text-[10px] font-semibold transition-colors rounded-sm",
                 executionMode === "api"
                   ? "bg-emerald-500/15 text-emerald-500"
                   : "text-text-muted hover:text-text-main",
@@ -157,7 +157,7 @@ export function ChatPanel({
             <button
               type="button"
               className={cn(
-                "px-2 py-0.5 text-[10px] rounded transition-colors",
+                "px-2 py-0.5 text-[10px] font-semibold transition-colors rounded-sm",
                 executionMode === "cli"
                   ? "bg-amber-500/15 text-amber-500"
                   : "text-text-muted hover:text-text-main",
@@ -208,11 +208,6 @@ export function ChatPanel({
         executionPhaseLabel={executionPhaseLabel}
         showExecutionTrace={showExecutionTrace}
       />
-      <div className="px-3">
-        <div className="rounded-md border border-border-muted bg-bg-elevated px-2.5 py-1.5 text-[10px] text-text-muted">
-          聊天区用于追加约束、查看原始转录与人工纠偏，主审阅请在右侧进行。
-        </div>
-      </div>
 
       <ChatInput 
         input={input}
