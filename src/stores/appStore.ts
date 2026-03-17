@@ -135,10 +135,7 @@ export const useAppStore = create<AppStore>()(
           created_at: now,
           updated_at: now,
         };
-        set((state) => ({
-          tasks: [newTask, ...state.tasks],
-          activeTaskId: newTask.id,
-        }));
+        set({ activeTaskId: result.id });
         return newTask;
       } catch (e) {
         set({ errorMessage: String(e) });
@@ -147,13 +144,7 @@ export const useAppStore = create<AppStore>()(
     },
     setTasks: (tasks) => set({ tasks }),
     removeTask: (id) => {
-      void invoke("task_delete", { taskId: id }).then(
-        () => {
-          set((state) => ({
-            tasks: state.tasks.filter((t) => t.id !== id),
-            activeTaskId: state.activeTaskId === id ? (state.tasks[1]?.id || null) : state.activeTaskId,
-          }));
-        },
+      void invoke("task_delete", { taskId: id }).catch(
         (e) => set({ errorMessage: String(e) })
       );
     },
