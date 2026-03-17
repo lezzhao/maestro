@@ -126,10 +126,21 @@ export function useEngine() {
   const switchEngine = useCallback(
     async (engineId: string) => {
       if (activeTaskId) {
+        // Preserve task's profileId when target engine has the same profile; otherwise let backend fallback to engine.active_profile_id
+        const targetEngine = engines[engineId];
+        const profileId =
+          activeTask?.profileId &&
+          targetEngine?.profiles &&
+          targetEngine.profiles[activeTask.profileId]
+            ? activeTask.profileId
+            : null;
         await invoke("task_switch_engine", {
-          taskId: activeTaskId,
-          engineId,
-          sessionId: sessionId ?? null,
+          request: {
+            taskId: activeTaskId,
+            engineId,
+            profileId,
+            sessionId: sessionId ?? null,
+          },
         });
       } else {
         await invoke("engine_switch_session", {
@@ -139,7 +150,7 @@ export function useEngine() {
       }
       void preflightEngine(engineId, { force: true });
     },
-    [activeTaskId, preflightEngine, sessionId],
+    [activeTask, activeTaskId, engines, preflightEngine, sessionId],
   );
 
   const upsertEngine = useCallback(
@@ -157,9 +168,27 @@ export function useEngine() {
     await Promise.allSettled(ids.map((id) => preflightEngine(id)));
   }, [engines, preflightEngine]);
 
+  /** Updates engine's default profile. Does NOT change current task's profile. Use updateTaskProfile for that. */
   const setActiveProfile = useCallback(
     async (engineId: string, profileId: string) => {
       await invoke("engine_set_active_profile", { engineId, profileId });
+      clearModelCacheForEngine(engineId);
+      await refreshEngines();
+      await preflightEngine(engineId, { force: true });
+    },
+    [clearModelCacheForEngine, preflightEngine, refreshEngines],
+  );
+
+  /** Updates current task's profile binding. Use when switching profile for the active task. */
+  const updateTaskProfile = useCallback(
+    async (taskId: string, engineId: string, profileId: string) => {
+      await invoke("task_update_engine", {
+        request: {
+          taskId,
+          engineId,
+          profileId,
+        },
+      });
       clearModelCacheForEngine(engineId);
       await refreshEngines();
       await preflightEngine(engineId, { force: true });
@@ -231,6 +260,7 @@ export function useEngine() {
     switchEngine,
     upsertEngine,
     setActiveProfile,
+    updateTaskProfile,
     upsertProfile,
     listModels,
     updateProfileModel,

@@ -106,10 +106,12 @@ export const useAppStore = create<AppStore>()(
         const defaultEngine = Object.keys(engines).sort()[0] || "cursor";
 
         await invoke("task_create", {
-          title,
-          description: "",
-          engine_id: defaultEngine,
-          workspaceBoundary: "",
+          request: {
+            title,
+            description: "",
+            engineId: defaultEngine,
+            workspaceBoundary: "",
+          },
         });
         
         // We no longer manually create the TaskState here, we let the backend state broadcast 

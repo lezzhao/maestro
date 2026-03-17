@@ -36,10 +36,12 @@ export const taskMachine = setup({
       const eventReason = event.type === 'REJECT' && 'reason' in event ? event.reason : undefined;
       try {
         await invoke<string>('task_transition', {
-          taskId: context.taskId,
-          fromState: params.from,
-          eventType,
-          eventReason,
+          request: {
+            taskId: context.taskId,
+            fromState: params.from,
+            eventType,
+            eventReason,
+          },
         });
       } catch (err) {
         console.error('[taskMachine] task_transition failed:', err);

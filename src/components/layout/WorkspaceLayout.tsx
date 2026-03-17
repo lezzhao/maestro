@@ -37,6 +37,7 @@ export function WorkspaceLayout() {
     preflightAll,
     upsertEngine,
     setActiveProfile,
+    updateTaskProfile,
     upsertProfile,
     listModels,
   } = useEngine();
@@ -130,6 +131,23 @@ export function WorkspaceLayout() {
       setErrorMessageStore(`${t("switch_engine_fail")}: ${String(e)}`);
     }
   };
+
+  /** When switching profile: update task binding if we have active task on this engine, else update engine default. */
+  const handleSetActiveProfile = useCallback(
+    async (engineId: string, profileId: string) => {
+      try {
+        if (activeTaskId && engineId === activeEngineId) {
+          await updateTaskProfile(activeTaskId, engineId, profileId);
+        } else {
+          await setActiveProfile(engineId, profileId);
+        }
+        setErrorMessageStore(null);
+      } catch (e) {
+        setErrorMessageStore(`${t("switch_engine_fail")}: ${String(e)}`);
+      }
+    },
+    [activeTaskId, activeEngineId, updateTaskProfile, setActiveProfile, setErrorMessageStore, t],
+  );
 
   const handleSetExecutionMode = useCallback(
     async (mode: "api" | "cli") => {
@@ -238,7 +256,7 @@ export function WorkspaceLayout() {
                        onPreflight={preflightEngine}
                        onPreflightAll={preflightAll}
                        onSaveEngine={upsertEngine}
-                       onSetActiveProfile={setActiveProfile}
+                       onSetActiveProfile={handleSetActiveProfile}
                        onUpsertProfile={upsertProfile}
                        onFetchModels={listModels}
                        theme={theme}

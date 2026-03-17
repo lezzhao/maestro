@@ -1,3 +1,11 @@
+/**
+ * Agent state reducer: applies backend events to appStore/chatStore.
+ * Backend operations that MUST emit corresponding events for frontend sync:
+ * - task_create -> task_created
+ * - task_transition -> task_state_changed
+ * - task_delete -> task_deleted
+ * - task_switch_engine / task_update_engine -> task_engine_changed
+ */
 import type { AppTask, ChatMessage, TaskRecord, TaskRun, TaskViewModel } from "../types";
 import {
   mapTaskStateToStatus,
