@@ -349,10 +349,10 @@ impl MaestroCore {
     /// Use-Case: Switch task's engine atomically.
     /// Performs: session cleanup (if session_id provided) -> DB update -> event broadcast.
     /// Note: Session cleanup is irreversible; if DB update fails afterward, the session is already killed.
-    pub fn task_switch_engine(
+    pub fn task_switch_runtime_binding(
         &self,
         app: &AppHandle,
-        request: crate::task_state::TaskSwitchEngineRequest,
+        request: crate::task_state::TaskSwitchRuntimeBindingRequest,
     ) -> Result<(), String> {
         let config = self.config.get();
         if let Some(ref session_id) = request.session_id {
@@ -374,10 +374,10 @@ impl MaestroCore {
 
     /// Use-Case: Update task's engine and broadcast state event.
     /// Prefer task_switch_engine when session cleanup is needed (e.g. user-initiated switch).
-    pub fn task_update_engine(
+    pub fn task_update_runtime_binding(
         &self,
         app: &AppHandle,
-        request: crate::task_state::TaskUpdateEngineRequest,
+        request: crate::task_state::TaskUpdateRuntimeBindingRequest,
     ) -> Result<(), String> {
         let config = self.config.get();
         crate::task_runtime_service::update_task_runtime_context(

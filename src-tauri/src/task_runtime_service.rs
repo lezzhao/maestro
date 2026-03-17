@@ -39,14 +39,32 @@ pub fn update_task_runtime_context(
     let db_path = task_state::bmad_db_path(app)?;
     task_state::update_task_engine(&db_path, task_id, engine_id, profile_id.as_deref())?;
 
-    emit_state_update(
-        Some(app),
-        AgentStateUpdate::TaskEngineChanged {
-            task_id: task_id.to_string(),
-            engine_id: engine_id.to_string(),
-            profile_id,
-        },
-    );
+    if let Ok(Some(binding)) = task_state::get_task_runtime_binding(&db_path, task_id) {
+        emit_state_update(
+            Some(app),
+            AgentStateUpdate::TaskRuntimeBindingChanged {
+                task_id: task_id.to_string(),
+                binding,
+            },
+        );
+    }
 
+    if let Ok(ctx) = crate::task_runtime::resolve_task_runtime_context_for_app(app, task_id, config) {
+        emit_state_update(
+            Some(app),
+            AgentStateUpdate::TaskRuntimeContextResolved {
+                task_id: task_id.to_string(),
+                context: ctx,
+            },
+        );
+    }
+
+    Ok(())
+}
+
+/// Explicitly invalidate the runtime snapshot for a task.
+pub fn invalidate_runtime_snapshot(app: &AppHandle, task_id: &str) -> Result<(), String> {
+    let db_path = task_state::bmad_db_path(app)?;
+    task_state::update_task_runtime_snapshot(&db_path, task_id, None)?;
     Ok(())
 }

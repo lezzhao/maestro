@@ -4,7 +4,6 @@
 
 use crate::config::{AppConfig, EngineProfile};
 use crate::core::error::CoreError;
-use crate::profile_snapshot;
 use crate::task_state::{self, bmad_db_path};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -12,13 +11,85 @@ use tauri::AppHandle;
 
 /// Task runtime context: the authoritative binding of engine + profile for a task.
 /// Reference-style in current phase (points to config, not a snapshot).
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskRuntimeContext {
     pub engine_id: String,
     pub profile_id: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RuntimeResolvedFrom {
+    Snapshot,
+    LiveProfile,
+    FallbackProfile,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedRuntimeContext {
+    pub task_id: String,
+    pub engine_id: String,
+    pub profile_id: Option<String>,
+    pub snapshot_id: Option<String>,
+    pub command: String,
+    pub args: Vec<String>,
+    pub env: std::collections::BTreeMap<String, String>,
+    pub execution_mode: String,
+    pub model: Option<String>,
+    pub api_provider: Option<String>,
+    pub api_base_url: Option<String>,
+    pub supports_headless: bool,
+    pub ready_signal: Option<String>,
+    pub exit_command: Option<String>,
+    pub exit_timeout_ms: Option<u64>,
+    pub resolved_from: RuntimeResolvedFrom,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeSnapshotPayload {
+    pub engine_id: String,
+    pub profile_id: Option<String>,
+    pub command: String,
+    pub args: Vec<String>,
+    pub env: std::collections::BTreeMap<String, String>,
+    pub execution_mode: String,
+    pub model: Option<String>,
+    pub api_provider: Option<String>,
+    pub api_base_url: Option<String>,
+    pub supports_headless: bool,
+    pub ready_signal: Option<String>,
+    pub exit_command: Option<String>,
+    pub exit_timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeSnapshot {
+    pub id: String,
+    pub task_id: String,
+    pub engine_id: String,
+    pub profile_id: Option<String>,
+    pub payload_json: String,
+    pub reason: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutionBinding {
+    pub execution_id: String,
+    pub task_id: String,
+    pub snapshot_id: String,
+    pub engine_id: String,
+    pub profile_id: Option<String>,
+    pub created_at: String,
+}
+
 /// Resolved runtime context with the actual profile for execution.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ResolvedTaskRuntimeContext {
     pub engine_id: String,
@@ -27,13 +98,13 @@ pub struct ResolvedTaskRuntimeContext {
 }
 
 /// Resolve task runtime context from DB + config.
-/// - If task has runtime_snapshot_id, loads profile from snapshot (reproducibility)
+/// - If task has runtime_snapshot_id, loads from snapshot table (reproducibility)
 /// - Else: reads task.engine_id, task.profile_id; fallback to engine.active_profile_id
 pub fn resolve_task_runtime_context(
     db_path: &Path,
     task_id: &str,
     cfg: &AppConfig,
-) -> Result<ResolvedTaskRuntimeContext, CoreError> {
+) -> Result<ResolvedRuntimeContext, CoreError> {
     let binding = task_state::get_task_runtime_binding(db_path, task_id)
         .map_err(|e| CoreError::Io {
             message: format!("get task binding failed: {e}"),
@@ -46,23 +117,30 @@ pub fn resolve_task_runtime_context(
     // Prefer snapshot when available (reproducibility)
     if let Some(ref snapshot_id) = binding.runtime_snapshot_id {
         if !snapshot_id.is_empty() {
-            if let Ok(Some(profile)) = profile_snapshot::get_snapshot(db_path, snapshot_id) {
-                let profile_id = profile.id.clone();
-                let profile_id = if profile_id.is_empty() {
-                    binding.profile_id.clone().unwrap_or_else(|| "default".to_string())
-                } else {
-                    profile_id
-                };
-                return Ok(ResolvedTaskRuntimeContext {
+            if let Ok(Some(payload)) = crate::snapshot_repository::get_runtime_snapshot_payload(db_path, snapshot_id) {
+                return Ok(ResolvedRuntimeContext {
+                    task_id: task_id.to_string(),
                     engine_id: binding.engine_id,
-                    profile_id,
-                    profile,
+                    profile_id: binding.profile_id,
+                    snapshot_id: Some(snapshot_id.clone()),
+                    command: payload.command,
+                    args: payload.args,
+                    env: payload.env,
+                    execution_mode: payload.execution_mode,
+                    model: payload.model,
+                    api_provider: payload.api_provider,
+                    api_base_url: payload.api_base_url,
+                    supports_headless: payload.supports_headless,
+                    ready_signal: payload.ready_signal,
+                    exit_command: payload.exit_command,
+                    exit_timeout_ms: payload.exit_timeout_ms,
+                    resolved_from: RuntimeResolvedFrom::Snapshot,
                 });
             }
         }
     }
 
-    // Fallback: resolve from config (reference-style)
+    // Fallback: resolve from config
     let engine = cfg
         .engines
         .get(&binding.engine_id)
@@ -73,6 +151,7 @@ pub fn resolve_task_runtime_context(
 
     let profile_id = binding
         .profile_id
+        .clone()
         .filter(|s| !s.is_empty())
         .or_else(|| {
             let aid = &engine.active_profile_id;
@@ -89,31 +168,44 @@ pub fn resolve_task_runtime_context(
         id: "no profile in engine".to_string(),
     })?;
 
-    let (profile_id, profile) = engine
+    let resolved_from = if binding.profile_id.is_some() {
+        RuntimeResolvedFrom::LiveProfile
+    } else {
+        RuntimeResolvedFrom::FallbackProfile
+    };
+
+    let profile = engine
         .profiles
         .get(&profile_id)
-        .map(|p| (profile_id.clone(), p.clone()))
-        .or_else(|| {
-            engine
-                .profiles
-                .iter()
-                .next()
-                .map(|(id, p)| (id.clone(), p.clone()))
-        })
+        .or_else(|| engine.profiles.values().next())
         .ok_or_else(|| CoreError::NotFound {
             resource: "profile".to_string(),
             id: "no profile in engine".to_string(),
         })?;
 
-    Ok(ResolvedTaskRuntimeContext {
+    Ok(ResolvedRuntimeContext {
+        task_id: task_id.to_string(),
         engine_id: binding.engine_id,
-        profile_id,
-        profile,
+        profile_id: Some(profile_id),
+        snapshot_id: None,
+        command: profile.command(),
+        args: profile.args(),
+        env: profile.env(),
+        execution_mode: profile.execution_mode.clone().unwrap_or_else(|| "cli".to_string()),
+        model: Some(profile.model()),
+        api_provider: profile.api_provider(),
+        api_base_url: profile.api_base_url(),
+        supports_headless: profile.supports_headless(),
+        ready_signal: profile.ready_signal(),
+        exit_command: profile.exit_command.clone(),
+        exit_timeout_ms: profile.exit_timeout_ms,
+        resolved_from,
     })
 }
 
 /// Create a profile snapshot and pin the task to it (for reproducibility).
 /// Call at execution start when app and task_id are available.
+#[allow(dead_code)]
 pub fn create_snapshot_and_pin_task(
     app: &AppHandle,
     task_id: &str,
@@ -124,10 +216,37 @@ pub fn create_snapshot_and_pin_task(
     let db_path = bmad_db_path(app).map_err(|e| CoreError::Io {
         message: format!("resolve db path failed: {e}"),
     })?;
-    let snapshot_id = profile_snapshot::create_snapshot(&db_path, engine_id, profile_id, profile)
-        .map_err(|e| CoreError::Io {
-            message: format!("create snapshot failed: {e}"),
-        })?;
+    let snapshot_id = uuid::Uuid::new_v4().to_string();
+    let payload = RuntimeSnapshotPayload {
+        engine_id: engine_id.to_string(),
+        profile_id: Some(profile_id.to_string()),
+        command: profile.command(),
+        args: profile.args(),
+        env: profile.env(),
+        execution_mode: profile.execution_mode.clone().unwrap_or_else(|| "cli".to_string()),
+        model: Some(profile.model()),
+        api_provider: profile.api_provider(),
+        api_base_url: profile.api_base_url(),
+        supports_headless: profile.supports_headless(),
+        ready_signal: profile.ready_signal(),
+        exit_command: profile.exit_command.clone(),
+        exit_timeout_ms: profile.exit_timeout_ms,
+    };
+    let payload_json = serde_json::to_string(&payload).map_err(|e| CoreError::Io {
+        message: format!("serialize payload failed: {e}"),
+    })?;
+    let snapshot = RuntimeSnapshot {
+        id: snapshot_id.clone(),
+        task_id: task_id.to_string(),
+        engine_id: engine_id.to_string(),
+        profile_id: Some(profile_id.to_string()),
+        payload_json,
+        reason: "manual_freeze".to_string(),
+        created_at: "".to_string(), // Will be default by DB
+    };
+    crate::snapshot_repository::insert_runtime_snapshot(&db_path, &snapshot).map_err(|e| CoreError::Io {
+        message: format!("insert snapshot failed: {e}"),
+    })?;
     task_state::update_task_runtime_snapshot(&db_path, task_id, Some(&snapshot_id))
         .map_err(|e| CoreError::Io {
             message: format!("update task snapshot failed: {e}"),
@@ -140,7 +259,7 @@ pub fn resolve_task_runtime_context_for_app(
     app: &AppHandle,
     task_id: &str,
     cfg: &AppConfig,
-) -> Result<ResolvedTaskRuntimeContext, CoreError> {
+) -> Result<ResolvedRuntimeContext, CoreError> {
     let db_path = bmad_db_path(app).map_err(|e| CoreError::Io {
         message: format!("resolve db path failed: {e}"),
     })?;

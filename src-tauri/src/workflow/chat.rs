@@ -4,7 +4,6 @@ use crate::core::events::{ChannelStringStream, StringStream};
 use crate::config::AppConfig;
 use crate::core::error::CoreError;
 use crate::headless::HeadlessProcessState;
-use crate::task_runtime::resolve_task_runtime_context_for_app;
 use crate::plugin_engine::maestro_engine::{
     ApiChatRequest, CliChatRequest, DefaultMaestroEngine, MaestroEngine,
 };
@@ -14,6 +13,7 @@ use crate::run_persistence::{
     append_run_record, current_time_ms,
 };
 use crate::workspace_io::WorkspaceIo;
+use crate::execution_binding::prepare_execution_binding;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -161,14 +161,24 @@ pub async fn chat_execute_api_core(
     headless_state: &HeadlessProcessState,
     on_data: Arc<dyn StringStream>,
 ) -> Result<ChatExecuteApiResult, CoreError> {
+    let execution_id = format!("chat-api-{}-{}", request.engine_id, uuid::Uuid::new_v4());
     let (engine_id, profile_id, profile) = if let (Some(ref app_handle), Some(ref tid)) = (app.as_ref(), request.task_id.as_ref()) {
         if !tid.is_empty() {
-            match resolve_task_runtime_context_for_app(app_handle, tid, &cfg) {
-                Ok(resolved) => (
-                    resolved.engine_id,
-                    resolved.profile_id,
-                    resolved.profile,
-                ),
+            match prepare_execution_binding(app_handle, &execution_id, tid, &cfg) {
+                Ok(resolved) => {
+                    let mut p = resolve_profile(&cfg, &resolved.engine_id, resolved.profile_id.as_deref()).unwrap_or_default();
+                    p.command = resolved.command;
+                    p.args = resolved.args;
+                    p.env = resolved.env;
+                    p.model = resolved.model;
+                    p.api_provider = resolved.api_provider;
+                    p.api_base_url = resolved.api_base_url;
+                    (
+                        resolved.engine_id,
+                        resolved.profile_id.unwrap_or_else(|| "default".to_string()),
+                        p,
+                    )
+                },
                 Err(_) => {
                     let p = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
                     (request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
@@ -183,18 +193,7 @@ pub async fn chat_execute_api_core(
         (request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
     };
 
-    // Create snapshot and pin task for reproducibility (when app + task_id available)
-    if let (Some(ref app_handle), Some(ref tid)) = (app.as_ref(), request.task_id.as_ref()) {
-        if !tid.is_empty() && !engine_id.is_empty() && !profile_id.is_empty() {
-            let _ = crate::task_runtime::create_snapshot_and_pin_task(
-                app_handle,
-                tid,
-                &engine_id,
-                &profile_id,
-                &profile,
-            );
-        }
-    }
+
 
     let provider = profile
         .api_provider()
@@ -215,8 +214,8 @@ pub async fn chat_execute_api_core(
     
     let now_ms = current_time_ms().unwrap_or_default();
     let execution = Execution {
-        id: format!("chat-api-{}-{}", engine_id, uuid::Uuid::new_v4()),
-        engine_id: engine_id.clone(),
+        id: execution_id.clone(),
+        engine_id: engine_id.to_string(),
         task_id: task_id.clone(),
         source: "chat_execute_api".to_string(),
         mode: ExecutionMode::Api,
@@ -345,14 +344,23 @@ pub async fn chat_execute_cli_core(
     headless_state: &HeadlessProcessState,
     on_data: Arc<dyn StringStream>,
 ) -> Result<ChatExecuteCliResult, CoreError> {
+    let execution_id = format!("chat-cli-{}-{}", request.engine_id, uuid::Uuid::new_v4());
     let (engine_id, profile_id, profile) = if let (Some(ref app_handle), Some(ref tid)) = (app.as_ref(), request.task_id.as_ref()) {
         if !tid.is_empty() {
-            match resolve_task_runtime_context_for_app(app_handle, tid, &cfg) {
-                Ok(resolved) => (
-                    resolved.engine_id,
-                    resolved.profile_id,
-                    resolved.profile,
-                ),
+            match prepare_execution_binding(app_handle, &execution_id, tid, &cfg) {
+                Ok(resolved) => {
+                    let mut p = resolve_profile(&cfg, &resolved.engine_id, resolved.profile_id.as_deref()).unwrap_or_default();
+                    p.command = resolved.command;
+                    p.args = resolved.args;
+                    p.env = resolved.env;
+                    p.model = resolved.model;
+                    p.supports_headless = resolved.supports_headless;
+                    (
+                        resolved.engine_id,
+                        resolved.profile_id.unwrap_or_else(|| "default".to_string()),
+                        p,
+                    )
+                },
                 Err(_) => {
                     let p = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
                     (request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
@@ -367,18 +375,7 @@ pub async fn chat_execute_cli_core(
         (request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
     };
 
-    // Create snapshot and pin task for reproducibility (when app + task_id available)
-    if let (Some(ref app_handle), Some(ref tid)) = (app.as_ref(), request.task_id.as_ref()) {
-        if !tid.is_empty() && !engine_id.is_empty() && !profile_id.is_empty() {
-            let _ = crate::task_runtime::create_snapshot_and_pin_task(
-                app_handle,
-                tid,
-                &engine_id,
-                &profile_id,
-                &profile,
-            );
-        }
-    }
+
 
     let fallback_headless_args = builtin_headless_defaults(&engine_id);
     let supports_headless = profile.supports_headless() || fallback_headless_args.is_some();
@@ -409,8 +406,8 @@ pub async fn chat_execute_cli_core(
 
     let now_ms = current_time_ms().unwrap_or_default();
     let execution = Execution {
-        id: format!("chat-cli-{}-{}", engine_id, uuid::Uuid::new_v4()),
-        engine_id: engine_id.clone(),
+        id: execution_id.clone(),
+        engine_id: engine_id.to_string(),
         task_id: task_id.clone(),
         source: "chat_execute_cli".to_string(),
         mode: ExecutionMode::Cli,
@@ -464,7 +461,7 @@ pub async fn chat_execute_cli_core(
     let env = profile
         .env()
         .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
+        .map(|(k, v): (&String, &String)| (k.clone(), v.clone()))
         .collect::<Vec<_>>();
 
     tokio::spawn(async move {
@@ -539,7 +536,7 @@ pub async fn chat_execute_cli_core(
         exec_id,
         run_id: run_id_for_return,
         pid: None,
-        engine_id,
+        engine_id: engine_id.to_string(),
         profile_id,
     })
 }

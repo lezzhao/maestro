@@ -61,6 +61,9 @@ commands.allow = [
   "task_list",
   "task_transition",
   "task_get_state",
-  "task_switch_engine",
-  "task_update_engine"
+  "task_get_runtime_context",
+  "task_get_runtime_binding",
+  "task_refresh_runtime_snapshot",
+  "task_switch_runtime_binding",
+  "task_update_runtime_binding"
 ]

@@ -124,71 +124,6 @@ pub fn take_git_snapshot(io: &WorkspaceIo, task_id: &str, to_state: &str) -> Opt
     Some(String::from_utf8_lossy(&hash.stdout).trim().to_string())
 }
 
-/// Ensure profile_id column exists (migration for existing DBs).
-fn ensure_profile_id_column(conn: &rusqlite::Connection) -> Result<(), String> {
-    let count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name='profile_id'",
-            [],
-            |r| r.get(0),
-        )
-        .map_err(|e| format!("pragma failed: {e}"))?;
-    if count == 0 {
-        conn.execute("ALTER TABLE tasks ADD COLUMN profile_id TEXT", [])
-            .map_err(|e| format!("add profile_id column failed: {e}"))?;
-    }
-    Ok(())
-}
-
-/// Ensure runtime_snapshot_id column exists (migration for profile snapshot support).
-fn ensure_runtime_snapshot_id_column(conn: &rusqlite::Connection) -> Result<(), String> {
-    let count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name='runtime_snapshot_id'",
-            [],
-            |r| r.get(0),
-        )
-        .map_err(|e| format!("pragma failed: {e}"))?;
-    if count == 0 {
-        conn.execute("ALTER TABLE tasks ADD COLUMN runtime_snapshot_id TEXT", [])
-            .map_err(|e| format!("add runtime_snapshot_id column failed: {e}"))?;
-    }
-    Ok(())
-}
-
-/// Ensure tasks and state_transitions tables exist.
-fn ensure_tables(conn: &rusqlite::Connection) -> Result<(), String> {
-    conn.execute_batch(
-        r#"
-        CREATE TABLE IF NOT EXISTS tasks (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            description TEXT NOT NULL,
-            engine_id TEXT NOT NULL,
-            current_state TEXT NOT NULL,
-            workspace_boundary TEXT NOT NULL,
-            profile_id TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE TABLE IF NOT EXISTS state_transitions (
-            id TEXT PRIMARY KEY,
-            task_id TEXT NOT NULL,
-            from_state TEXT NOT NULL,
-            to_state TEXT NOT NULL,
-            triggered_by TEXT NOT NULL,
-            git_snapshot_hash TEXT,
-            context_reasoning TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-        "#,
-    )
-    .map_err(|e| format!("create tables failed: {e}"))?;
-    ensure_profile_id_column(conn)?;
-    ensure_runtime_snapshot_id_column(conn)?;
-    Ok(())
-}
-
 /// Log transition and update task state. Returns new state or error.
 /// When take_snapshot is true, runs git snapshot before persisting (policy-controlled).
 pub fn transition(
@@ -212,32 +147,21 @@ pub fn transition(
     };
 
     let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
-    ensure_tables(&conn)?;
+    crate::task_repository::ensure_tables(&conn)?;
 
     let transition_id = uuid::Uuid::new_v4().to_string();
-    conn.execute(
-        "INSERT INTO state_transitions (id, task_id, from_state, to_state, triggered_by, git_snapshot_hash, context_reasoning)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params![
-            transition_id,
-            task_id,
-            from_state,
-            to_str,
-            "system",
-            git_hash.as_deref(),
-            format!("Transitioned via {:?}", event),
-        ],
-    )
-    .map_err(|e| format!("log transition failed: {e}"))?;
+    crate::task_repository::insert_state_transition(
+        &conn,
+        &transition_id,
+        task_id,
+        from_state,
+        to_str,
+        "system",
+        git_hash.as_deref(),
+        &format!("Transitioned via {:?}", event),
+    )?;
 
-    conn.execute(
-        "UPDATE tasks SET current_state = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
-        rusqlite::params![to_str, task_id],
-    )
-    .map_err(|e| format!("update task state failed: {e}"))?;
-    if conn.changes() == 0 {
-        return Err(format!("task not found: {task_id}"));
-    }
+    crate::task_repository::update_task_current_state(&conn, task_id, to_str)?;
 
     Ok(to_str.to_string())
 }
@@ -250,29 +174,12 @@ pub fn update_task_engine(
     engine_id: &str,
     profile_id: Option<&str>,
 ) -> Result<(), String> {
-    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
-    ensure_tables(&conn)?;
-    conn.execute(
-        "UPDATE tasks SET engine_id = ?1, profile_id = ?2, runtime_snapshot_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?3",
-        rusqlite::params![engine_id, profile_id, task_id],
-    )
-    .map_err(|e| format!("update task engine failed: {e}"))?;
-    if conn.changes() == 0 {
-        return Err(format!("task not found: {task_id}"));
-    }
-    Ok(())
+    crate::task_repository::update_task_engine(db_path, task_id, engine_id, profile_id)
 }
 
 /// Delete a task from the database.
 pub fn delete_task(db_path: &Path, task_id: &str) -> Result<(), String> {
-    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
-    ensure_tables(&conn)?;
-    conn.execute("DELETE FROM tasks WHERE id = ?1", rusqlite::params![task_id])
-        .map_err(|e| format!("delete task failed: {e}"))?;
-    if conn.changes() == 0 {
-        return Err(format!("task not found: {task_id}"));
-    }
-    Ok(())
+    crate::task_repository::delete_task(db_path, task_id)
 }
 
 /// Create a new task in the database. Returns the created task id.
@@ -285,19 +192,16 @@ pub fn create_task(
     workspace_boundary: &str,
     profile_id: Option<&str>,
 ) -> Result<String, String> {
-    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
-    ensure_tables(&conn)?;
-
-    let id = uuid::Uuid::new_v4().to_string();
     let initial_state = TaskState::Backlog.as_str();
-
-    conn.execute(
-        "INSERT INTO tasks (id, title, description, engine_id, current_state, workspace_boundary, profile_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params![id, title, description, engine_id, initial_state, workspace_boundary, profile_id],
+    crate::task_repository::create_task(
+        db_path,
+        title,
+        description,
+        engine_id,
+        initial_state,
+        workspace_boundary,
+        profile_id,
     )
-    .map_err(|e| format!("insert task failed: {e}"))?;
-
-    Ok(id)
 }
 
 /// Resolve bmad_state.db path. Tries app_data_dir then app_config_dir to align with tauri-plugin-sql.
@@ -379,7 +283,79 @@ pub struct TaskGetStateRequest {
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TaskUpdateEngineRequest {
+pub struct TaskGetRuntimeContextRequest {
+    pub task_id: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskGetRuntimeBindingRequest {
+    pub task_id: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskRefreshRuntimeSnapshotRequest {
+    pub task_id: String,
+}
+
+#[tauri::command]
+pub async fn task_get_runtime_context(
+    app: tauri::AppHandle,
+    request: TaskGetRuntimeContextRequest,
+) -> Result<crate::task_runtime::ResolvedRuntimeContext, String> {
+    let core = app.state::<crate::core::MaestroCore>();
+    let cfg = core.config.get();
+    crate::task_runtime::resolve_task_runtime_context_for_app(&app, &request.task_id, &cfg)
+        .map_err(|e| format!("resolve context failed: {:?}", e))
+}
+
+#[tauri::command]
+pub async fn task_get_runtime_binding(
+    app: tauri::AppHandle,
+    request: TaskGetRuntimeBindingRequest,
+) -> Result<Option<TaskRuntimeBinding>, String> {
+    let db_path = bmad_db_path(&app)?;
+    get_task_runtime_binding(&db_path, &request.task_id)
+}
+
+#[tauri::command]
+pub async fn task_refresh_runtime_snapshot(
+    app: tauri::AppHandle,
+    request: TaskRefreshRuntimeSnapshotRequest,
+) -> Result<(), String> {
+    crate::task_runtime_service::invalidate_runtime_snapshot(&app, &request.task_id)?;
+    let core = app.state::<crate::core::MaestroCore>();
+    let cfg = core.config.get();
+    let _ = crate::execution_binding::ensure_runtime_snapshot(&app, &request.task_id, &cfg)
+        .map_err(|e| format!("refresh snapshot failed: {:?}", e))?;
+    
+    // Broadcast refreshed binding and context
+    let db_path = bmad_db_path(&app)?;
+    if let Ok(Some(binding)) = get_task_runtime_binding(&db_path, &request.task_id) {
+        crate::agent_state::emit_state_update(
+            Some(&app),
+            crate::agent_state::AgentStateUpdate::TaskRuntimeBindingChanged {
+                task_id: request.task_id.clone(),
+                binding,
+            },
+        );
+    }
+    if let Ok(ctx) = crate::task_runtime::resolve_task_runtime_context_for_app(&app, &request.task_id, &cfg) {
+        crate::agent_state::emit_state_update(
+            Some(&app),
+            crate::agent_state::AgentStateUpdate::TaskRuntimeContextResolved {
+                task_id: request.task_id.clone(),
+                context: ctx,
+            },
+        );
+    }
+    Ok(())
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskUpdateRuntimeBindingRequest {
     pub task_id: String,
     pub engine_id: String,
     #[serde(default)]
@@ -388,7 +364,7 @@ pub struct TaskUpdateEngineRequest {
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TaskSwitchEngineRequest {
+pub struct TaskSwitchRuntimeBindingRequest {
     pub task_id: String,
     pub engine_id: String,
     pub session_id: Option<String>,
@@ -397,21 +373,21 @@ pub struct TaskSwitchEngineRequest {
 }
 
 #[tauri::command]
-pub async fn task_switch_engine(
+pub async fn task_switch_runtime_binding(
     app: tauri::AppHandle,
-    request: TaskSwitchEngineRequest,
+    request: TaskSwitchRuntimeBindingRequest,
 ) -> Result<(), String> {
     let core = app.state::<crate::core::MaestroCore>();
-    core.task_switch_engine(&app, request)
+    core.task_switch_runtime_binding(&app, request)
 }
 
 #[tauri::command]
-pub async fn task_update_engine(
+pub async fn task_update_runtime_binding(
     app: tauri::AppHandle,
-    request: TaskUpdateEngineRequest,
+    request: TaskUpdateRuntimeBindingRequest,
 ) -> Result<(), String> {
     let core = app.state::<crate::core::MaestroCore>();
-    core.task_update_engine(&app, request)
+    core.task_update_runtime_binding(&app, request)
 }
 
 #[tauri::command]
@@ -432,40 +408,15 @@ pub async fn task_get_state(app: tauri::AppHandle, request: TaskGetStateRequest)
     core.task_get_state(&app, request)
 }
 
-/// Runtime binding info for a task (engine, profile, optional snapshot).
-pub struct TaskRuntimeBinding {
-    pub engine_id: String,
-    pub profile_id: Option<String>,
-    pub runtime_snapshot_id: Option<String>,
-}
+/// Re-export for API compatibility.
+pub use crate::task_repository::TaskRuntimeBinding;
 
 /// Get task's runtime binding (engine_id, profile_id, runtime_snapshot_id).
 pub fn get_task_runtime_binding(
     db_path: &Path,
     task_id: &str,
 ) -> Result<Option<TaskRuntimeBinding>, String> {
-    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
-    ensure_tables(&conn)?;
-    let mut stmt = conn
-        .prepare(
-            "SELECT engine_id, profile_id, runtime_snapshot_id FROM tasks WHERE id = ?1",
-        )
-        .map_err(|e| format!("prepare failed: {e}"))?;
-    let mut rows = stmt
-        .query(rusqlite::params![task_id])
-        .map_err(|e| format!("query failed: {e}"))?;
-    if let Some(row) = rows.next().map_err(|e| format!("row failed: {e}"))? {
-        let engine_id: String = row.get(0).map_err(|e| format!("get failed: {e}"))?;
-        let profile_id: Option<String> = row.get::<_, Option<String>>(1).ok().flatten();
-        let runtime_snapshot_id: Option<String> = row.get::<_, Option<String>>(2).ok().flatten();
-        Ok(Some(TaskRuntimeBinding {
-            engine_id,
-            profile_id,
-            runtime_snapshot_id,
-        }))
-    } else {
-        Ok(None)
-    }
+    crate::task_repository::get_task_runtime_binding(db_path, task_id)
 }
 
 /// Update task's runtime_snapshot_id.
@@ -474,96 +425,23 @@ pub fn update_task_runtime_snapshot(
     task_id: &str,
     snapshot_id: Option<&str>,
 ) -> Result<(), String> {
-    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
-    ensure_tables(&conn)?;
-    conn.execute(
-        "UPDATE tasks SET runtime_snapshot_id = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
-        rusqlite::params![snapshot_id, task_id],
-    )
-    .map_err(|e| format!("update runtime_snapshot_id failed: {e}"))?;
-    if conn.changes() == 0 {
-        return Err(format!("task not found: {task_id}"));
-    }
-    Ok(())
+    crate::task_repository::update_task_runtime_snapshot(db_path, task_id, snapshot_id)
 }
 
 /// Get a single task by id from DB.
+#[allow(dead_code)]
 pub fn get_task_by_id(db_path: &Path, task_id: &str) -> Result<Option<TaskRecordPayload>, String> {
-    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
-    ensure_tables(&conn)?;
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, title, description, engine_id, current_state, workspace_boundary, profile_id, created_at, updated_at FROM tasks WHERE id = ?1",
-        )
-        .map_err(|e| format!("prepare failed: {e}"))?;
-    let mut rows = stmt
-        .query(rusqlite::params![task_id])
-        .map_err(|e| format!("query failed: {e}"))?;
-    if let Some(row) = rows.next().map_err(|e| format!("row failed: {e}"))? {
-        let payload = TaskRecordPayload {
-            id: row.get(0).map_err(|e| format!("get failed: {e}"))?,
-            title: row.get(1).map_err(|e| format!("get failed: {e}"))?,
-            description: row.get(2).map_err(|e| format!("get failed: {e}"))?,
-            engine_id: row.get(3).map_err(|e| format!("get failed: {e}"))?,
-            current_state: row.get(4).map_err(|e| format!("get failed: {e}"))?,
-            workspace_boundary: row.get(5).map_err(|e| format!("get failed: {e}"))?,
-            profile_id: row.get::<_, Option<String>>(6).ok().flatten(),
-            created_at: row.get::<_, String>(7).unwrap_or_default(),
-            updated_at: row.get::<_, String>(8).unwrap_or_default(),
-        };
-        Ok(Some(payload))
-    } else {
-        Ok(None)
-    }
+    crate::task_repository::get_task_by_id(db_path, task_id)
 }
 
 /// List all tasks from DB.
 pub fn list_tasks(db_path: &Path) -> Result<Vec<TaskRecordPayload>, String> {
-    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
-    ensure_tables(&conn)?;
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, title, description, engine_id, current_state, workspace_boundary, profile_id, created_at, updated_at FROM tasks ORDER BY updated_at DESC",
-        )
-        .map_err(|e| format!("prepare failed: {e}"))?;
-    let rows = stmt
-        .query_map([], |row| {
-            Ok(TaskRecordPayload {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                description: row.get(2)?,
-                engine_id: row.get(3)?,
-                current_state: row.get(4)?,
-                workspace_boundary: row.get(5)?,
-                profile_id: row.get::<_, Option<String>>(6).ok().flatten(),
-                created_at: row.get::<_, String>(7).unwrap_or_default(),
-                updated_at: row.get::<_, String>(8).unwrap_or_default(),
-            })
-        })
-        .map_err(|e| format!("query failed: {e}"))?;
-    let mut tasks = Vec::new();
-    for row in rows {
-        tasks.push(row.map_err(|e| format!("row failed: {e}"))?);
-    }
-    Ok(tasks)
+    crate::task_repository::list_tasks(db_path)
 }
 
 /// Get current task state from DB.
 pub fn get_task_state(db_path: &Path, task_id: &str) -> Result<Option<String>, String> {
-    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
-    ensure_tables(&conn)?;
-    let mut stmt = conn
-        .prepare("SELECT current_state FROM tasks WHERE id = ?1")
-        .map_err(|e| format!("prepare failed: {e}"))?;
-    let mut rows = stmt
-        .query(rusqlite::params![task_id])
-        .map_err(|e| format!("query failed: {e}"))?;
-    if let Some(row) = rows.next().map_err(|e| format!("row failed: {e}"))? {
-        let s: String = row.get(0).map_err(|e| format!("get failed: {e}"))?;
-        Ok(Some(s))
-    } else {
-        Ok(None)
-    }
+    crate::task_repository::get_task_state(db_path, task_id)
 }
 
 #[cfg(test)]
@@ -589,7 +467,7 @@ mod tests {
     }
 
     #[test]
-    fn test_task_update_engine_persists() {
+    fn test_task_update_runtime_binding_persists() {
         let (_dir, db_path) = temp_db_path();
         let id = create_task(&db_path, "Task", "", "cursor", "{}", None).expect("create_task");
         update_task_engine(&db_path, &id, "claude", Some("haiku")).expect("update_task_engine");
@@ -615,7 +493,7 @@ mod tests {
     fn test_update_task_engine_task_not_found() {
         let (_dir, db_path) = temp_db_path();
         let conn = rusqlite::Connection::open(&db_path).unwrap();
-        ensure_tables(&conn).unwrap();
+        crate::task_repository::ensure_tables(&conn).unwrap();
         drop(conn);
         let err = update_task_engine(&db_path, "nonexistent", "cursor", None).unwrap_err();
         assert!(err.contains("task not found"));
@@ -634,13 +512,13 @@ mod tests {
     #[test]
     fn test_task_switch_engine_request_deserializes() {
         let json = r#"{"taskId":"t1","engineId":"claude","sessionId":"sess-1"}"#;
-        let req: TaskSwitchEngineRequest = serde_json::from_str(json).expect("deserialize");
+        let req: TaskSwitchRuntimeBindingRequest = serde_json::from_str(json).expect("deserialize");
         assert_eq!(req.task_id, "t1");
         assert_eq!(req.engine_id, "claude");
         assert_eq!(req.session_id.as_deref(), Some("sess-1"));
 
         let json_no_session = r#"{"taskId":"t2","engineId":"cursor"}"#;
-        let req2: TaskSwitchEngineRequest = serde_json::from_str(json_no_session).expect("deserialize");
+        let req2: TaskSwitchRuntimeBindingRequest = serde_json::from_str(json_no_session).expect("deserialize");
         assert_eq!(req2.task_id, "t2");
         assert_eq!(req2.engine_id, "cursor");
         assert!(req2.session_id.is_none());

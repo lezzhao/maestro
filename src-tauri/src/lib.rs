@@ -1,5 +1,6 @@
 mod agent_state;
 mod api_provider;
+mod task_repository;
 mod task_state;
 mod task_runtime;
 mod task_runtime_service;
@@ -11,6 +12,9 @@ mod engine;
 pub mod engines;
 mod headless;
 pub mod ipc;
+pub mod execution_binding;
+pub mod execution_binding_repository;
+pub mod snapshot_repository;
 pub mod plugin_engine;
 mod process;
 mod project;
@@ -40,7 +44,11 @@ use pty::{
 };
 use spec::{spec_detect, spec_inject, spec_list, spec_remove, spec_preview, spec_backup, spec_restore};
 use tauri::Manager;
-use task_state::{task_create, task_delete, task_get_state, task_list, task_switch_engine, task_transition, task_update_engine};
+use task_state::{
+    task_create, task_delete, task_get_runtime_binding, task_get_runtime_context, task_get_state,
+    task_list, task_refresh_runtime_snapshot, task_switch_runtime_binding, task_transition,
+    task_update_runtime_binding,
+};
 use workflow::{
     chat_execute_api, chat_execute_api_stop, chat_execute_cli, chat_execute_cli_stop,
     chat_load_last_conversation, chat_save_last_conversation, chat_send, chat_spawn, chat_stop,
@@ -119,8 +127,11 @@ pub fn run() {
             task_list,
             task_transition,
             task_get_state,
-            task_switch_engine,
-            task_update_engine,
+            task_get_runtime_context,
+            task_get_runtime_binding,
+            task_refresh_runtime_snapshot,
+            task_switch_runtime_binding,
+            task_update_runtime_binding,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri app")

@@ -5,6 +5,7 @@ use crate::config::EngineProfile;
 use rusqlite::params;
 use std::path::Path;
 
+#[allow(dead_code)]
 const TABLE_DDL: &str = r#"
 CREATE TABLE IF NOT EXISTS profile_snapshots (
     id TEXT PRIMARY KEY,
@@ -15,6 +16,7 @@ CREATE TABLE IF NOT EXISTS profile_snapshots (
 );
 "#;
 
+#[allow(dead_code)]
 fn ensure_table(conn: &rusqlite::Connection) -> Result<(), String> {
     conn.execute_batch(TABLE_DDL)
         .map_err(|e| format!("create profile_snapshots table failed: {e}"))?;
@@ -22,6 +24,7 @@ fn ensure_table(conn: &rusqlite::Connection) -> Result<(), String> {
 }
 
 /// Create a snapshot of the given profile. Returns the snapshot id.
+#[allow(dead_code)]
 pub fn create_snapshot(
     db_path: &Path,
     engine_id: &str,
@@ -45,6 +48,7 @@ pub fn create_snapshot(
 }
 
 /// Get a profile snapshot by id. Returns None if not found or invalid.
+#[allow(dead_code)]
 pub fn get_snapshot(db_path: &Path, snapshot_id: &str) -> Result<Option<EngineProfile>, String> {
     let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
     ensure_table(&conn)?;

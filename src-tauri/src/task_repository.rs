@@ -1,0 +1,325 @@
+//! Task CRUD and schema for bmad_state.db.
+//! All SQL for tasks and state_transitions tables lives here.
+
+use crate::agent_state::TaskRecordPayload;
+use std::path::Path;
+
+/// Runtime binding info for a task (engine, profile, optional snapshot).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskRuntimeBinding {
+    pub engine_id: String,
+    pub profile_id: Option<String>,
+    pub runtime_snapshot_id: Option<String>,
+}
+
+/// Ensure profile_id column exists (migration for existing DBs).
+fn ensure_profile_id_column(conn: &rusqlite::Connection) -> Result<(), String> {
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name='profile_id'",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| format!("pragma failed: {e}"))?;
+    if count == 0 {
+        conn.execute("ALTER TABLE tasks ADD COLUMN profile_id TEXT", [])
+            .map_err(|e| format!("add profile_id column failed: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Ensure runtime_snapshot_id column exists (migration for profile snapshot support).
+fn ensure_runtime_snapshot_id_column(conn: &rusqlite::Connection) -> Result<(), String> {
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name='runtime_snapshot_id'",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| format!("pragma failed: {e}"))?;
+    if count == 0 {
+        conn.execute("ALTER TABLE tasks ADD COLUMN runtime_snapshot_id TEXT", [])
+            .map_err(|e| format!("add runtime_snapshot_id column failed: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Ensure tasks and state_transitions tables exist.
+pub fn ensure_tables(conn: &rusqlite::Connection) -> Result<(), String> {
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS tasks (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            engine_id TEXT NOT NULL,
+            current_state TEXT NOT NULL,
+            workspace_boundary TEXT NOT NULL,
+            profile_id TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS state_transitions (
+            id TEXT PRIMARY KEY,
+            task_id TEXT NOT NULL,
+            from_state TEXT NOT NULL,
+            to_state TEXT NOT NULL,
+            triggered_by TEXT NOT NULL,
+            git_snapshot_hash TEXT,
+            context_reasoning TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS runtime_snapshots (
+            id TEXT PRIMARY KEY,
+            task_id TEXT NOT NULL,
+            engine_id TEXT NOT NULL,
+            profile_id TEXT,
+            payload_json TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS execution_bindings (
+            execution_id TEXT PRIMARY KEY,
+            task_id TEXT NOT NULL,
+            snapshot_id TEXT NOT NULL,
+            engine_id TEXT NOT NULL,
+            profile_id TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        "#,
+    )
+    .map_err(|e| format!("create tables failed: {e}"))?;
+    ensure_profile_id_column(conn)?;
+    ensure_runtime_snapshot_id_column(conn)?;
+    Ok(())
+}
+
+/// Insert a state transition record.
+pub fn insert_state_transition(
+    conn: &rusqlite::Connection,
+    transition_id: &str,
+    task_id: &str,
+    from_state: &str,
+    to_state: &str,
+    triggered_by: &str,
+    git_snapshot_hash: Option<&str>,
+    context_reasoning: &str,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO state_transitions (id, task_id, from_state, to_state, triggered_by, git_snapshot_hash, context_reasoning)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params![
+            transition_id,
+            task_id,
+            from_state,
+            to_state,
+            triggered_by,
+            git_snapshot_hash,
+            context_reasoning,
+        ],
+    )
+    .map_err(|e| format!("log transition failed: {e}"))?;
+    Ok(())
+}
+
+/// Update task's current_state.
+pub fn update_task_current_state(
+    conn: &rusqlite::Connection,
+    task_id: &str,
+    to_state: &str,
+) -> Result<(), String> {
+    conn.execute(
+        "UPDATE tasks SET current_state = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
+        rusqlite::params![to_state, task_id],
+    )
+    .map_err(|e| format!("update task state failed: {e}"))?;
+    if conn.changes() == 0 {
+        return Err(format!("task not found: {task_id}"));
+    }
+    Ok(())
+}
+
+/// Create a new task in the database. Returns the created task id.
+pub fn create_task(
+    db_path: &Path,
+    title: &str,
+    description: &str,
+    engine_id: &str,
+    current_state: &str,
+    workspace_boundary: &str,
+    profile_id: Option<&str>,
+) -> Result<String, String> {
+    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
+    ensure_tables(&conn)?;
+
+    let id = uuid::Uuid::new_v4().to_string();
+    conn.execute(
+        "INSERT INTO tasks (id, title, description, engine_id, current_state, workspace_boundary, profile_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params![id, title, description, engine_id, current_state, workspace_boundary, profile_id],
+    )
+    .map_err(|e| format!("insert task failed: {e}"))?;
+
+    Ok(id)
+}
+
+/// Update a task's engine_id and profile_id in the database.
+/// Clears runtime_snapshot_id so task uses fresh config until next execution.
+pub fn update_task_engine(
+    db_path: &Path,
+    task_id: &str,
+    engine_id: &str,
+    profile_id: Option<&str>,
+) -> Result<(), String> {
+    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
+    ensure_tables(&conn)?;
+    conn.execute(
+        "UPDATE tasks SET engine_id = ?1, profile_id = ?2, runtime_snapshot_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?3",
+        rusqlite::params![engine_id, profile_id, task_id],
+    )
+    .map_err(|e| format!("update task engine failed: {e}"))?;
+    if conn.changes() == 0 {
+        return Err(format!("task not found: {task_id}"));
+    }
+    Ok(())
+}
+
+/// Delete a task from the database.
+pub fn delete_task(db_path: &Path, task_id: &str) -> Result<(), String> {
+    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
+    ensure_tables(&conn)?;
+    conn.execute("DELETE FROM tasks WHERE id = ?1", rusqlite::params![task_id])
+        .map_err(|e| format!("delete task failed: {e}"))?;
+    if conn.changes() == 0 {
+        return Err(format!("task not found: {task_id}"));
+    }
+    Ok(())
+}
+
+/// Get task's runtime binding (engine_id, profile_id, runtime_snapshot_id).
+pub fn get_task_runtime_binding(
+    db_path: &Path,
+    task_id: &str,
+) -> Result<Option<TaskRuntimeBinding>, String> {
+    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
+    ensure_tables(&conn)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT engine_id, profile_id, runtime_snapshot_id FROM tasks WHERE id = ?1",
+        )
+        .map_err(|e| format!("prepare failed: {e}"))?;
+    let mut rows = stmt
+        .query(rusqlite::params![task_id])
+        .map_err(|e| format!("query failed: {e}"))?;
+    if let Some(row) = rows.next().map_err(|e| format!("row failed: {e}"))? {
+        let engine_id: String = row.get(0).map_err(|e| format!("get failed: {e}"))?;
+        let profile_id: Option<String> = row.get::<_, Option<String>>(1).ok().flatten();
+        let runtime_snapshot_id: Option<String> = row.get::<_, Option<String>>(2).ok().flatten();
+        Ok(Some(TaskRuntimeBinding {
+            engine_id,
+            profile_id,
+            runtime_snapshot_id,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Update task's runtime_snapshot_id.
+pub fn update_task_runtime_snapshot(
+    db_path: &Path,
+    task_id: &str,
+    snapshot_id: Option<&str>,
+) -> Result<(), String> {
+    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
+    ensure_tables(&conn)?;
+    conn.execute(
+        "UPDATE tasks SET runtime_snapshot_id = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
+        rusqlite::params![snapshot_id, task_id],
+    )
+    .map_err(|e| format!("update runtime_snapshot_id failed: {e}"))?;
+    if conn.changes() == 0 {
+        return Err(format!("task not found: {task_id}"));
+    }
+    Ok(())
+}
+
+/// Get a single task by id from DB.
+#[allow(dead_code)]
+pub fn get_task_by_id(db_path: &Path, task_id: &str) -> Result<Option<TaskRecordPayload>, String> {
+    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
+    ensure_tables(&conn)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, title, description, engine_id, current_state, workspace_boundary, profile_id, created_at, updated_at FROM tasks WHERE id = ?1",
+        )
+        .map_err(|e| format!("prepare failed: {e}"))?;
+    let mut rows = stmt
+        .query(rusqlite::params![task_id])
+        .map_err(|e| format!("query failed: {e}"))?;
+    if let Some(row) = rows.next().map_err(|e| format!("row failed: {e}"))? {
+        let payload = TaskRecordPayload {
+            id: row.get(0).map_err(|e| format!("get failed: {e}"))?,
+            title: row.get(1).map_err(|e| format!("get failed: {e}"))?,
+            description: row.get(2).map_err(|e| format!("get failed: {e}"))?,
+            engine_id: row.get(3).map_err(|e| format!("get failed: {e}"))?,
+            current_state: row.get(4).map_err(|e| format!("get failed: {e}"))?,
+            workspace_boundary: row.get(5).map_err(|e| format!("get failed: {e}"))?,
+            profile_id: row.get::<_, Option<String>>(6).ok().flatten(),
+            created_at: row.get::<_, String>(7).unwrap_or_default(),
+            updated_at: row.get::<_, String>(8).unwrap_or_default(),
+        };
+        Ok(Some(payload))
+    } else {
+        Ok(None)
+    }
+}
+
+/// List all tasks from DB.
+pub fn list_tasks(db_path: &Path) -> Result<Vec<TaskRecordPayload>, String> {
+    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
+    ensure_tables(&conn)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, title, description, engine_id, current_state, workspace_boundary, profile_id, created_at, updated_at FROM tasks ORDER BY updated_at DESC",
+        )
+        .map_err(|e| format!("prepare failed: {e}"))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(TaskRecordPayload {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                description: row.get(2)?,
+                engine_id: row.get(3)?,
+                current_state: row.get(4)?,
+                workspace_boundary: row.get(5)?,
+                profile_id: row.get::<_, Option<String>>(6).ok().flatten(),
+                created_at: row.get::<_, String>(7).unwrap_or_default(),
+                updated_at: row.get::<_, String>(8).unwrap_or_default(),
+            })
+        })
+        .map_err(|e| format!("query failed: {e}"))?;
+    let mut tasks = Vec::new();
+    for row in rows {
+        tasks.push(row.map_err(|e| format!("row failed: {e}"))?);
+    }
+    Ok(tasks)
+}
+
+/// Get current task state from DB.
+pub fn get_task_state(db_path: &Path, task_id: &str) -> Result<Option<String>, String> {
+    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
+    ensure_tables(&conn)?;
+    let mut stmt = conn
+        .prepare("SELECT current_state FROM tasks WHERE id = ?1")
+        .map_err(|e| format!("prepare failed: {e}"))?;
+    let mut rows = stmt
+        .query(rusqlite::params![task_id])
+        .map_err(|e| format!("query failed: {e}"))?;
+    if let Some(row) = rows.next().map_err(|e| format!("row failed: {e}"))? {
+        let s: String = row.get(0).map_err(|e| format!("get failed: {e}"))?;
+        Ok(Some(s))
+    } else {
+        Ok(None)
+    }
+}

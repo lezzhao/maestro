@@ -39,6 +39,14 @@ pub enum AgentStateUpdate {
         #[serde(skip_serializing_if = "Option::is_none")]
         profile_id: Option<String>,
     },
+    TaskRuntimeBindingChanged {
+        task_id: String,
+        binding: crate::task_state::TaskRuntimeBinding,
+    },
+    TaskRuntimeContextResolved {
+        task_id: String,
+        context: crate::task_runtime::ResolvedRuntimeContext,
+    },
     ExecutionStarted {
         task_id: String,
         run_id: String,
