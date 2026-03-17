@@ -441,7 +441,7 @@ impl MaestroCore {
         engine_id: String,
         session_id: Option<String>,
     ) -> Result<crate::engine::EngineSwitchResult, String> {
-        crate::engine::engine_switch_session_core(
+        crate::engine::cleanup_session_for_task_engine_switch(
             engine_id,
             session_id,
             self.config.get(),

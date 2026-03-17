@@ -10,7 +10,8 @@ pub struct EngineSwitchResult {
     pub previous_session_killed: bool,
 }
 
-pub fn engine_switch_session_core(
+/// Clean up old CLI session when switching task's engine.
+pub fn cleanup_session_for_task_engine_switch(
     engine_id: String,
     session_id: Option<String>,
     config: AppConfig,
