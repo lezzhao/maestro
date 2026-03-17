@@ -1,3 +1,9 @@
+//! Execution preparation: the single entry for reproducible execution.
+//!
+//! All execution entries that produce run records MUST go through `prepare_execution` or
+//! `prepare_execution_binding`. Flow: task binding -> resolved runtime -> runtime snapshot
+//! -> execution binding -> run.
+
 use crate::config::AppConfig;
 use crate::core::error::CoreError;
 use crate::task_runtime::{
@@ -165,6 +171,20 @@ fn ensure_runtime_snapshot_with_path(
             message: format!("update task snapshot failed: {e}"),
         })?;
     Ok(snapshot_id)
+}
+
+/// Unified execution preparation entry. Generates execution_id and prepares binding.
+/// Returns (ResolvedRuntimeContext, execution_id) for callers to use in Execution records.
+/// All execution entries must use this or prepare_execution_binding.
+pub fn prepare_execution(
+    app: &AppHandle,
+    task_id: &str,
+    source: &str,
+    config: &AppConfig,
+) -> Result<(ResolvedRuntimeContext, String), CoreError> {
+    let execution_id = format!("{}-{}", source, uuid::Uuid::new_v4());
+    let ctx = prepare_execution_binding(app, &execution_id, task_id, config)?;
+    Ok((ctx, execution_id))
 }
 
 /// Prepares the execution binding for a new run.

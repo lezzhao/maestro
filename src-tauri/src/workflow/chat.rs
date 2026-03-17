@@ -13,7 +13,7 @@ use crate::run_persistence::{
     append_run_record, current_time_ms,
 };
 use crate::workspace_io::WorkspaceIo;
-use crate::execution_binding::prepare_execution_binding;
+use crate::execution_binding::prepare_execution;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -161,36 +161,31 @@ pub async fn chat_execute_api_core(
     headless_state: &HeadlessProcessState,
     on_data: Arc<dyn StringStream>,
 ) -> Result<ChatExecuteApiResult, CoreError> {
-    let execution_id = format!("chat-api-{}-{}", request.engine_id, uuid::Uuid::new_v4());
-    let (engine_id, profile_id, profile) = if let (Some(ref app_handle), Some(ref tid)) = (app.as_ref(), request.task_id.as_ref()) {
+    let (execution_id, engine_id, profile_id, profile) = if let (Some(ref app_handle), Some(ref tid)) = (app.as_ref(), request.task_id.as_ref()) {
         if !tid.is_empty() {
-            match prepare_execution_binding(app_handle, &execution_id, tid, &cfg) {
-                Ok(resolved) => {
-                    let mut p = resolve_profile(&cfg, &resolved.engine_id, resolved.profile_id.as_deref()).unwrap_or_default();
-                    p.command = resolved.command;
-                    p.args = resolved.args;
-                    p.env = resolved.env;
-                    p.model = resolved.model;
-                    p.api_provider = resolved.api_provider;
-                    p.api_base_url = resolved.api_base_url;
-                    (
-                        resolved.engine_id,
-                        resolved.profile_id.unwrap_or_else(|| "default".to_string()),
-                        p,
-                    )
-                },
-                Err(e) => {
-                    // When task_id is provided, execution must go through unified binding. Do not silently fallback.
-                    return Err(e);
-                }
-            }
+            let (resolved, exec_id) = prepare_execution(app_handle, tid, "chat_api", &cfg)?;
+            let mut p = resolve_profile(&cfg, &resolved.engine_id, resolved.profile_id.as_deref()).unwrap_or_default();
+            p.command = resolved.command;
+            p.args = resolved.args;
+            p.env = resolved.env;
+            p.model = resolved.model;
+            p.api_provider = resolved.api_provider;
+            p.api_base_url = resolved.api_base_url;
+            (
+                exec_id,
+                resolved.engine_id,
+                resolved.profile_id.unwrap_or_else(|| "default".to_string()),
+                p,
+            )
         } else {
+            let execution_id = format!("chat-api-{}-{}", request.engine_id, uuid::Uuid::new_v4());
             let p = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
-            (request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
+            (execution_id, request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
         }
     } else {
+        let execution_id = format!("chat-api-{}-{}", request.engine_id, uuid::Uuid::new_v4());
         let p = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
-        (request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
+        (execution_id, request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
     };
 
 
@@ -344,35 +339,30 @@ pub async fn chat_execute_cli_core(
     headless_state: &HeadlessProcessState,
     on_data: Arc<dyn StringStream>,
 ) -> Result<ChatExecuteCliResult, CoreError> {
-    let execution_id = format!("chat-cli-{}-{}", request.engine_id, uuid::Uuid::new_v4());
-    let (engine_id, profile_id, profile) = if let (Some(ref app_handle), Some(ref tid)) = (app.as_ref(), request.task_id.as_ref()) {
+    let (execution_id, engine_id, profile_id, profile) = if let (Some(ref app_handle), Some(ref tid)) = (app.as_ref(), request.task_id.as_ref()) {
         if !tid.is_empty() {
-            match prepare_execution_binding(app_handle, &execution_id, tid, &cfg) {
-                Ok(resolved) => {
-                    let mut p = resolve_profile(&cfg, &resolved.engine_id, resolved.profile_id.as_deref()).unwrap_or_default();
-                    p.command = resolved.command;
-                    p.args = resolved.args;
-                    p.env = resolved.env;
-                    p.model = resolved.model;
-                    p.supports_headless = resolved.supports_headless;
-                    (
-                        resolved.engine_id,
-                        resolved.profile_id.unwrap_or_else(|| "default".to_string()),
-                        p,
-                    )
-                },
-                Err(e) => {
-                    // When task_id is provided, execution must go through unified binding. Do not silently fallback.
-                    return Err(e);
-                }
-            }
+            let (resolved, exec_id) = prepare_execution(app_handle, tid, "chat_cli", &cfg)?;
+            let mut p = resolve_profile(&cfg, &resolved.engine_id, resolved.profile_id.as_deref()).unwrap_or_default();
+            p.command = resolved.command;
+            p.args = resolved.args;
+            p.env = resolved.env;
+            p.model = resolved.model;
+            p.supports_headless = resolved.supports_headless;
+            (
+                exec_id,
+                resolved.engine_id,
+                resolved.profile_id.unwrap_or_else(|| "default".to_string()),
+                p,
+            )
         } else {
+            let execution_id = format!("chat-cli-{}-{}", request.engine_id, uuid::Uuid::new_v4());
             let p = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
-            (request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
+            (execution_id, request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
         }
     } else {
+        let execution_id = format!("chat-cli-{}-{}", request.engine_id, uuid::Uuid::new_v4());
         let p = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
-        (request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
+        (execution_id, request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
     };
 
 

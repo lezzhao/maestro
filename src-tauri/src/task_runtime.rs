@@ -26,6 +26,8 @@ pub enum RuntimeResolvedFrom {
     FallbackProfile,
 }
 
+/// Stable contract: authoritative execution context. Do not add/remove fields without migration.
+/// All reproducible execution reads from this (via snapshot) or equivalent.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolvedRuntimeContext {
@@ -47,6 +49,7 @@ pub struct ResolvedRuntimeContext {
     pub resolved_from: RuntimeResolvedFrom,
 }
 
+/// Stable contract: frozen execution config for reproducibility. Snapshot only freezes resolved execution contract.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeSnapshotPayload {
@@ -65,6 +68,7 @@ pub struct RuntimeSnapshotPayload {
     pub exit_timeout_ms: Option<u64>,
 }
 
+/// Stable contract: snapshot record linking task to frozen payload. Do not add/remove fields without migration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeSnapshot {
@@ -77,6 +81,7 @@ pub struct RuntimeSnapshot {
     pub created_at: String,
 }
 
+/// Stable contract: execution-to-snapshot binding. Every run must trace back to an ExecutionBinding.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExecutionBinding {
