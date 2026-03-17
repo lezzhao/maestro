@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { applyAgentStateUpdate, toTaskViewModel, type AgentStateUpdate } from "./agentStateReducer";
 import type { AppTask, ChatMessage, TaskRun, TaskViewModel } from "../types";
 
-function mockTaskRecord(id: string) {
+function mockTaskRecord(id: string, overrides?: Partial<{ profile_id: string | null }>) {
   return {
     id,
     title: `task-${id}`,
@@ -10,6 +10,7 @@ function mockTaskRecord(id: string) {
     engine_id: "cursor",
     current_state: "BACKLOG",
     workspace_boundary: "{}",
+    profile_id: overrides?.profile_id,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -150,5 +151,33 @@ describe("agentStateReducer integration", () => {
       id: "a",
       patch: { engineId: "claude", sessionId: null },
     });
+  });
+
+  it("maps task_created with profile_id to TaskViewModel profileId", () => {
+    const record = mockTaskRecord("p1", { profile_id: "review_profile" });
+    const vm = toTaskViewModel(record);
+    expect(vm.profileId).toBe("review_profile");
+  });
+
+  it("task_engine_changed updates only the target task, leaving others untouched", () => {
+    const taskA = toTaskViewModel(mockTaskRecord("a"));
+    taskA.sessionId = "sess-a";
+    taskA.engineId = "cursor";
+    const taskB = toTaskViewModel(mockTaskRecord("b"));
+    taskB.sessionId = "sess-b";
+    taskB.engineId = "claude";
+    const h = makeDeps([taskA, taskB], "a");
+
+    applyAgentStateUpdate(
+      { type: "task_engine_changed", task_id: "a", engine_id: "gemini" },
+      h.deps,
+    );
+
+    expect(h.updatedTasks).toHaveLength(1);
+    expect(h.updatedTasks[0]).toEqual({
+      id: "a",
+      patch: { engineId: "gemini", sessionId: null },
+    });
+    expect(h.updatedTasks.some((u) => u.id === "b")).toBe(false);
   });
 });
