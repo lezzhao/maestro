@@ -69,7 +69,7 @@ export function WorkspaceLayout() {
     setLang: s.setLang,
   })));
 
-  const updateTask = useAppStore((s) => s.updateTask);
+  const updateTaskRecord = useAppStore((s) => s.updateTaskRecord);
   const gitChanges = activeTask?.gitChanges || [];
 
   const [activeFile, setActiveFile] = useState<string>("");
@@ -97,15 +97,15 @@ export function WorkspaceLayout() {
     if (!projectPath || !activeTaskId) return;
     try {
       const status = await gitStatus(projectPath, options);
-      updateTask(activeTaskId, { gitChanges: status });
+      updateTaskRecord(activeTaskId, { gitChanges: status });
     } catch (e) {
       const msg = String(e);
-      updateTask(activeTaskId, { gitChanges: [] });
+      updateTaskRecord(activeTaskId, { gitChanges: [] });
       if (!/不是 git 仓库|not a git repository/i.test(msg)) {
         setErrorMessageStore(`${t("read_git_status_fail")}: ${msg}`);
       }
     }
-  }, [gitStatus, projectPath, activeTaskId, setErrorMessageStore, t, updateTask]);
+  }, [gitStatus, projectPath, activeTaskId, setErrorMessageStore, t, updateTaskRecord]);
 
   const loadGitDiff = useCallback(
     async (filePath?: string, options?: { force?: boolean }) => {

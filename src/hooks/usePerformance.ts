@@ -27,7 +27,7 @@ export function usePerformance() {
           if (!tid) return;
           const task = state.tasks.find((t) => t.id === tid);
           const prev = task?.stats;
-          state.updateTask(tid, {
+          state.updateTaskRecord(tid, {
             stats: {
               cpu_percent: event.payload.cpu_percent,
               memory_mb: event.payload.memory_mb,

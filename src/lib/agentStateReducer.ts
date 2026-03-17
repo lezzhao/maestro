@@ -42,7 +42,7 @@ type AgentReducerDeps = {
   appendRunTranscript: (runId: string, content: string) => void;
   setMessages: (taskId: string, messages: ChatMessage[]) => void;
   setTasks: (tasks: TaskViewModel[]) => void;
-  updateTask: (id: string, patch: Partial<AppTask>) => void;
+  updateTaskRecord: (id: string, patch: Partial<import("../types").TaskViewState>) => void;
   updateTaskRuntimeBinding: (taskId: string, binding: import("../types").TaskRuntimeBinding) => void;
   setTaskResolvedRuntimeContext: (taskId: string, context: import("../types").ResolvedRuntimeContext) => void;
   getAppState: () => { tasks: TaskViewModel[]; activeTaskId: string | null };
@@ -68,7 +68,7 @@ export function applyAgentStateUpdate(payload: AgentStateUpdate, deps: AgentRedu
       break;
     }
     case "task_state_changed":
-      deps.updateTask(payload.task_id, {
+      deps.updateTaskRecord(payload.task_id, {
         status: mapTaskStateToStatus(payload.to_state),
         updated_at: Date.now(),
       });

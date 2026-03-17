@@ -25,14 +25,14 @@ function makeDeps(seedTasks: TaskViewModel[] = [], activeTaskId: string | null =
   const createdRuns: TaskRun[] = [];
   const finishedRuns: Array<{ runId: string; status: "done" | "error" | "stopped"; error?: string | null }> = [];
   const messagesByTask: Record<string, ChatMessage[]> = {};
-  const updatedTasks: Array<{ id: string; patch: Partial<AppTask> }> = [];
+  const updatedTaskRecords: Array<{ id: string; patch: Partial<import("../types").TaskViewState> }> = [];
 
   return {
     state,
     createdRuns,
     finishedRuns,
     messagesByTask,
-    updatedTasks,
+    updatedTaskRecords,
     deps: {
       createRun: vi.fn((run: TaskRun) => createdRuns.push(run)),
       finishRun: vi.fn((runId: string, status: "done" | "error" | "stopped", error?: string | null) => {
@@ -47,8 +47,8 @@ function makeDeps(seedTasks: TaskViewModel[] = [], activeTaskId: string | null =
       setTasks: vi.fn((tasks: TaskViewModel[]) => {
         state.tasks = tasks;
       }),
-      updateTask: vi.fn((id: string, patch: Partial<AppTask>) => {
-        updatedTasks.push({ id, patch });
+      updateTaskRecord: vi.fn((id: string, patch: Partial<import("../types").TaskViewState>) => {
+        updatedTaskRecords.push({ id, patch });
       }),
       updateTaskRuntimeBinding: vi.fn(),
       setTaskResolvedRuntimeContext: vi.fn(),
@@ -169,6 +169,25 @@ describe("agentStateReducer integration", () => {
     const record = mockTaskRecord("p1", { profile_id: "review_profile" });
     const vm = toTaskViewModel(record);
     expect(vm.profileId).toBe("review_profile");
+  });
+
+  it("handles task_state_changed by calling updateTaskRecord with status", () => {
+    const taskA = toTaskViewModel(mockTaskRecord("a"));
+    const h = makeDeps([taskA], "a");
+
+    applyAgentStateUpdate(
+      {
+        type: "task_state_changed",
+        task_id: "a",
+        from_state: "BACKLOG",
+        to_state: "IN_PROGRESS",
+      },
+      h.deps,
+    );
+
+    expect(h.deps.updateTaskRecord).toHaveBeenCalledWith("a", expect.objectContaining({
+      status: "running",
+    }));
   });
 
   it("task_runtime_binding_changed updates only the target task via updateTaskRuntimeBinding", () => {

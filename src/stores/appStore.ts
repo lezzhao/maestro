@@ -5,6 +5,7 @@ import type {
   EngineConfig,
   EnginePreflightResult,
   AppTask,
+  TaskViewState,
 } from "../types";
 
 type AppStore = {
@@ -42,6 +43,9 @@ type AppStore = {
   setTasks: (tasks: AppTask[]) => void;
   removeTask: (id: string) => void;
   setActiveTaskId: (id: string | null) => void;
+  /** Updates task record fields only (id, name, status, gitChanges, stats, created_at, updated_at). */
+  updateTaskRecord: (id: string, patch: Partial<TaskViewState>) => void;
+  /** @deprecated Use updateTaskRecord + updateTaskRuntimeBinding per layer. Delegates by splitting patch. */
   updateTask: (id: string, patch: Partial<AppTask>) => void;
   updateActiveTask: (patch: Partial<AppTask>) => void;
   setTaskResolvedRuntimeContext: (id: string, ctx: import("../types").ResolvedRuntimeContext | null) => void;
@@ -131,6 +135,12 @@ export const useAppStore = create<AppStore>()(
       );
     },
     setActiveTaskId: (activeTaskId) => set({ activeTaskId }),
+    updateTaskRecord: (id, patch) =>
+      set((state) => ({
+        tasks: state.tasks.map((t) =>
+          t.id === id ? { ...t, ...patch, updated_at: Date.now() } : t
+        ),
+      })),
     updateTask: (id, patch) =>
       set((state) => ({
         tasks: state.tasks.map((t) =>

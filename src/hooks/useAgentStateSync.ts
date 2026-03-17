@@ -20,7 +20,7 @@ export function useAgentStateSync() {
   const appendRunTranscript = useChatStore((s) => s.appendRunTranscript);
   const setMessages = useChatStore((s) => s.setMessages);
   const setTasks = useAppStore((s) => s.setTasks);
-  const updateTask = useAppStore((s) => s.updateTask);
+  const updateTaskRecord = useAppStore((s) => s.updateTaskRecord);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -35,7 +35,7 @@ export function useAgentStateSync() {
         appendRunTranscript,
         setMessages,
         setTasks,
-        updateTask,
+        updateTaskRecord,
         setTaskResolvedRuntimeContext: useAppStore.getState().setTaskResolvedRuntimeContext,
         updateTaskRuntimeBinding: useAppStore.getState().updateTaskRuntimeBinding,
         getAppState: () => useAppStore.getState(),
@@ -76,5 +76,5 @@ export function useAgentStateSync() {
     return () => {
       unlisten?.();
     };
-  }, [createRun, finishRun, appendRunTranscript, setMessages, setTasks, updateTask]);
+  }, [createRun, finishRun, appendRunTranscript, setMessages, setTasks, updateTaskRecord]);
 }

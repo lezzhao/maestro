@@ -27,7 +27,8 @@ export function useChatSession({
   executionMode,
 }: UseChatSessionParams) {
   const { t } = useTranslation();
-  const updateTask = useAppStore((s) => s.updateTask);
+  const updateTaskRecord = useAppStore((s) => s.updateTaskRecord);
+  const updateTaskRuntimeBinding = useAppStore((s) => s.updateTaskRuntimeBinding);
   const setErrorMessage = useAppStore((s) => s.setErrorMessage);
 
   const isRunning = useChatStore((s) => s.getTaskRunning(activeTaskId));
@@ -108,7 +109,7 @@ export function useChatSession({
         : verification?.has_verification
           ? "needs_review"
           : "completed";
-    updateTask(activeTaskId, { status: nextStatus });
+    updateTaskRecord(activeTaskId, { status: nextStatus });
 
     emitRunEvent({
       kind: "status",
@@ -122,7 +123,7 @@ export function useChatSession({
       finishRun(finishedRunId, "done", null);
       currentRunIdRef.current = null;
     }
-    updateTask(activeTaskId, { activeExecId: null, activeRunId: null, sessionId: null });
+    updateTaskRuntimeBinding(activeTaskId, { activeExecId: null, activeRunId: null, sessionId: null });
     cliContinuationRef.current = executionMode === "cli";
     window.setTimeout(() => setExecutionPhase("idle"), 600);
 
@@ -142,7 +143,8 @@ export function useChatSession({
     setRunning,
     setTaskRunning,
     updateMessage,
-    updateTask,
+    updateTaskRecord,
+    updateTaskRuntimeBinding,
   ]);
 
   const failRound = useCallback(
@@ -150,7 +152,7 @@ export function useChatSession({
       if (!activeTaskId) return;
       setExecutionPhase("error");
       setErrorMessage(`${t("execution_error")}: ${errText}`);
-      updateTask(activeTaskId, { status: "error" });
+      updateTaskRecord(activeTaskId, { status: "error" });
 
       const assistantId = activeAssistantIdRef.current;
       if (assistantId) {
@@ -173,7 +175,7 @@ export function useChatSession({
         finishRun(currentRunIdRef.current, "error", errText);
         currentRunIdRef.current = null;
       }
-      updateTask(activeTaskId, { activeExecId: null, activeRunId: null, sessionId: null });
+      updateTaskRuntimeBinding(activeTaskId, { activeExecId: null, activeRunId: null, sessionId: null });
       cliContinuationRef.current = false;
 
       const next = popQueue();
@@ -198,11 +200,14 @@ export function useChatSession({
       finishRun,
       popQueue,
       setErrorMessage,
+      updateTaskRecord,
+      updateTaskRuntimeBinding,
       setRunning,
       setTaskRunning,
       t,
       updateMessage,
-      updateTask,
+      updateTaskRecord,
+      updateTaskRuntimeBinding,
     ],
   );
 
@@ -299,7 +304,8 @@ export function useChatSession({
       setTaskRunning(activeTaskId, true);
       isExecutingRef.current = true;
       setExecutionPhase("connecting");
-      updateTask(activeTaskId, { status: "running", sessionId: null, activeExecId: null, activeRunId: null });
+      updateTaskRecord(activeTaskId, { status: "running" });
+      updateTaskRuntimeBinding(activeTaskId, { sessionId: null, activeExecId: null, activeRunId: null });
 
       const assistantMsg = createMessage("assistant", "", {
         status: "streaming",
@@ -351,7 +357,7 @@ export function useChatSession({
           mode,
         });
 
-        updateTask(activeTaskId, { activeExecId: result.exec_id, activeRunId: runId });
+        updateTaskRuntimeBinding(activeTaskId, { activeExecId: result.exec_id, activeRunId: runId });
         // updateRun when run exists (created by run_created event)
         updateRun(runId, { status: "running" });
       } catch (err) {
@@ -387,7 +393,8 @@ export function useChatSession({
       setTaskRunning,
       startExecution,
       updateRun,
-      updateTask,
+      updateTaskRecord,
+      updateTaskRuntimeBinding,
     ],
   );
 
@@ -507,7 +514,8 @@ export function useChatSession({
     setTaskRunning(activeTaskId, false);
     setRunning(false);
     setExecutionPhase("idle");
-    updateTask(activeTaskId, { status: "idle", activeExecId: null, activeRunId: null, sessionId: null });
+    updateTaskRecord(activeTaskId, { status: "idle" });
+    updateTaskRuntimeBinding(activeTaskId, { activeExecId: null, activeRunId: null, sessionId: null });
     emitRunEvent({
       kind: "notice",
       status: "done",
