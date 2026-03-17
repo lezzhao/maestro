@@ -2,7 +2,6 @@ use crate::core::execution::Execution;
 use crate::workspace_io::WorkspaceIo;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::PathBuf;
 use std::sync::Mutex;
 
 static RUN_RECORDS_LOCK: Mutex<()> = Mutex::new(());
@@ -14,19 +13,10 @@ pub fn current_time_ms() -> Result<i64, String> {
         .as_millis() as i64)
 }
 
-pub fn resolve_root_dir_from_project_path(project_path: &str) -> Result<PathBuf, String> {
-    let configured = project_path.trim();
-    if !configured.is_empty() {
-        return Ok(PathBuf::from(configured));
-    }
-    std::env::current_dir().map_err(|e| format!("resolve current dir failed: {e}"))
-}
-
-pub fn append_run_record(root: &PathBuf, record: &Execution) -> Result<(), String> {
+pub fn append_run_record(workspace_io: &WorkspaceIo, record: &Execution) -> Result<(), String> {
     let _guard = RUN_RECORDS_LOCK
         .lock()
         .map_err(|_| "lock run records failed".to_string())?;
-    let workspace_io = WorkspaceIo::new(root)?;
     let path = workspace_io.resolve(".maestro-cli/run-records.jsonl")?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("create run record dir failed: {e}"))?;
@@ -43,11 +33,10 @@ pub fn append_run_record(root: &PathBuf, record: &Execution) -> Result<(), Strin
     Ok(())
 }
 
-pub fn read_run_records(root: &PathBuf) -> Result<Vec<Execution>, String> {
+pub fn read_run_records(workspace_io: &WorkspaceIo) -> Result<Vec<Execution>, String> {
     let _guard = RUN_RECORDS_LOCK
         .lock()
         .map_err(|_| "lock run records failed".to_string())?;
-    let workspace_io = WorkspaceIo::new(root)?;
     let path = workspace_io.resolve(".maestro-cli/run-records.jsonl")?;
     if !path.exists() {
         return Ok(vec![]);
@@ -76,11 +65,10 @@ pub fn read_run_records(root: &PathBuf) -> Result<Vec<Execution>, String> {
     Ok(records)
 }
 
-pub fn rewrite_run_records(root: &PathBuf, records: &[Execution]) -> Result<(), String> {
+pub fn rewrite_run_records(workspace_io: &WorkspaceIo, records: &[Execution]) -> Result<(), String> {
     let _guard = RUN_RECORDS_LOCK
         .lock()
         .map_err(|_| "lock run records failed".to_string())?;
-    let workspace_io = WorkspaceIo::new(root)?;
     let path = workspace_io.resolve(".maestro-cli/run-records.jsonl")?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("create run record dir failed: {e}"))?;
@@ -102,17 +90,17 @@ pub fn rewrite_run_records(root: &PathBuf, records: &[Execution]) -> Result<(), 
     Ok(())
 }
 
-pub fn remove_records_by_task_id(root: &PathBuf, task_id: &str) -> Result<usize, String> {
+pub fn remove_records_by_task_id(workspace_io: &WorkspaceIo, task_id: &str) -> Result<usize, String> {
     if task_id.trim().is_empty() {
         return Ok(0);
     }
-    let mut records = read_run_records(root)?;
+    let mut records = read_run_records(workspace_io)?;
     let before = records.len();
     records.retain(|item| item.task_id != task_id);
     if records.len() == before {
         return Ok(0);
     }
-    rewrite_run_records(root, &records)?;
+    rewrite_run_records(workspace_io, &records)?;
     Ok(before.saturating_sub(records.len()))
 }
 
@@ -147,13 +135,14 @@ mod tests {
     fn remove_records_by_task_id_keeps_other_tasks() {
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path().to_path_buf();
-        append_run_record(&root, &mock_execution("r1", "t1")).expect("append r1");
-        append_run_record(&root, &mock_execution("r2", "t2")).expect("append r2");
+        let io = WorkspaceIo::new(&root).expect("io");
+        append_run_record(&io, &mock_execution("r1", "t1")).expect("append r1");
+        append_run_record(&io, &mock_execution("r2", "t2")).expect("append r2");
 
-        let removed = remove_records_by_task_id(&root, "t1").expect("remove t1");
+        let removed = remove_records_by_task_id(&io, "t1").expect("remove t1");
         assert_eq!(removed, 1);
 
-        let remaining = read_run_records(&root).expect("read records");
+        let remaining = read_run_records(&io).expect("read records");
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].id, "r2");
         assert_eq!(remaining[0].task_id, "t2");

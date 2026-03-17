@@ -95,6 +95,15 @@ impl MaestroCore {
         chat_execute_cli_core(app, request, self.config.get(), &self.headless_state, on_data).await
     }
 
+    /// Use-Case: Chat spawn - creates a raw pseudo-terminal session for CLI chat
+    pub fn chat_spawn(
+        &self,
+        request: crate::workflow::types::ChatSpawnRequest,
+        on_data: Channel<String>,
+    ) -> Result<crate::workflow::types::ChatSessionMeta, error::CoreError> {
+        crate::workflow::chat::chat_spawn_core(request, &self.config.get(), &self.pty_state, on_data)
+    }
+
     /// Use-Case: Cancel an active execution
     pub fn cancel_execution(&self, id: &str) -> Result<(), error::CoreError> {
         if self.pty_state.kill_session(id).is_ok() {
@@ -105,14 +114,22 @@ impl MaestroCore {
 
     /// Use-Case: List all executions
     pub fn list_executions(&self) -> Result<Vec<crate::core::execution::Execution>, error::CoreError> {
-        let root_dir = crate::run_persistence::resolve_root_dir_from_project_path(&self.config.get().project.path).unwrap_or_else(|_| {
-            let mut pb = std::path::PathBuf::from(&self.config.get().project.path);
-            pb.push(".maestro-cli");
-            pb
-        });
-        
-        let records = crate::run_persistence::read_run_records(&root_dir).unwrap_or_default();
+        let io = self.workspace_io().map_err(|e| error::CoreError::Io {
+            message: format!("workspace_io failed: {e}"),
+        })?;
+        let records = crate::run_persistence::read_run_records(&io).unwrap_or_default();
         Ok(records)
+    }
+
+    /// Use-Case: Get WorkspaceIo instance for current project
+    pub fn workspace_io(&self) -> Result<crate::workspace_io::WorkspaceIo, String> {
+        let path = self.config.get().project.path.clone();
+        let project = if path.trim().is_empty() {
+            std::env::current_dir().map_err(|e| format!("resolve current dir failed: {e}"))?
+        } else {
+            std::path::PathBuf::from(path)
+        };
+        crate::workspace_io::WorkspaceIo::new(&project)
     }
 
     /// Use-Case: Fetch logs for an execution
@@ -136,12 +153,11 @@ impl MaestroCore {
 
     /// Use-Case: Reconcile active executions against running OS processes
     pub fn reconcile(&self) -> Result<(), error::CoreError> {
-        let root_dir = crate::run_persistence::resolve_root_dir_from_project_path(&self.config.get().project.path)
-            .map_err(|reason| error::CoreError::ValidationError {
-                field: "project.path".to_string(),
-                message: reason,
-            })?;
-        let mut records = crate::run_persistence::read_run_records(&root_dir).map_err(|e| {
+        let io = self.workspace_io().map_err(|reason| error::CoreError::ValidationError {
+            field: "project.path".to_string(),
+            message: reason,
+        })?;
+        let mut records = crate::run_persistence::read_run_records(&io).map_err(|e| {
             error::CoreError::Io {
                 message: format!("read run records failed: {e}"),
             }
@@ -164,7 +180,7 @@ impl MaestroCore {
                 continue;
             }
             let headless_active = self.headless_state.get_execution(&item.id).is_some();
-            let pty_active = self.pty_state.active_os_pid(Some(item.id.clone())).is_some();
+            let pty_active = self.pty_state.active_os_pid(&item.id).is_some();
             if !headless_active && !pty_active {
                 item.status = crate::core::execution::ExecutionStatus::Failed;
                 if item.error.is_none() {
@@ -174,13 +190,30 @@ impl MaestroCore {
             }
         }
         if changed {
-            crate::run_persistence::rewrite_run_records(&root_dir, &records).map_err(|e| {
+            crate::run_persistence::rewrite_run_records(&io, &records).map_err(|e| {
                 error::CoreError::Io {
                     message: format!("rewrite run records failed: {e}"),
                 }
             })?;
         }
         Ok(())
+    }
+
+    /// Use-Case: Save last conversation state
+    pub async fn chat_save_last_conversation(
+        &self,
+        app: AppHandle,
+        payload: serde_json::Value,
+    ) -> Result<(), error::CoreError> {
+        crate::workflow::chat::chat_save_last_conversation_core(app, payload).await
+    }
+
+    /// Use-Case: Load last conversation state
+    pub async fn chat_load_last_conversation(
+        &self,
+        app: AppHandle,
+    ) -> Result<Option<serde_json::Value>, error::CoreError> {
+        crate::workflow::chat::chat_load_last_conversation_core(app).await
     }
 
     /// Use-Case: Export an execution as an archive
@@ -275,8 +308,7 @@ impl MaestroCore {
             .lock()
             .expect("deleted_task_ids lock poisoned")
             .insert(task_id.clone());
-        let root_dir = crate::run_persistence::resolve_root_dir_from_project_path(&self.config.get().project.path)?;
-        let _ = crate::run_persistence::remove_records_by_task_id(&root_dir, &task_id);
+        let _ = self.workspace_io().and_then(|io| crate::run_persistence::remove_records_by_task_id(&io, &task_id));
         let _ = self.pty_state.kill_sessions_by_task(&task_id);
         emit_state_update(
             Some(app),
@@ -419,18 +451,12 @@ impl MaestroCore {
             .spawn_session(session_id, task_id, file, args, cwd, env, cols, rows, on_data)
     }
 
-    pub fn pty_write(&self, session_id: Option<String>, data: String) -> Result<(), String> {
-        if session_id.is_none() {
-            return Err("session_id is required; implicit active session is not supported".to_string());
-        }
-        self.pty_state.write_to_session(session_id, &data)
+    pub fn pty_write(&self, session_id: String, data: String) -> Result<(), String> {
+        self.pty_state.write_to_session(&session_id, &data)
     }
 
-    pub fn pty_resize(&self, session_id: Option<String>, cols: u16, rows: u16) -> Result<(), String> {
-        if session_id.is_none() {
-            return Err("session_id is required; implicit active session is not supported".to_string());
-        }
-        self.pty_state.resize_session(session_id, cols, rows)
+    pub fn pty_resize(&self, session_id: String, cols: u16, rows: u16) -> Result<(), String> {
+        self.pty_state.resize_session(&session_id, cols, rows)
     }
 
     pub fn pty_kill(&self, session_id: String) -> Result<(), String> {
@@ -443,9 +469,5 @@ impl MaestroCore {
 
     pub fn pty_cleanup_dead_sessions(&self) -> usize {
         self.pty_state.cleanup_dead_sessions()
-    }
-
-    pub fn pty_active_session(&self) -> Option<PtySessionInfo> {
-        self.pty_state.active_session()
     }
 }
