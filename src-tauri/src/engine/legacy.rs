@@ -1,0 +1,91 @@
+use crate::config::{EngineConfig, EngineProfile};
+use std::collections::BTreeMap;
+use tauri::{command, State, AppHandle};
+
+use super::{
+    config::{
+        engine_list_core, engine_set_active_core,
+        engine_set_active_profile_core, engine_upsert_core, engine_upsert_profile_core,
+    },
+    models::{engine_list_models_core, EngineModelListResult},
+    preflight::{engine_preflight_core, EnginePreflightResult},
+    runtime::{engine_switch_session_core, EngineSwitchResult},
+};
+
+#[command]
+pub fn engine_list(core_state: State<'_, crate::core::MaestroCore>) -> Result<BTreeMap<String, EngineConfig>, String> {
+    Ok(core_state.inner().engine_list())
+}
+
+#[command]
+pub fn engine_upsert(
+    app: AppHandle,
+    id: String,
+    engine: EngineConfig,
+    core_state: State<'_, crate::core::MaestroCore>,
+) -> Result<(), String> {
+    core_state.inner().engine_upsert(&app, id, engine)
+}
+
+#[command]
+pub fn engine_set_active_profile(
+    app: AppHandle,
+    engine_id: String,
+    profile_id: String,
+    core_state: State<'_, crate::core::MaestroCore>,
+) -> Result<(), String> {
+    core_state
+        .inner()
+        .engine_set_active_profile(&app, engine_id, profile_id)
+}
+
+#[command]
+pub fn engine_upsert_profile(
+    app: AppHandle,
+    engine_id: String,
+    profile_id: String,
+    profile: EngineProfile,
+    core_state: State<'_, crate::core::MaestroCore>,
+) -> Result<(), String> {
+    core_state
+        .inner()
+        .engine_upsert_profile(&app, engine_id, profile_id, profile)
+}
+
+#[command]
+pub fn engine_set_active(
+    engine_id: String,
+    core_state: State<'_, crate::core::MaestroCore>,
+) -> Result<(), String> {
+    core_state.inner().engine_set_active(engine_id)
+}
+
+#[command]
+pub fn engine_get_active(core_state: State<'_, crate::core::MaestroCore>) -> Result<Option<String>, String> {
+    core_state.inner().engine_get_active()
+}
+
+#[command]
+pub async fn engine_preflight(
+    engine_id: String,
+    core_state: State<'_, crate::core::MaestroCore>,
+) -> Result<EnginePreflightResult, String> {
+    core_state.inner().engine_preflight(engine_id).await
+}
+
+#[command]
+pub async fn engine_list_models(
+    engine_id: String,
+    core_state: State<'_, crate::core::MaestroCore>,
+) -> Result<EngineModelListResult, String> {
+    core_state.inner().engine_list_models(engine_id).await
+}
+
+#[command]
+pub fn engine_switch_session(
+    engine_id: String,
+    session_id: Option<String>,
+    core_state: State<'_, crate::core::MaestroCore>,
+) -> Result<EngineSwitchResult, String> {
+    core_state.inner().engine_switch_session(engine_id, session_id)
+}
