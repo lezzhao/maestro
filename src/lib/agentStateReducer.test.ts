@@ -50,6 +50,8 @@ function makeDeps(seedTasks: TaskViewModel[] = [], activeTaskId: string | null =
       updateTask: vi.fn((id: string, patch: Partial<AppTask>) => {
         updatedTasks.push({ id, patch });
       }),
+      updateTaskRuntimeBinding: vi.fn(),
+      setTaskResolvedRuntimeContext: vi.fn(),
       getAppState: vi.fn(() => ({ tasks: state.tasks, activeTaskId: state.activeTaskId })),
       setAppState: vi.fn((next: { tasks: TaskViewModel[]; activeTaskId: string | null }) => {
         state.tasks = next.tasks;
@@ -149,7 +151,7 @@ describe("agentStateReducer integration", () => {
     expect(h.updatedTasks).toHaveLength(1);
     expect(h.updatedTasks[0]).toEqual({
       id: "a",
-      patch: { engineId: "claude", profileId: "test_profile", sessionId: null },
+      patch: { engineId: "claude", profileId: "test_profile" },
     });
   });
 
@@ -176,7 +178,7 @@ describe("agentStateReducer integration", () => {
     expect(h.updatedTasks).toHaveLength(1);
     expect(h.updatedTasks[0]).toEqual({
       id: "a",
-      patch: { engineId: "gemini", profileId: null, sessionId: null },
+      patch: { engineId: "gemini", profileId: null },
     });
     expect(h.updatedTasks.some((u) => u.id === "b")).toBe(false);
   });

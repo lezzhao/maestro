@@ -36,6 +36,8 @@ export function useAgentStateSync() {
         setMessages,
         setTasks,
         updateTask,
+        setTaskResolvedRuntimeContext: useAppStore.getState().setTaskResolvedRuntimeContext,
+        updateTaskRuntimeBinding: useAppStore.getState().updateTaskRuntimeBinding,
         getAppState: () => useAppStore.getState(),
         setAppState: (next) => useAppStore.setState(next),
       });

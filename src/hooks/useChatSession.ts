@@ -457,7 +457,7 @@ export function useChatSession({
         )?.[0];
         if (fallbackEngineId && activeTaskId) {
           const activeTask = useAppStore.getState().tasks.find((t) => t.id === activeTaskId);
-          void invoke("task_switch_engine", {
+          void invoke("task_switch_runtime_binding", {
             request: {
               taskId: activeTaskId,
               engineId: fallbackEngineId,

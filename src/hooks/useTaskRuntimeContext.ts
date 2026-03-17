@@ -13,45 +13,60 @@ export interface TaskRuntimeContext {
   isHeadless: boolean;
 }
 
-/** Pure resolution logic for testing. When task.profileId differs from engine.active_profile_id, task.profileId wins if valid. */
 export function resolveTaskRuntimeContextFromState(
   activeTask: AppTask | null,
   engines: Record<string, EngineConfig> | null,
   enginePreflight: Record<string, EnginePreflightResult>,
 ): TaskRuntimeContext {
-  if (!activeTask || !engines) {
+  const defaultEmpty = {
+    engineId: "",
+    engine: null,
+    profileId: null,
+    profile: null,
+    executionMode: "cli" as const,
+    isReady: false,
+    isHeadless: false,
+  };
+
+  if (!activeTask || !engines) return defaultEmpty;
+
+  const resolved = activeTask.resolvedRuntimeContext;
+
+  // 1. Authoritative Backend Resolution (If Available)
+  if (resolved) {
+    const engineId = resolved.engineId;
+    const engine = engines[engineId] || null;
+    const profileId = resolved.profileId || null;
+    const profile = profileId && engine ? engine.profiles?.[profileId] || null : null;
+
+    const executionMode = resolved.executionMode;
+    const isHeadless = resolved.supportsHeadless;
+
+    const activePreflight = enginePreflight[engineId];
+    const isCliReady = Boolean(activePreflight?.command_exists) && Boolean(activePreflight?.auth_ok);
+    const isApiReady = Boolean(resolved.apiProvider && resolved.apiBaseUrl && resolved.model);
+    const isReady = executionMode === "api" ? isApiReady : isCliReady;
+
     return {
-      engineId: "",
-      engine: null,
-      profileId: null,
-      profile: null,
-      executionMode: "cli",
-      isReady: false,
-      isHeadless: false,
+      engineId,
+      engine,
+      profileId,
+      profile,
+      executionMode,
+      isReady,
+      isHeadless,
     };
   }
 
+  // 2. Fallback UI Resolution (Before Backend Context Arrives)
   const engineId = activeTask.engineId || Object.keys(engines)[0] || "";
   const engine = engines[engineId] || null;
 
   if (!engine || !engine.profiles) {
-    return {
-      engineId,
-      engine,
-      profileId: null,
-      profile: null,
-      executionMode: "cli",
-      isReady: false,
-      isHeadless: false,
-    };
+    return { ...defaultEmpty, engineId, engine };
   }
 
-  // 1. Authoritative source: task.profileId
-  // 2. Fallback: engine.active_profile_id (for legacy tasks created before profileId support)
-  // 3. Fallback: first available profile
   let profileId = activeTask.profileId;
-
-  // If task has no profileId or its profileId is no longer valid in the engine
   if (!profileId || !engine.profiles[profileId]) {
     profileId =
       engine.active_profile_id && engine.profiles[engine.active_profile_id]

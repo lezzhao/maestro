@@ -134,7 +134,7 @@ export function useEngine() {
           targetEngine.profiles[activeTask.profileId]
             ? activeTask.profileId
             : null;
-        await invoke("task_switch_engine", {
+        await invoke("task_switch_runtime_binding", {
           request: {
             taskId: activeTaskId,
             engineId,
@@ -182,7 +182,7 @@ export function useEngine() {
   /** Updates current task's profile binding. Use when switching profile for the active task. */
   const updateTaskProfile = useCallback(
     async (taskId: string, engineId: string, profileId: string) => {
-      await invoke("task_update_engine", {
+      await invoke("task_update_runtime_binding", {
         request: {
           taskId,
           engineId,

@@ -4,7 +4,7 @@
  * - task_create -> task_created
  * - task_transition -> task_state_changed
  * - task_delete -> task_deleted
- * - task_switch_engine / task_update_engine -> task_engine_changed
+ * - task_switch_runtime_binding / task_update_runtime_binding -> task_engine_changed
  */
 import type { AppTask, ChatMessage, TaskRecord, TaskRun, TaskViewModel } from "../types";
 import {
@@ -26,6 +26,8 @@ export type AgentStateUpdate =
   | { type: "task_state_changed"; task_id: string; from_state: string; to_state: string }
   | { type: "task_deleted"; task_id: string }
   | { type: "task_engine_changed"; task_id: string; engine_id: string; profile_id?: string | null }
+  | { type: "task_runtime_binding_changed"; task_id: string; binding: import("../types").TaskRuntimeBinding }
+  | { type: "task_runtime_context_resolved"; task_id: string; context: import("../types").ResolvedRuntimeContext }
   | { type: "execution_started"; task_id: string; run_id: string; mode: string }
   | { type: "execution_cancelled"; task_id: string; run_id: string }
   | { type: "execution_output_chunk"; task_id: string; run_id: string; chunk: string };
@@ -37,6 +39,8 @@ type AgentReducerDeps = {
   setMessages: (taskId: string, messages: ChatMessage[]) => void;
   setTasks: (tasks: TaskViewModel[]) => void;
   updateTask: (id: string, patch: Partial<AppTask>) => void;
+  updateTaskRuntimeBinding: (taskId: string, binding: import("../types").TaskRuntimeBinding) => void;
+  setTaskResolvedRuntimeContext: (taskId: string, context: import("../types").ResolvedRuntimeContext) => void;
   getAppState: () => { tasks: TaskViewModel[]; activeTaskId: string | null };
   setAppState: (next: { tasks: TaskViewModel[]; activeTaskId: string | null }) => void;
 };
@@ -81,8 +85,16 @@ export function applyAgentStateUpdate(payload: AgentStateUpdate, deps: AgentRedu
       deps.updateTask(payload.task_id, {
         engineId: payload.engine_id,
         profileId: payload.profile_id ?? null,
-        sessionId: null,
       });
+      break;
+    case "task_runtime_binding_changed":
+      deps.updateTaskRuntimeBinding(payload.task_id, {
+        runtimeSnapshotId: payload.binding.runtimeSnapshotId,
+        sessionId: payload.binding.sessionId ?? null,
+      });
+      break;
+    case "task_runtime_context_resolved":
+      deps.setTaskResolvedRuntimeContext(payload.task_id, payload.context);
       break;
     case "execution_cancelled":
       deps.finishRun(payload.run_id, "stopped", null);

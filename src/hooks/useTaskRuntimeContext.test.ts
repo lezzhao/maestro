@@ -76,7 +76,36 @@ function mockPreflight(ok = true): Record<string, EnginePreflightResult> {
 }
 
 describe("resolveTaskRuntimeContextFromState", () => {
-  it("returns task.profileId when it differs from engine.active_profile_id and is valid", () => {
+  it("uses authoritative backend resolution if resolvedRuntimeContext is provided", () => {
+    const engines: Record<string, EngineConfig> = {
+      cursor: mockEngine({ active_profile_id: "default" }),
+    };
+    const task = mockTask({
+      profileId: "default",
+      resolvedRuntimeContext: {
+        taskId: "t1",
+        engineId: "cursor",
+        profileId: "review", // The backend says review, even if task entity says default
+        command: "cursor",
+        args: [],
+        env: {},
+        executionMode: "api",
+        supportsHeadless: true,
+        resolvedFrom: "Snapshot"
+      }
+    });
+
+    const result = resolveTaskRuntimeContextFromState(
+      task,
+      engines,
+      mockPreflight(),
+    );
+    expect(result.profileId).toBe("review");
+    expect(result.profile?.id).toBe("review");
+    expect(result.executionMode).toBe("api");
+  });
+
+  it("returns task.profileId when it differs from engine.active_profile_id and is valid (fallback logic)", () => {
     const engines: Record<string, EngineConfig> = {
       cursor: mockEngine({ active_profile_id: "default" }),
     };
@@ -91,7 +120,7 @@ describe("resolveTaskRuntimeContextFromState", () => {
     expect(result.executionMode).toBe("api");
   });
 
-  it("falls back to engine.active_profile_id when task has no profileId", () => {
+  it("falls back to engine.active_profile_id when task has no profileId (fallback logic)", () => {
     const engines: Record<string, EngineConfig> = {
       cursor: mockEngine({ active_profile_id: "review" }),
     };
@@ -105,7 +134,7 @@ describe("resolveTaskRuntimeContextFromState", () => {
     expect(result.profile?.id).toBe("review");
   });
 
-  it("falls back to first profile when task.profileId is invalid (deleted)", () => {
+  it("falls back to first profile when task.profileId is invalid (deleted) (fallback logic)", () => {
     const engines: Record<string, EngineConfig> = {
       cursor: mockEngine({ active_profile_id: "default" }),
     };

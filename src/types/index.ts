@@ -448,11 +448,36 @@ export type TaskStats = {
   approx_output_tokens: number;
 };
 
+/** 
+ * Backend authoritative task runtime resolved context. 
+ * Represents the exact parameters a task will execution with.
+ */
+export type ResolvedRuntimeContext = {
+  taskId: string;
+  engineId: string;
+  profileId?: string | null;
+  snapshotId?: string | null;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  executionMode: "cli" | "api";
+  model?: string | null;
+  apiProvider?: string | null;
+  apiBaseUrl?: string | null;
+  supportsHeadless: boolean;
+  readySignal?: string | null;
+  exitCommand?: string | null;
+  exitTimeoutMs?: number | null;
+  resolvedFrom: "Snapshot" | "LiveProfile" | "EngineFallback";
+};
+
 /**
- * Runtime binding fields. Ephemeral, not persisted.
+ * Runtime binding fields. Ephemeral or synchronized array of bindings.
  * Updated by agent state sync from backend events; cleared on engine switch.
  */
 export type TaskRuntimeBinding = {
+  /** Backend authoritative runtime snapshot ID bound to this task */
+  runtimeSnapshotId?: string | null;
   /** Currently bound CLI session for the task. */
   sessionId: string | null;
   /** Currently active execution id. */
@@ -490,7 +515,9 @@ export interface TaskViewState {
 export type TaskViewModel = TaskViewState & TaskRuntimeBinding;
 
 /** Full task representation. Do not add fields without classifying: backend authoritative | runtime ephemeral | UI-only. */
-export type AppTask = TaskViewModel;
+export type AppTask = TaskViewModel & {
+  resolvedRuntimeContext?: ResolvedRuntimeContext | null;
+};
 
 /** Backend authoritative task entity projection. */
 export interface TaskRecord {

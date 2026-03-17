@@ -44,6 +44,8 @@ type AppStore = {
   setActiveTaskId: (id: string | null) => void;
   updateTask: (id: string, patch: Partial<AppTask>) => void;
   updateActiveTask: (patch: Partial<AppTask>) => void;
+  setTaskResolvedRuntimeContext: (id: string, ctx: import("../types").ResolvedRuntimeContext | null) => void;
+  updateTaskRuntimeBinding: (id: string, patch: Partial<import("../types").TaskRuntimeBinding>) => void;
 };
 
 export const useAppStore = create<AppStore>()(
@@ -139,5 +141,17 @@ export const useAppStore = create<AppStore>()(
       const id = get().activeTaskId;
       if (id) get().updateTask(id, patch);
     },
+    setTaskResolvedRuntimeContext: (id, ctx) =>
+      set((state) => ({
+        tasks: state.tasks.map((t) =>
+          t.id === id ? { ...t, resolvedRuntimeContext: ctx } : t
+        ),
+      })),
+    updateTaskRuntimeBinding: (id, patch) =>
+      set((state) => ({
+        tasks: state.tasks.map((t) =>
+          t.id === id ? { ...t, ...patch } : t
+        ),
+      })),
   })
 );
