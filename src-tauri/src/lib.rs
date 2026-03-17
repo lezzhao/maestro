@@ -33,7 +33,7 @@ use project::{
     project_read_file, project_recommend_engine, project_set_current,
 };
 use pty::{
-    pty_active_session, pty_cleanup_dead_sessions, pty_kill, pty_kill_all, pty_resize, pty_spawn, pty_write,
+    pty_cleanup_dead_sessions, pty_kill, pty_kill_all, pty_resize, pty_spawn, pty_write,
 };
 use spec::{spec_detect, spec_inject, spec_list, spec_remove, spec_preview, spec_backup, spec_restore};
 use tauri::Manager;
@@ -74,7 +74,6 @@ pub fn run() {
             pty_resize,
             pty_kill,
             pty_kill_all,
-            pty_active_session,
             spec_list,
             spec_inject,
             spec_remove,

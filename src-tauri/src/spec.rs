@@ -16,8 +16,8 @@ const CUSTOM_RULES_TEMPLATE: &str = "# Custom rules\n";
 pub trait SpecProvider: Send + Sync {
     fn id(&self) -> &str;
     fn display_name(&self) -> &str;
-    fn inject(&self, project_path: &Path, mode: &str, target_ide: &str) -> Result<(), String>;
-    fn remove(&self, project_path: &Path) -> Result<(), String>;
+    fn inject(&self, workspace_io: &WorkspaceIo, mode: &str, target_ide: &str) -> Result<(), String>;
+    fn remove(&self, workspace_io: &WorkspaceIo) -> Result<(), String>;
     fn detect(&self, project_path: &Path) -> bool;
     fn preview(&self, mode: &str, target_ide: &str) -> Result<Vec<SpecPreviewResult>, String>;
 }
@@ -42,8 +42,7 @@ impl SpecProvider for BmadProvider {
         &self.conf.display_name
     }
 
-    fn inject(&self, project_path: &Path, mode: &str, target_ide: &str) -> Result<(), String> {
-        let workspace_io = WorkspaceIo::new(project_path)?;
+    fn inject(&self, workspace_io: &WorkspaceIo, mode: &str, target_ide: &str) -> Result<(), String> {
         match mode {
             "full" => {
                 let src = self.conf.source_path.trim();
@@ -69,8 +68,7 @@ impl SpecProvider for BmadProvider {
         Ok(())
     }
 
-    fn remove(&self, project_path: &Path) -> Result<(), String> {
-        let workspace_io = WorkspaceIo::new(project_path)?;
+    fn remove(&self, workspace_io: &WorkspaceIo) -> Result<(), String> {
         let maybe_paths = ["_bmad", ".cursor/rules/bmad.mdc", "CLAUDE.md", "GEMINI.md", "AGENTS.md"];
         for p in maybe_paths {
             let _ = workspace_io.remove_path(p);
@@ -131,8 +129,7 @@ impl SpecProvider for CustomProvider {
         &self.conf.display_name
     }
 
-    fn inject(&self, project_path: &Path, _mode: &str, target_ide: &str) -> Result<(), String> {
-        let workspace_io = WorkspaceIo::new(project_path)?;
+    fn inject(&self, workspace_io: &WorkspaceIo, _mode: &str, target_ide: &str) -> Result<(), String> {
         let content = if self.conf.rules_content.trim().is_empty() {
             CUSTOM_RULES_TEMPLATE
         } else {
@@ -147,8 +144,7 @@ impl SpecProvider for CustomProvider {
         workspace_io.write_text(rel_path, content)
     }
 
-    fn remove(&self, project_path: &Path) -> Result<(), String> {
-        let workspace_io = WorkspaceIo::new(project_path)?;
+    fn remove(&self, workspace_io: &WorkspaceIo) -> Result<(), String> {
         let maybe_paths = [".cursor/rules/custom.mdc", "CLAUDE.md", "GEMINI.md", "AGENTS.md"];
         for p in maybe_paths {
             let _ = workspace_io.remove_path(p);
@@ -262,8 +258,9 @@ pub fn spec_inject_core(
     }
     let registry = SpecProviderRegistry::new(cfg);
     let p = registry.get(&provider).ok_or_else(|| format!("unsupported provider: {provider}"))?;
-    let project = PathBuf::from(project_path);
-    p.inject(&project, &mode, &target_ide)
+    let project = PathBuf::from(project_path.clone());
+    let workspace_io = WorkspaceIo::new(&project)?;
+    p.inject(&workspace_io, &mode, &target_ide)
 }
 
 pub fn spec_remove_core(
@@ -280,8 +277,9 @@ pub fn spec_remove_core(
     }
     let registry = SpecProviderRegistry::new(cfg);
     let p = registry.get(&provider).ok_or_else(|| format!("unsupported provider: {provider}"))?;
-    let project = PathBuf::from(project_path);
-    p.remove(&project)
+    let project = PathBuf::from(project_path.clone());
+    let workspace_io = WorkspaceIo::new(&project)?;
+    p.remove(&workspace_io)
 }
 
 pub fn spec_detect_core(cfg: &crate::config::AppConfig, project_path: String) -> Vec<SpecDetectResult> {

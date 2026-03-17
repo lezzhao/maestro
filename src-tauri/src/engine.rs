@@ -651,7 +651,7 @@ pub fn engine_switch_session_core(
     let mut killed = false;
     if let Some(id) = session_id {
         let payload = resolve_exit_payload(&engine.exit_command());
-        let _ = pty_state.write_to_session(Some(id.clone()), &payload);
+        let _ = pty_state.write_to_session(&id, &payload);
         let start = Instant::now();
         while start.elapsed() < Duration::from_millis(engine.exit_timeout_ms()) {
             if wait_exit_status(pty_state, &id).is_some() {

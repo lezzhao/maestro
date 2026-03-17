@@ -39,7 +39,7 @@ pub fn process_get_stats(
     core_state: tauri::State<'_, crate::core::MaestroCore>,
 ) -> ProcessStats {
     let pty_state = &core_state.inner().pty_state;
-    let os_pid = active_os_pid(pty_state, session_id.clone());
+    let os_pid = session_id.as_ref().and_then(|id| active_os_pid(pty_state, id));
     if let Some(pid_u32) = os_pid {
         let mut sys = System::new_with_specifics(
             RefreshKind::nothing()
@@ -86,7 +86,7 @@ pub fn process_start_monitor(
             let stats = {
                 let core = app_handle.state::<crate::core::MaestroCore>();
                 let pty = &core.inner().pty_state;
-                let os_pid = active_os_pid(pty, session_id.clone());
+                let os_pid = session_id.as_ref().and_then(|id| active_os_pid(pty, id));
                 if let Some(pid_u32) = os_pid {
                     let mut sys = System::new_with_specifics(
                         RefreshKind::nothing()

@@ -27,35 +27,21 @@ struct PtySession {
 #[derive(Default)]
 pub struct PtyManagerState {
     sessions: RwLock<HashMap<String, Arc<PtySession>>>,
-    active_session_id: Mutex<Option<String>>,
 }
 
 impl PtyManagerState {
     fn add_session(&self, session: Arc<PtySession>) {
         let mut sessions = self.sessions.write().expect("sessions write lock poisoned");
         sessions.insert(session.id.clone(), session.clone());
-        *self
-            .active_session_id
-            .lock()
-            .expect("active_session lock poisoned") = Some(session.id.clone());
     }
 
-    fn get_session(&self, session_id: Option<String>) -> Result<Arc<PtySession>, String> {
-        let id = if let Some(id) = session_id {
-            id
-        } else {
-            self.active_session_id
-                .lock()
-                .expect("active_session lock poisoned")
-                .clone()
-                .ok_or("no active PTY session")?
-        };
+    fn get_session(&self, session_id: &str) -> Result<Arc<PtySession>, String> {
         self.sessions
             .read()
             .expect("sessions read lock poisoned")
-            .get(&id)
+            .get(session_id)
             .cloned()
-            .ok_or_else(|| format!("session not found: {id}"))
+            .ok_or_else(|| format!("session not found: {session_id}"))
     }
 
     fn remove_session(&self, session_id: &str) {
@@ -63,13 +49,6 @@ impl PtyManagerState {
             .write()
             .expect("sessions write lock poisoned")
             .remove(session_id);
-        let mut active = self
-            .active_session_id
-            .lock()
-            .expect("active_session lock poisoned");
-        if active.as_deref() == Some(session_id) {
-            *active = None;
-        }
     }
 
     pub fn kill_all(&self) {
@@ -102,7 +81,7 @@ impl PtyManagerState {
         count
     }
 
-    pub fn write_to_session(&self, session_id: Option<String>, data: &str) -> Result<(), String> {
+    pub fn write_to_session(&self, session_id: &str, data: &str) -> Result<(), String> {
         let session = self.get_session(session_id)?;
         session
             .writer
@@ -115,7 +94,7 @@ impl PtyManagerState {
 
     pub fn resize_session(
         &self,
-        session_id: Option<String>,
+        session_id: &str,
         cols: u16,
         rows: u16,
     ) -> Result<(), String> {
@@ -134,24 +113,7 @@ impl PtyManagerState {
         Ok(())
     }
 
-    pub fn active_session(&self) -> Option<PtySessionInfo> {
-        let active_id = self
-            .active_session_id
-            .lock()
-            .expect("active_session lock poisoned")
-            .clone();
-        active_id.and_then(|id| {
-            self.sessions
-                .read()
-                .expect("sessions read lock poisoned")
-                .get(&id)
-                .map(|session| PtySessionInfo {
-                    session_id: session.id.clone(),
-                    os_pid: session.os_pid,
-                    task_id: session.task_id.clone(),
-                })
-        })
-    }
+
 
     pub fn list_sessions(&self) -> Vec<PtySessionInfo> {
         self.sessions
@@ -184,7 +146,7 @@ impl PtyManagerState {
         killed
     }
 
-    pub fn active_os_pid(&self, session_id: Option<String>) -> Option<u32> {
+    pub fn active_os_pid(&self, session_id: &str) -> Option<u32> {
         self.get_session(session_id).ok().and_then(|s| s.os_pid)
     }
 
@@ -344,7 +306,7 @@ pub fn pty_spawn(
 
 #[command]
 pub fn pty_write(
-    session_id: Option<String>,
+    session_id: String,
     data: String,
     core_state: tauri::State<'_, crate::core::MaestroCore>,
 ) -> Result<(), String> {
@@ -353,7 +315,7 @@ pub fn pty_write(
 
 #[command]
 pub fn pty_resize(
-    session_id: Option<String>,
+    session_id: String,
     cols: u16,
     rows: u16,
     core_state: tauri::State<'_, crate::core::MaestroCore>,
@@ -376,11 +338,6 @@ pub fn pty_cleanup_dead_sessions(core_state: tauri::State<'_, crate::core::Maest
     core_state.inner().pty_cleanup_dead_sessions()
 }
 
-#[command]
-pub fn pty_active_session(core_state: tauri::State<'_, crate::core::MaestroCore>) -> Option<PtySessionInfo> {
-    core_state.inner().pty_active_session()
-}
-
 pub fn resolve_exit_payload(exit_command: &str) -> String {
     match exit_command {
         "ctrl-c" => String::from("\u{3}"),
@@ -395,7 +352,7 @@ pub fn resolve_exit_payload(exit_command: &str) -> String {
     }
 }
 
-pub fn active_os_pid(state: &PtyManagerState, session_id: Option<String>) -> Option<u32> {
+pub fn active_os_pid(state: &PtyManagerState, session_id: &str) -> Option<u32> {
     state.active_os_pid(session_id)
 }
 
