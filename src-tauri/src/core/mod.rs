@@ -4,16 +4,21 @@ pub mod execution;
 
 use crate::config::{AppConfigState, AppConfig};
 use crate::core::events::EventStream;
-use crate::engine::EngineRuntimeState;
+use crate::config::{EngineConfig, EngineProfile};
+use crate::engine::{EngineModelListResult, EnginePreflightResult, EngineRuntimeState};
 use crate::headless::HeadlessProcessState;
 use crate::process::ProcessMonitorState;
-use crate::pty::PtyManagerState;
+use crate::pty::{PtyManagerState, PtySessionInfo};
+use crate::spec::{SpecDescriptor, SpecDetectResult, SpecPreviewResult};
 use crate::workflow::types::{ChatApiRequest, ChatExecuteCliRequest, StepRunRequest, WorkflowRunRequest};
 use crate::workflow::chat::{chat_execute_api_core, chat_execute_cli_core};
 use crate::workflow::run::{workflow_run_core, workflow_run_step_core};
 use crate::agent_state::{emit_state_update, AgentStateUpdate, TaskRecordPayload};
 use crate::core::events::StringStream;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::Mutex;
 use std::sync::Arc;
+use tauri::ipc::Channel;
 use tauri::AppHandle;
 
 pub struct MaestroCore {
@@ -22,6 +27,7 @@ pub struct MaestroCore {
     pub engine_runtime: EngineRuntimeState,
     pub process_monitor: ProcessMonitorState,
     pub headless_state: HeadlessProcessState,
+    deleted_task_ids: Mutex<HashSet<String>>,
 }
 
 impl MaestroCore {
@@ -32,6 +38,7 @@ impl MaestroCore {
             engine_runtime: EngineRuntimeState::default(),
             process_monitor: ProcessMonitorState::default(),
             headless_state: HeadlessProcessState::default(),
+            deleted_task_ids: Mutex::new(HashSet::new()),
         }
     }
 
@@ -144,6 +151,18 @@ impl MaestroCore {
             if item.status != crate::core::execution::ExecutionStatus::Running {
                 continue;
             }
+            if !item.task_id.trim().is_empty()
+                && self
+                    .deleted_task_ids
+                    .lock()
+                    .expect("deleted_task_ids lock poisoned")
+                    .contains(&item.task_id)
+            {
+                item.status = crate::core::execution::ExecutionStatus::Failed;
+                item.error = Some("reconciled as orphaned task execution".to_string());
+                changed = true;
+                continue;
+            }
             let headless_active = self.headless_state.get_execution(&item.id).is_some();
             let pty_active = self.pty_state.active_os_pid(Some(item.id.clone())).is_some();
             if !headless_active && !pty_active {
@@ -252,6 +271,13 @@ impl MaestroCore {
     pub fn task_delete(&self, app: &AppHandle, task_id: String) -> Result<(), String> {
         let db_path = crate::task_state::bmad_db_path(app)?;
         crate::task_state::delete_task(&db_path, &task_id)?;
+        self.deleted_task_ids
+            .lock()
+            .expect("deleted_task_ids lock poisoned")
+            .insert(task_id.clone());
+        let root_dir = crate::run_persistence::resolve_root_dir_from_project_path(&self.config.get().project.path)?;
+        let _ = crate::run_persistence::remove_records_by_task_id(&root_dir, &task_id);
+        let _ = self.pty_state.kill_sessions_by_task(&task_id);
         emit_state_update(
             Some(app),
             AgentStateUpdate::TaskDeleted {
@@ -273,5 +299,153 @@ impl MaestroCore {
     ) -> Result<Option<String>, String> {
         let db_path = crate::task_state::bmad_db_path(app)?;
         crate::task_state::get_task_state(&db_path, &request.task_id)
+    }
+
+    pub fn spec_list(&self) -> Vec<SpecDescriptor> {
+        crate::spec::spec_descriptors(&self.config.get())
+    }
+
+    pub fn spec_inject(
+        &self,
+        provider: String,
+        project_path: String,
+        mode: String,
+        target_ide: String,
+    ) -> Result<(), String> {
+        crate::spec::spec_inject_core(
+            &self.config.get(),
+            provider,
+            project_path,
+            mode,
+            target_ide,
+        )
+    }
+
+    pub fn spec_remove(&self, provider: String, project_path: String) -> Result<(), String> {
+        crate::spec::spec_remove_core(&self.config.get(), provider, project_path)
+    }
+
+    pub fn spec_detect(&self, project_path: String) -> Vec<SpecDetectResult> {
+        crate::spec::spec_detect_core(&self.config.get(), project_path)
+    }
+
+    pub fn spec_preview(
+        &self,
+        provider: String,
+        mode: String,
+        target_ide: String,
+    ) -> Result<Vec<SpecPreviewResult>, String> {
+        crate::spec::spec_preview_core(&self.config.get(), provider, mode, target_ide)
+    }
+
+    pub fn spec_backup(&self, project_path: String) -> Result<Vec<String>, String> {
+        crate::spec::spec_backup_core(&self.config.get(), project_path)
+    }
+
+    pub fn spec_restore(&self, project_path: String) -> Result<Vec<String>, String> {
+        crate::spec::spec_restore_core(&self.config.get(), project_path)
+    }
+
+    pub fn engine_list(&self) -> BTreeMap<String, EngineConfig> {
+        crate::engine::engine_list_core(&self.config)
+    }
+
+    pub fn engine_upsert(&self, app: &AppHandle, id: String, engine: EngineConfig) -> Result<(), String> {
+        crate::engine::engine_upsert_core(app, id, engine, &self.config)
+    }
+
+    pub fn engine_set_active_profile(
+        &self,
+        app: &AppHandle,
+        engine_id: String,
+        profile_id: String,
+    ) -> Result<(), String> {
+        crate::engine::engine_set_active_profile_core(app, engine_id, profile_id, &self.config)
+    }
+
+    pub fn engine_upsert_profile(
+        &self,
+        app: &AppHandle,
+        engine_id: String,
+        profile_id: String,
+        profile: EngineProfile,
+    ) -> Result<(), String> {
+        crate::engine::engine_upsert_profile_core(app, engine_id, profile_id, profile, &self.config)
+    }
+
+    pub fn engine_set_active(&self, engine_id: String) -> Result<(), String> {
+        crate::engine::engine_set_active_core(engine_id, &self.config, &self.engine_runtime)
+    }
+
+    pub fn engine_get_active(&self) -> Option<String> {
+        crate::engine::engine_get_active_core(&self.engine_runtime)
+    }
+
+    pub async fn engine_preflight(&self, engine_id: String) -> Result<EnginePreflightResult, String> {
+        crate::engine::engine_preflight_core(engine_id, self.config.get()).await
+    }
+
+    pub async fn engine_list_models(&self, engine_id: String) -> Result<EngineModelListResult, String> {
+        crate::engine::engine_list_models_core(engine_id, self.config.get()).await
+    }
+
+    pub fn engine_switch_session(
+        &self,
+        engine_id: String,
+        session_id: Option<String>,
+    ) -> Result<crate::engine::EngineSwitchResult, String> {
+        crate::engine::engine_switch_session_core(
+            engine_id,
+            session_id,
+            self.config.get(),
+            &self.engine_runtime,
+            &self.pty_state,
+        )
+    }
+
+    pub fn pty_spawn(
+        &self,
+        session_id: String,
+        task_id: Option<String>,
+        file: String,
+        args: Vec<String>,
+        cwd: Option<String>,
+        env: HashMap<String, String>,
+        cols: u16,
+        rows: u16,
+        on_data: Channel<String>,
+    ) -> Result<PtySessionInfo, String> {
+        self.pty_state
+            .spawn_session(session_id, task_id, file, args, cwd, env, cols, rows, on_data)
+    }
+
+    pub fn pty_write(&self, session_id: Option<String>, data: String) -> Result<(), String> {
+        if session_id.is_none() {
+            return Err("session_id is required; implicit active session is not supported".to_string());
+        }
+        self.pty_state.write_to_session(session_id, &data)
+    }
+
+    pub fn pty_resize(&self, session_id: Option<String>, cols: u16, rows: u16) -> Result<(), String> {
+        if session_id.is_none() {
+            return Err("session_id is required; implicit active session is not supported".to_string());
+        }
+        self.pty_state.resize_session(session_id, cols, rows)
+    }
+
+    pub fn pty_kill(&self, session_id: String) -> Result<(), String> {
+        self.pty_state.kill_session(&session_id)
+    }
+
+    pub fn pty_kill_all(&self) {
+        self.pty_state.kill_all();
+    }
+
+    pub fn pty_cleanup_dead_sessions(&self) -> usize {
+        self.pty_state.cleanup_dead_sessions()
+    }
+
+    pub fn pty_active_session(&self) -> Option<PtySessionInfo> {
+        self.pty_state.active_session()
     }
 }
