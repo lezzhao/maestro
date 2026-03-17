@@ -27,6 +27,7 @@ pub enum RuntimeResolvedFrom {
     Snapshot,
     LiveProfile,
     FallbackProfile,
+    ConfigFallback,
 }
 
 /// Stable contract: authoritative execution context. Do not add/remove fields without migration.
@@ -45,7 +46,9 @@ pub struct ResolvedRuntimeContext {
     pub model: Option<String>,
     pub api_provider: Option<String>,
     pub api_base_url: Option<String>,
+    pub api_key: Option<String>,
     pub supports_headless: bool,
+    pub headless_args: Vec<String>,
     pub ready_signal: Option<String>,
     pub exit_command: Option<String>,
     pub exit_timeout_ms: Option<u64>,
@@ -66,6 +69,7 @@ pub struct RuntimeSnapshotPayload {
     pub api_provider: Option<String>,
     pub api_base_url: Option<String>,
     pub supports_headless: bool,
+    pub headless_args: Vec<String>,
     pub ready_signal: Option<String>,
     pub exit_command: Option<String>,
     pub exit_timeout_ms: Option<u64>,
@@ -128,8 +132,8 @@ pub fn resolve_task_runtime_context(
             if let Ok(Some(payload)) = crate::snapshot_repository::get_runtime_snapshot_payload(db_path, snapshot_id) {
                 return Ok(ResolvedRuntimeContext {
                     task_id: task_id.to_string(),
-                    engine_id: binding.engine_id,
-                    profile_id: binding.profile_id,
+                    engine_id: binding.engine_id.clone(),
+                    profile_id: binding.profile_id.clone(),
                     snapshot_id: Some(snapshot_id.clone()),
                     command: payload.command,
                     args: payload.args,
@@ -138,7 +142,11 @@ pub fn resolve_task_runtime_context(
                     model: payload.model,
                     api_provider: payload.api_provider,
                     api_base_url: payload.api_base_url,
+                    api_key: cfg.engines.get(&binding.engine_id)
+                        .and_then(|e| e.profiles.get(binding.profile_id.as_deref().unwrap_or("default")))
+                        .and_then(|p| p.api_key()),
                     supports_headless: payload.supports_headless,
+                    headless_args: payload.headless_args,
                     ready_signal: payload.ready_signal,
                     exit_command: payload.exit_command,
                     exit_timeout_ms: payload.exit_timeout_ms,
@@ -204,7 +212,9 @@ pub fn resolve_task_runtime_context(
         model: Some(profile.model()),
         api_provider: profile.api_provider(),
         api_base_url: profile.api_base_url(),
+        api_key: profile.api_key(),
         supports_headless: profile.supports_headless(),
+        headless_args: profile.headless_args(),
         ready_signal: profile.ready_signal(),
         exit_command: profile.exit_command.clone(),
         exit_timeout_ms: profile.exit_timeout_ms,
@@ -237,6 +247,7 @@ pub fn create_snapshot_and_pin_task(
         api_provider: profile.api_provider(),
         api_base_url: profile.api_base_url(),
         supports_headless: profile.supports_headless(),
+        headless_args: profile.headless_args(),
         ready_signal: profile.ready_signal(),
         exit_command: profile.exit_command.clone(),
         exit_timeout_ms: profile.exit_timeout_ms,
@@ -380,6 +391,7 @@ mod tests {
             api_provider: None,
             api_base_url: None,
             supports_headless: false,
+            headless_args: vec![],
             ready_signal: None,
             exit_command: None,
             exit_timeout_ms: None,

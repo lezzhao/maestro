@@ -56,6 +56,7 @@ pub fn ensure_runtime_snapshot(
         api_provider: ctx.api_provider,
         api_base_url: ctx.api_base_url,
         supports_headless: ctx.supports_headless,
+        headless_args: ctx.headless_args,
         ready_signal: ctx.ready_signal,
         exit_command: ctx.exit_command,
         exit_timeout_ms: ctx.exit_timeout_ms,
@@ -114,6 +115,51 @@ pub fn prepare_execution_binding_with_path(
     Ok(ctx)
 }
 
+/// Create a ResolvedRuntimeContext directly from config for ad-hoc executions
+/// that are not bound to a task.
+pub fn fallback_runtime_context(
+    cfg: &crate::config::AppConfig,
+    engine_id: &str,
+    profile_id: Option<&str>,
+    execution_mode: &str,
+) -> Result<crate::task_runtime::ResolvedRuntimeContext, CoreError> {
+    let engine = cfg
+        .engines
+        .get(engine_id)
+        .ok_or_else(|| CoreError::NotFound { resource: "engine".to_string(), id: engine_id.to_string() })?
+        .clone();
+    let p = if let Some(pid) = profile_id {
+        engine
+            .profiles
+            .get(pid)
+            .cloned()
+            .ok_or_else(|| CoreError::NotFound { resource: "profile".to_string(), id: pid.to_string() })?
+    } else {
+        engine.active_profile()
+    };
+
+    Ok(crate::task_runtime::ResolvedRuntimeContext {
+        task_id: String::new(),
+        engine_id: engine_id.to_string(),
+        profile_id: Some(profile_id.unwrap_or("default").to_string()),
+        snapshot_id: None,
+        command: p.command(),
+        args: p.args(),
+        env: p.env(),
+        execution_mode: execution_mode.to_string(),
+        model: Some(p.model()),
+        api_provider: p.api_provider(),
+        api_base_url: p.api_base_url(),
+        api_key: p.api_key(),
+        supports_headless: p.supports_headless(),
+        headless_args: p.headless_args(),
+        ready_signal: p.ready_signal(),
+        exit_command: p.exit_command.clone(),
+        exit_timeout_ms: p.exit_timeout_ms,
+        resolved_from: crate::task_runtime::RuntimeResolvedFrom::ConfigFallback,
+    })
+}
+
 #[cfg(test)]
 fn ensure_runtime_snapshot_with_path(
     db_path: &std::path::Path,
@@ -147,6 +193,7 @@ fn ensure_runtime_snapshot_with_path(
         api_provider: ctx.api_provider,
         api_base_url: ctx.api_base_url,
         supports_headless: ctx.supports_headless,
+        headless_args: ctx.headless_args,
         ready_signal: ctx.ready_signal,
         exit_command: ctx.exit_command,
         exit_timeout_ms: ctx.exit_timeout_ms,
