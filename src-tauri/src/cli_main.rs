@@ -53,6 +53,7 @@ pub async fn run_cli_mode(args: Vec<String>) {
                         if let Ok(req) = serde_json::from_value::<WorkflowRunRequest>(msg.payload) {
                             let stream = Arc::new(MpscEventStream { tx: tx.clone(), msg_id: msg.id.clone() });
                             let result = workflow_run_core(
+                                None,
                                 stream,
                                 req,
                                 &core_clone.config.get(),

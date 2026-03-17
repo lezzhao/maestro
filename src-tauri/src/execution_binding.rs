@@ -187,6 +187,19 @@ pub fn prepare_execution(
     Ok((ctx, execution_id))
 }
 
+/// Like prepare_execution but with db_path for headless/testing. Returns (ctx, execution_id).
+#[cfg(test)]
+pub fn prepare_execution_with_path(
+    db_path: &std::path::Path,
+    task_id: &str,
+    source: &str,
+    config: &AppConfig,
+) -> Result<(ResolvedRuntimeContext, String), CoreError> {
+    let execution_id = format!("{}-{}", source, uuid::Uuid::new_v4());
+    let ctx = prepare_execution_binding_with_path(db_path, &execution_id, task_id, config)?;
+    Ok((ctx, execution_id))
+}
+
 /// Prepares the execution binding for a new run.
 /// 1. Ensures snapshot exists.
 /// 2. Records ExecutionBinding.
@@ -285,5 +298,29 @@ mod tests {
             "resolve should come from snapshot, not live config"
         );
         assert_eq!(ctx2.snapshot_id.as_deref(), Some(snapshot_id.as_str()));
+    }
+
+    #[test]
+    fn prepare_execution_returns_valid_execution_id_and_creates_binding() {
+        let (_dir, db_path) = temp_db_path();
+        let cfg = AppConfig::default();
+        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None)
+            .expect("create_task");
+
+        let (ctx, execution_id) =
+            prepare_execution_with_path(&db_path, &task_id, "chat_api", &cfg)
+                .expect("prepare_execution");
+
+        assert!(execution_id.starts_with("chat_api-"));
+        assert_eq!(ctx.engine_id, "cursor");
+        assert!(matches!(
+            ctx.resolved_from,
+            crate::task_runtime::RuntimeResolvedFrom::Snapshot
+        ));
+
+        let binding = crate::task_state::get_task_runtime_binding(&db_path, &task_id)
+            .expect("get binding")
+            .expect("binding exists");
+        assert!(binding.runtime_snapshot_id.is_some());
     }
 }

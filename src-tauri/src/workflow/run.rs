@@ -3,6 +3,7 @@ use super::history::persist_engine_history;
 use super::types::*;
 use super::util::*;
 use crate::core::MaestroCore;
+use crate::execution_binding::prepare_execution_binding;
 use crate::pty::PtyManagerState;
 use crate::core::execution::{Execution, ExecutionMode};
 use crate::run_persistence::{
@@ -531,7 +532,7 @@ pub async fn workflow_run_step(
     core_state: State<'_, MaestroCore>,
 ) -> Result<StepRunResult, String> {
     core_state
-        .workflow_run_step(Arc::new(app.clone()), request)
+        .workflow_run_step(Some(app.clone()), Arc::new(app.clone()), request)
         .await
 }
 
@@ -600,10 +601,13 @@ pub async fn workflow_run(
     request: WorkflowRunRequest,
     core_state: State<'_, MaestroCore>,
 ) -> Result<WorkflowRunResult, String> {
-    core_state.workflow_run(Arc::new(app.clone()), request).await
+    core_state
+        .workflow_run(Some(app.clone()), Arc::new(app.clone()), request)
+        .await
 }
 
 pub async fn workflow_run_core(
+    app: Option<tauri::AppHandle>,
     emitter: Arc<dyn EventStream>,
     request: WorkflowRunRequest,
     cfg: &crate::config::AppConfig,
@@ -615,10 +619,21 @@ pub async fn workflow_run_core(
         return Err("workflow has no steps".to_string());
     }
 
-    // Create Execution at start - it becomes the single source of truth for this run
     let now_ms = current_time_ms().unwrap_or_default();
+    let execution_id = format!("workflow-{workflow_name}-{now_ms}");
+
+    // When task_id exists and app is available, ensure execution binding before run
+    if let (Some(ref app_handle), Some(ref task_id)) = (app.as_ref(), request.task_id.as_ref()) {
+        if !task_id.is_empty() {
+            prepare_execution_binding(app_handle, &execution_id, task_id, cfg).map_err(|e| {
+                format!("prepare execution binding failed: {:?}", e)
+            })?;
+        }
+    }
+
+    // Create Execution at start - it becomes the single source of truth for this run
     let mut execution = Execution::new(
-        format!("workflow-{workflow_name}-{now_ms}"),
+        execution_id,
         "workflow".to_string(),
         ExecutionMode::Workflow,
     );

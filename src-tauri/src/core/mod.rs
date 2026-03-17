@@ -41,13 +41,16 @@ impl MaestroCore {
     }
 
 
-    /// Workflow run - creates Execution at start, persists at end
+    /// Workflow run - creates Execution at start, persists at end.
+    /// When task_id exists and app is provided, ensures execution binding before run.
     pub async fn workflow_run(
         &self,
+        app: Option<AppHandle>,
         emitter: Arc<dyn EventStream>,
         request: WorkflowRunRequest,
     ) -> Result<crate::workflow::types::WorkflowRunResult, String> {
         workflow_run_core(
+            app,
             emitter,
             request,
             &self.config.get(),
@@ -56,9 +59,10 @@ impl MaestroCore {
         .await
     }
 
-    /// Workflow run single step
+    /// Workflow run single step. StepRunRequest has no task_id; binding not required.
     pub async fn workflow_run_step(
         &self,
+        _app: Option<AppHandle>,
         emitter: Arc<dyn EventStream>,
         request: StepRunRequest,
     ) -> Result<crate::workflow::types::StepRunResult, String> {
