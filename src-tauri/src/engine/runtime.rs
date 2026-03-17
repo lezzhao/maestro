@@ -1,3 +1,7 @@
+//! Session cleanup for task-engine switch.
+//! Provides low-level capability: kill/exit a CLI session. Does not know about tasks.
+//! The task_switch_engine use case in core orchestrates this + DB update + event.
+
 use crate::config::AppConfig;
 use crate::pty::{resolve_exit_payload, wait_exit_status, PtyManagerState};
 use serde::Serialize;

@@ -1,3 +1,6 @@
+//! Engine configuration CRUD and profile management. Persists to disk.
+//! Does NOT handle task-level logic or session lifecycle.
+
 use crate::config::{
     migrate_engine_profiles, write_config_to_disk, AppConfigState, EngineConfig, EngineProfile,
 };

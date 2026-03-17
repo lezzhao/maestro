@@ -1,3 +1,5 @@
+//! Fetches model lists from engines. Read-only.
+
 use regex::Regex;
 use serde::Serialize;
 use std::collections::HashSet;

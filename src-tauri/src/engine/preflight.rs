@@ -1,3 +1,5 @@
+//! Preflight checks: command existence, auth, headless support. Read-only, no side effects.
+
 use crate::config::AppConfig;
 use crate::engine::utils::{cursor_status_check, run_status_check_shell, StatusCheckResult};
 use serde::Serialize;
