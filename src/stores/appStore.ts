@@ -101,9 +101,9 @@ export const useAppStore = create<AppStore>()(
     addTask: async (name) => {
       const title = name || `Task ${get().tasks.length + 1}`;
       try {
-        // Find a default engine since we removed activeEngineId.
+        // Deterministic default engine: first by sorted key order, fallback to "cursor".
         const engines = get().engines;
-        const defaultEngine = Object.keys(engines)[0] || "cursor";
+        const defaultEngine = Object.keys(engines).sort()[0] || "cursor";
 
         await invoke("task_create", {
           title,
