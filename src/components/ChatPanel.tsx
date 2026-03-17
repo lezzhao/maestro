@@ -38,11 +38,13 @@ export function ChatPanel({
     const profiles = activeEngine?.profiles || {};
     if (!profiles || Object.keys(profiles).length === 0) return undefined;
     const profileId =
-      activeEngine?.active_profile_id && profiles[activeEngine.active_profile_id]
-        ? activeEngine.active_profile_id
-        : Object.keys(profiles)[0];
+      (activeTask?.profileId && profiles[activeTask.profileId]
+        ? activeTask.profileId
+        : activeEngine?.active_profile_id && profiles[activeEngine.active_profile_id]
+          ? activeEngine.active_profile_id
+          : Object.keys(profiles)[0]) ?? null;
     return profileId ? profiles[profileId] : undefined;
-  }, [activeEngine]);
+  }, [activeEngine, activeTask?.profileId]);
   const executionMode = (activeProfile?.execution_mode || "cli") as "api" | "cli";
 
   const {
@@ -60,6 +62,7 @@ export function ChatPanel({
     activeEngineId,
     activeEngine,
     activeProfile,
+    activeTaskProfileId: activeTask?.profileId ?? null,
   });
 
   const chatLabels = useMemo(

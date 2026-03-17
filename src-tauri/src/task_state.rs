@@ -124,6 +124,22 @@ pub fn take_git_snapshot(io: &WorkspaceIo, task_id: &str, to_state: &str) -> Opt
     Some(String::from_utf8_lossy(&hash.stdout).trim().to_string())
 }
 
+/// Ensure profile_id column exists (migration for existing DBs).
+fn ensure_profile_id_column(conn: &rusqlite::Connection) -> Result<(), String> {
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name='profile_id'",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| format!("pragma failed: {e}"))?;
+    if count == 0 {
+        conn.execute("ALTER TABLE tasks ADD COLUMN profile_id TEXT", [])
+            .map_err(|e| format!("add profile_id column failed: {e}"))?;
+    }
+    Ok(())
+}
+
 /// Ensure tasks and state_transitions tables exist.
 fn ensure_tables(conn: &rusqlite::Connection) -> Result<(), String> {
     conn.execute_batch(
@@ -135,6 +151,7 @@ fn ensure_tables(conn: &rusqlite::Connection) -> Result<(), String> {
             engine_id TEXT NOT NULL,
             current_state TEXT NOT NULL,
             workspace_boundary TEXT NOT NULL,
+            profile_id TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
@@ -151,6 +168,7 @@ fn ensure_tables(conn: &rusqlite::Connection) -> Result<(), String> {
         "#,
     )
     .map_err(|e| format!("create tables failed: {e}"))?;
+    ensure_profile_id_column(conn)?;
     Ok(())
 }
 
@@ -235,12 +253,14 @@ pub fn delete_task(db_path: &Path, task_id: &str) -> Result<(), String> {
 }
 
 /// Create a new task in the database. Returns the created task id.
+/// profile_id: when None, caller should resolve from engine's active_profile_id before calling.
 pub fn create_task(
     db_path: &Path,
     title: &str,
     description: &str,
     engine_id: &str,
     workspace_boundary: &str,
+    profile_id: Option<&str>,
 ) -> Result<String, String> {
     let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
     ensure_tables(&conn)?;
@@ -249,8 +269,8 @@ pub fn create_task(
     let initial_state = TaskState::Backlog.as_str();
 
     conn.execute(
-        "INSERT INTO tasks (id, title, description, engine_id, current_state, workspace_boundary) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        rusqlite::params![id, title, description, engine_id, initial_state, workspace_boundary],
+        "INSERT INTO tasks (id, title, description, engine_id, current_state, workspace_boundary, profile_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params![id, title, description, engine_id, initial_state, workspace_boundary, profile_id],
     )
     .map_err(|e| format!("insert task failed: {e}"))?;
 
@@ -281,6 +301,8 @@ pub struct TaskCreateRequest {
     pub engine_id: String,
     #[serde(default)]
     pub workspace_boundary: String,
+    #[serde(default)]
+    pub profile_id: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -292,6 +314,7 @@ pub struct TaskCreateResult {
     pub engine_id: String,
     pub current_state: String,
     pub workspace_boundary: String,
+    pub profile_id: Option<String>,
 }
 
 #[tauri::command]
@@ -338,6 +361,23 @@ pub struct TaskUpdateEngineRequest {
     pub engine_id: String,
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskSwitchEngineRequest {
+    pub task_id: String,
+    pub engine_id: String,
+    pub session_id: Option<String>,
+}
+
+#[tauri::command]
+pub async fn task_switch_engine(
+    app: tauri::AppHandle,
+    request: TaskSwitchEngineRequest,
+) -> Result<(), String> {
+    let core = app.state::<crate::core::MaestroCore>();
+    core.task_switch_engine(&app, request)
+}
+
 #[tauri::command]
 pub async fn task_update_engine(
     app: tauri::AppHandle,
@@ -371,7 +411,7 @@ pub fn list_tasks(db_path: &Path) -> Result<Vec<TaskRecordPayload>, String> {
     ensure_tables(&conn)?;
     let mut stmt = conn
         .prepare(
-            "SELECT id, title, description, engine_id, current_state, workspace_boundary, created_at, updated_at FROM tasks ORDER BY updated_at DESC",
+            "SELECT id, title, description, engine_id, current_state, workspace_boundary, profile_id, created_at, updated_at FROM tasks ORDER BY updated_at DESC",
         )
         .map_err(|e| format!("prepare failed: {e}"))?;
     let rows = stmt
@@ -383,8 +423,9 @@ pub fn list_tasks(db_path: &Path) -> Result<Vec<TaskRecordPayload>, String> {
                 engine_id: row.get(3)?,
                 current_state: row.get(4)?,
                 workspace_boundary: row.get(5)?,
-                created_at: row.get::<_, String>(6).unwrap_or_default(),
-                updated_at: row.get::<_, String>(7).unwrap_or_default(),
+                profile_id: row.get::<_, Option<String>>(6).ok().flatten(),
+                created_at: row.get::<_, String>(7).unwrap_or_default(),
+                updated_at: row.get::<_, String>(8).unwrap_or_default(),
             })
         })
         .map_err(|e| format!("query failed: {e}"))?;
@@ -427,14 +468,8 @@ mod tests {
     #[test]
     fn test_task_create_persists_engine_id() {
         let (_dir, db_path) = temp_db_path();
-        let id = create_task(
-            &db_path,
-            "Test Task",
-            "",
-            "cursor",
-            "{}",
-        )
-        .expect("create_task");
+        let id = create_task(&db_path, "Test Task", "", "cursor", "{}", None)
+            .expect("create_task");
         let tasks = list_tasks(&db_path).expect("list_tasks");
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].id, id);
@@ -444,7 +479,7 @@ mod tests {
     #[test]
     fn test_task_update_engine_persists() {
         let (_dir, db_path) = temp_db_path();
-        let id = create_task(&db_path, "Task", "", "cursor", "{}").expect("create_task");
+        let id = create_task(&db_path, "Task", "", "cursor", "{}", None).expect("create_task");
         update_task_engine(&db_path, &id, "claude").expect("update_task_engine");
         let tasks = list_tasks(&db_path).expect("list_tasks");
         assert_eq!(tasks.len(), 1);
@@ -454,8 +489,8 @@ mod tests {
     #[test]
     fn test_task_list_returns_engine_id() {
         let (_dir, db_path) = temp_db_path();
-        create_task(&db_path, "A", "", "engine_x", "{}").expect("create");
-        create_task(&db_path, "B", "", "engine_y", "{}").expect("create");
+        create_task(&db_path, "A", "", "engine_x", "{}", None).expect("create");
+        create_task(&db_path, "B", "", "engine_y", "{}", None).expect("create");
         let tasks = list_tasks(&db_path).expect("list_tasks");
         assert_eq!(tasks.len(), 2);
         let engine_ids: Vec<&str> = tasks.iter().map(|t| t.engine_id.as_str()).collect();
@@ -471,5 +506,30 @@ mod tests {
         drop(conn);
         let err = update_task_engine(&db_path, "nonexistent", "cursor").unwrap_err();
         assert!(err.contains("task not found"));
+    }
+
+    #[test]
+    fn test_task_create_persists_profile_id() {
+        let (_dir, db_path) = temp_db_path();
+        let _id = create_task(&db_path, "Task", "", "cursor", "{}", Some("default"))
+            .expect("create_task");
+        let tasks = list_tasks(&db_path).expect("list_tasks");
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].profile_id.as_deref(), Some("default"));
+    }
+
+    #[test]
+    fn test_task_switch_engine_request_deserializes() {
+        let json = r#"{"taskId":"t1","engineId":"claude","sessionId":"sess-1"}"#;
+        let req: TaskSwitchEngineRequest = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(req.task_id, "t1");
+        assert_eq!(req.engine_id, "claude");
+        assert_eq!(req.session_id.as_deref(), Some("sess-1"));
+
+        let json_no_session = r#"{"taskId":"t2","engineId":"cursor"}"#;
+        let req2: TaskSwitchEngineRequest = serde_json::from_str(json_no_session).expect("deserialize");
+        assert_eq!(req2.task_id, "t2");
+        assert_eq!(req2.engine_id, "cursor");
+        assert!(req2.session_id.is_none());
     }
 }

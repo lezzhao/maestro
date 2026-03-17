@@ -448,28 +448,48 @@ export type TaskStats = {
   approx_output_tokens: number;
 };
 
+/**
+ * Runtime binding fields. Ephemeral, not persisted.
+ * Updated by agent state sync from backend events; cleared on engine switch.
+ */
 export type TaskRuntimeBinding = {
-  /** Runtime binding: currently bound session for the task. */
+  /** Currently bound CLI session for the task. */
   sessionId: string | null;
-  /** Runtime binding: currently bound execution id for the task. */
+  /** Currently active execution id. */
   activeExecId?: string | null;
-  /** Runtime binding: currently active run id for the task. */
+  /** Currently active run id. */
   activeRunId?: string | null;
 };
 
+/**
+ * Task view state. Combines:
+ * - **Backend authoritative** (from DB/events): id, name, engineId, profileId, status, created_at, updated_at
+ * - **UI-derived**: gitChanges, stats
+ */
 export interface TaskViewState {
+  /** @backend authoritative */
   id: string;
+  /** @backend authoritative */
   name: string;
+  /** @backend authoritative */
   engineId: string;
+  /** @backend authoritative - task-bound profile, created-time snapshot */
+  profileId?: string | null;
+  /** @backend authoritative - derived from current_state */
   status: "idle" | "running" | "error" | "completed" | "needs_review" | "verified";
+  /** @ui-derived - computed from git diff */
   gitChanges: FileChange[];
+  /** @ui-derived - run stats */
   stats: TaskStats;
+  /** @backend authoritative */
   created_at: number;
+  /** @backend authoritative */
   updated_at: number;
-};
+}
 
 export type TaskViewModel = TaskViewState & TaskRuntimeBinding;
 
+/** Full task representation. Do not add fields without classifying: backend authoritative | runtime ephemeral | UI-only. */
 export type AppTask = TaskViewModel;
 
 /** Backend authoritative task entity projection. */
@@ -480,6 +500,7 @@ export interface TaskRecord {
   engine_id: string;
   current_state: string;
   workspace_boundary: string;
+  profile_id?: string | null;
   created_at: string;
   updated_at: string;
 };

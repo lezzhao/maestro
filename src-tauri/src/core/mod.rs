@@ -220,14 +220,16 @@ impl MaestroCore {
     }
 
     /// Use-Case: Create task and broadcast state event.
+    /// When profile_id is not specified, uses engine's active_profile_id.
     pub fn task_create(
         &self,
         app: &AppHandle,
         request: crate::task_state::TaskCreateRequest,
     ) -> Result<crate::task_state::TaskCreateResult, String> {
+        let config = self.config.get();
         let db_path = crate::task_state::bmad_db_path(app)?;
         let workspace_boundary = if request.workspace_boundary.is_empty() {
-            let project_path = self.config.get().project.path.clone();
+            let project_path = config.project.path.clone();
             if project_path.is_empty() {
                 "{}".to_string()
             } else {
@@ -237,12 +239,20 @@ impl MaestroCore {
             request.workspace_boundary.clone()
         };
 
+        let profile_id = request.profile_id.or_else(|| {
+            config
+                .engines
+                .get(&request.engine_id)
+                .map(|e| e.active_profile_id.clone())
+        });
+
         let id = crate::task_state::create_task(
             &db_path,
             &request.title,
             &request.description,
             &request.engine_id,
             &workspace_boundary,
+            profile_id.as_deref(),
         )?;
         let current_state = crate::task_state::TaskState::Backlog.as_str().to_string();
         let result = crate::task_state::TaskCreateResult {
@@ -252,6 +262,7 @@ impl MaestroCore {
             engine_id: request.engine_id.clone(),
             current_state: current_state.clone(),
             workspace_boundary: workspace_boundary.clone(),
+            profile_id: profile_id.clone(),
         };
 
         emit_state_update(
@@ -264,6 +275,7 @@ impl MaestroCore {
                     engine_id: request.engine_id,
                     current_state,
                     workspace_boundary,
+                    profile_id: profile_id,
                     created_at: String::new(),
                     updated_at: String::new(),
                 },
@@ -334,7 +346,40 @@ impl MaestroCore {
         crate::task_state::get_task_state(&db_path, &request.task_id)
     }
 
+    /// Use-Case: Switch task's engine atomically.
+    /// Performs: session cleanup (if session_id provided) -> DB update -> event broadcast.
+    /// Note: Session cleanup is irreversible; if DB update fails afterward, the session is already killed.
+    pub fn task_switch_engine(
+        &self,
+        app: &AppHandle,
+        request: crate::task_state::TaskSwitchEngineRequest,
+    ) -> Result<(), String> {
+        let config = self.config.get();
+        if !config.engines.contains_key(&request.engine_id) {
+            return Err(format!("engine not found: {}", request.engine_id));
+        }
+        if let Some(ref session_id) = request.session_id {
+            crate::engine::cleanup_session_for_task_engine_switch(
+                request.engine_id.clone(),
+                Some(session_id.clone()),
+                config.clone(),
+                &self.pty_state,
+            )?;
+        }
+        let db_path = crate::task_state::bmad_db_path(app)?;
+        crate::task_state::update_task_engine(&db_path, &request.task_id, &request.engine_id)?;
+        emit_state_update(
+            Some(app),
+            AgentStateUpdate::TaskEngineChanged {
+                task_id: request.task_id,
+                engine_id: request.engine_id,
+            },
+        );
+        Ok(())
+    }
+
     /// Use-Case: Update task's engine and broadcast state event.
+    /// Prefer task_switch_engine when session cleanup is needed (e.g. user-initiated switch).
     pub fn task_update_engine(
         &self,
         app: &AppHandle,

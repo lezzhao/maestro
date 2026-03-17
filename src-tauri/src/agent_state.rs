@@ -61,6 +61,8 @@ pub struct TaskRecordPayload {
     pub engine_id: String,
     pub current_state: String,
     pub workspace_boundary: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }

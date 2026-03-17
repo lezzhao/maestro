@@ -125,12 +125,17 @@ export function useEngine() {
 
   const switchEngine = useCallback(
     async (engineId: string) => {
-      await invoke("engine_switch_session", {
-        engineId,
-        sessionId: sessionId ?? null,
-      });
       if (activeTaskId) {
-        await invoke("task_update_engine", { taskId: activeTaskId, engineId });
+        await invoke("task_switch_engine", {
+          taskId: activeTaskId,
+          engineId,
+          sessionId: sessionId ?? null,
+        });
+      } else {
+        await invoke("engine_switch_session", {
+          engineId,
+          sessionId: null,
+        });
       }
       void preflightEngine(engineId, { force: true });
     },

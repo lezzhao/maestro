@@ -16,6 +16,8 @@ export interface UseChatSessionParams {
   activeEngineId: string;
   activeEngine: EngineConfig | undefined;
   activeProfile: EngineProfile | undefined;
+  /** When set, used for profile_id in chat requests (task-bound profile). */
+  activeTaskProfileId?: string | null;
 }
 
 export function useChatSession({
@@ -23,6 +25,7 @@ export function useChatSession({
   activeEngineId,
   activeEngine,
   activeProfile,
+  activeTaskProfileId,
 }: UseChatSessionParams) {
   const { t } = useTranslation();
   const updateTask = useAppStore((s) => s.updateTask);
@@ -321,10 +324,12 @@ export function useChatSession({
             saved_at: Date.now(),
           });
         }
+        const profileId =
+          activeTaskProfileId ?? activeEngine?.active_profile_id ?? null;
         const request = mode === "api"
           ? {
               engine_id: activeEngineId,
-              profile_id: activeEngine?.active_profile_id || null,
+              profile_id: profileId,
               task_id: activeTaskId,
               message_ids: buildApiMessageIds(),
               // Fallback payload: Rust 优先从持久化+ID恢复，缺失时使用该列表
@@ -334,7 +339,7 @@ export function useChatSession({
             }
           : {
               engine_id: activeEngineId,
-              profile_id: activeEngine?.active_profile_id || null,
+              profile_id: profileId,
               task_id: activeTaskId,
               prompt: content,
               is_continuation: cliContinuationRef.current,
@@ -378,6 +383,7 @@ export function useChatSession({
       activeEngineId,
       activeProfile?.id,
       activeTaskId,
+      activeTaskProfileId,
       addMessage,
       buildApiMessages,
       buildApiMessageIds,
@@ -458,9 +464,11 @@ export function useChatSession({
             engineId !== activeEngineId && result.command_exists && result.auth_ok,
         )?.[0];
         if (fallbackEngineId && activeTaskId) {
-          void invoke("task_update_engine", {
+          const activeTask = useAppStore.getState().tasks.find((t) => t.id === activeTaskId);
+          void invoke("task_switch_engine", {
             taskId: activeTaskId,
             engineId: fallbackEngineId,
+            sessionId: activeTask?.sessionId ?? null,
           });
           setErrorMessage(
             `${t("execution_error")}: \u5f53\u524d\u5f15\u64ce ${activeEngineId} \u4e0d\u53ef\u7528\uff08\u547d\u4ee4\u6216auth\u5931\u8d25\uff09\uff0c\u5df2\u5207\u6362\u5230 ${fallbackEngineId}\u3002\u8bf7\u91cd\u65b0\u53d1\u9001\u3002`,
