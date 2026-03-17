@@ -344,16 +344,7 @@ export function useChatSession({
         const runId = result.run_id || `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
         currentRunIdRef.current = runId;
 
-        createRun({
-          id: runId,
-          taskId: activeTaskId,
-          engineId: activeEngineId,
-          mode,
-          status: "running",
-          createdAt: startedAt,
-          startedAt,
-        });
-
+        // Run is created by run_created event (backend authoritative). Only create locally on error.
         emitRunEvent({
           kind: "status",
           status: "pending",
@@ -363,6 +354,7 @@ export function useChatSession({
         });
 
         updateTask(activeTaskId, { activeExecId: result.exec_id, activeRunId: runId });
+        // updateRun when run exists (created by run_created event)
         updateRun(runId, { status: "running" });
       } catch (err) {
         if (!currentRunIdRef.current) {

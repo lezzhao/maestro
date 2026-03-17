@@ -92,7 +92,7 @@ function App() {
         title: t("cmd_new_task") || "New Task",
         subtitle: t("cmd_new_task_sub") || "Create a parallel workspace",
         keywords: "task context new parallel",
-        run: () => useAppStore.getState().addTask(""),
+        run: () => void useAppStore.getState().addTask(""),
       }
     ],
     [handleOpenProjectPicker, setShowSettings, t],

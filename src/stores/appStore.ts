@@ -1,9 +1,27 @@
+import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
+
 import type {
   EngineConfig,
   EnginePreflightResult,
   AppTask,
 } from "../types";
+
+function mapTaskStateToStatus(
+  currentState: string
+): "idle" | "running" | "error" | "completed" | "needs_review" | "verified" {
+  switch (currentState) {
+    case "PLANNING":
+    case "IN_PROGRESS":
+      return "running";
+    case "CODE_REVIEW":
+      return "needs_review";
+    case "DONE":
+      return "completed";
+    default:
+      return "idle";
+  }
+}
 
 type AppStore = {
   currentStep: "setup" | "project" | "compose" | "review";
@@ -38,7 +56,8 @@ type AppStore = {
   setLang: (lang: "en" | "zh") => void;
 
   // Task Actions
-  addTask: (name: string) => AppTask;
+  addTask: (name: string) => Promise<AppTask | null>;
+  setTasks: (tasks: AppTask[]) => void;
   removeTask: (id: string) => void;
   setActiveTaskId: (id: string | null) => void;
   updateTask: (id: string, patch: Partial<AppTask>) => void;
@@ -99,43 +118,60 @@ export const useAppStore = create<AppStore>()(
       set({ lang });
     },
 
-    addTask: (name) => {
-      // Fallback for randomUUID if not available in insecure context or older engines
-      const generateId = () => {
-        if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-          return crypto.randomUUID();
-        }
-        return `task-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-      };
-
-      const newTask: AppTask = {
-        id: generateId(),
-        name: name || `Task ${get().tasks.length + 1}`,
-        sessionId: null,
-        activeExecId: null,
-        activeRunId: null,
-        status: "idle",
-        gitChanges: [],
-        stats: {
-          cpu_percent: 0,
-          memory_mb: 0,
-          approx_input_tokens: 0,
-          approx_output_tokens: 0,
-        },
-        created_at: Date.now(),
-        updated_at: Date.now(),
-      };
-      set((state) => ({
-        tasks: [newTask, ...state.tasks],
-        activeTaskId: newTask.id,
-      }));
-      return newTask;
+    addTask: async (name) => {
+      const title = name || `Task ${get().tasks.length + 1}`;
+      try {
+        const result = await invoke<{
+          id: string;
+          title: string;
+          description: string;
+          currentState: string;
+          workspaceBoundary: string;
+        }>("task_create", {
+          title,
+          description: "",
+          workspaceBoundary: "",
+        });
+        const now = Date.now();
+        const newTask: AppTask = {
+          id: result.id,
+          name: result.title,
+          sessionId: null,
+          activeExecId: null,
+          activeRunId: null,
+          status: mapTaskStateToStatus(result.currentState),
+          gitChanges: [],
+          stats: {
+            cpu_percent: 0,
+            memory_mb: 0,
+            approx_input_tokens: 0,
+            approx_output_tokens: 0,
+          },
+          created_at: now,
+          updated_at: now,
+        };
+        set((state) => ({
+          tasks: [newTask, ...state.tasks],
+          activeTaskId: newTask.id,
+        }));
+        return newTask;
+      } catch (e) {
+        set({ errorMessage: String(e) });
+        return null;
+      }
     },
-    removeTask: (id) =>
-      set((state) => ({
-        tasks: state.tasks.filter((t) => t.id !== id),
-        activeTaskId: state.activeTaskId === id ? (state.tasks[1]?.id || null) : state.activeTaskId,
-      })),
+    setTasks: (tasks) => set({ tasks }),
+    removeTask: (id) => {
+      void invoke("task_delete", { taskId: id }).then(
+        () => {
+          set((state) => ({
+            tasks: state.tasks.filter((t) => t.id !== id),
+            activeTaskId: state.activeTaskId === id ? (state.tasks[1]?.id || null) : state.activeTaskId,
+          }));
+        },
+        (e) => set({ errorMessage: String(e) })
+      );
+    },
     setActiveTaskId: (activeTaskId) => set({ activeTaskId }),
     updateTask: (id, patch) =>
       set((state) => ({

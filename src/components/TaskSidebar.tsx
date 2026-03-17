@@ -18,7 +18,7 @@ export function TaskSidebar() {
   );
 
   const handleNewTask = () => {
-    addTask("");
+    void addTask("");
   };
 
   const formatDate = (ts: number) => {

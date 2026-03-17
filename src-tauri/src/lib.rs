@@ -36,7 +36,7 @@ use pty::{
 };
 use spec::{spec_detect, spec_inject, spec_list, spec_remove, spec_preview, spec_backup, spec_restore};
 use tauri::Manager;
-use task_state::{task_get_state, task_transition};
+use task_state::{task_create, task_delete, task_get_state, task_list, task_transition};
 use workflow::{
     chat_execute_api, chat_execute_api_stop, chat_execute_cli, chat_execute_cli_stop,
     chat_load_last_conversation, chat_save_last_conversation, chat_send, chat_spawn, chat_stop,
@@ -113,6 +113,9 @@ pub fn run() {
             cli_prune_sessions,
             cli_reconcile_active_sessions,
             pty_cleanup_dead_sessions,
+            task_create,
+            task_delete,
+            task_list,
             task_transition,
             task_get_state,
         ])

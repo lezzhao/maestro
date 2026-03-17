@@ -6,7 +6,7 @@ use tauri::{AppHandle, Emitter};
 
 pub const AGENT_STATE_UPDATE_EVENT: &str = "agent://state-update";
 
-/// Payload for agent state update events. Frontend subscribes and updates chatStore.
+/// Payload for agent state update events. Frontend subscribes and updates chatStore/appStore.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentStateUpdate {
@@ -24,6 +24,40 @@ pub enum AgentStateUpdate {
         task_id: String,
         messages: Vec<PersistedMessagePayload>,
     },
+    TaskCreated {
+        task: TaskRecordPayload,
+    },
+    TaskStateChanged {
+        task_id: String,
+        from_state: String,
+        to_state: String,
+    },
+    TaskDeleted { task_id: String },
+    ExecutionStarted {
+        task_id: String,
+        run_id: String,
+        mode: String,
+    },
+    ExecutionCancelled {
+        task_id: String,
+        run_id: String,
+    },
+    ExecutionOutputChunk {
+        task_id: String,
+        run_id: String,
+        chunk: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskRecordPayload {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub current_state: String,
+    pub workspace_boundary: String,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

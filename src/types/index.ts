@@ -224,6 +224,7 @@ export type RunVerificationRef = {
   updatedAt: number;
 };
 
+/** Frontend view of Execution (backend authoritative run record). */
 export type TaskRun = {
   id: string;
   taskId: string;
