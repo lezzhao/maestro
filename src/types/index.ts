@@ -62,6 +62,7 @@ export type EngineModelListState = EngineModelListResult & {
 export type PtySessionInfo = {
   session_id: string;
   os_pid?: number | null;
+  task_id?: string | null;
 };
 
 export type ProcessStats = {
@@ -242,6 +243,7 @@ export type TaskRunEvent = RunEvent;
 export type ChatSpawnRequest = {
   engine_id: string;
   profile_id?: string | null;
+  task_id?: string | null;
   cols?: number;
   rows?: number;
 };
@@ -258,6 +260,7 @@ export type ChatStopRequest = {
 
 export type ChatSessionMeta = {
   session_id: string;
+  task_id?: string | null;
   engine_id: string;
   profile_id: string;
   ready_signal?: string | null;
@@ -445,21 +448,28 @@ export type TaskStats = {
   approx_output_tokens: number;
 };
 
-export type AppTask = {
+export type TaskRuntimeBinding = {
+  /** Runtime binding: currently bound session for the task. */
+  sessionId: string | null;
+  /** Runtime binding: currently bound execution id for the task. */
+  activeExecId?: string | null;
+  /** Runtime binding: currently active run id for the task. */
+  activeRunId?: string | null;
+};
+
+export type TaskViewState = {
   id: string;
   name: string;
-  /** View-model field: currently bound runtime session for the task. */
-  sessionId: string | null;
-  /** View-model field: currently bound execution id for the task. */
-  activeExecId?: string | null;
-  /** View-model field: currently active run id for the task. */
-  activeRunId?: string | null;
   status: "idle" | "running" | "error" | "completed" | "needs_review" | "verified";
   gitChanges: FileChange[];
   stats: TaskStats;
   created_at: number;
   updated_at: number;
 };
+
+export type TaskViewModel = TaskViewState & TaskRuntimeBinding;
+
+export type AppTask = TaskViewModel;
 
 /** Backend authoritative task entity projection. */
 export type TaskRecord = {
@@ -472,8 +482,7 @@ export type TaskRecord = {
   updated_at: string;
 };
 
-/** Frontend UI projection that can enrich TaskRecord with runtime-only fields. */
-export type TaskViewModel = AppTask;
+/** Frontend UI projection that enriches TaskRecord with runtime-only fields. */
 
 export type EngineRecommendation = {
   engine_id: string;
