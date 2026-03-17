@@ -30,8 +30,39 @@ pub enum RuntimeResolvedFrom {
     ConfigFallback,
 }
 
-/// Stable contract: authoritative execution context. Do not add/remove fields without migration.
-/// All reproducible execution reads from this (via snapshot) or equivalent.
+/// Layer 1: Stable execution input. Snapshot freezes all fields except api_key (runtime-injected).
+/// Do not add fields here without migration; new execution params go here, not in metadata.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedExecutionConfig {
+    pub command: String,
+    pub args: Vec<String>,
+    pub env: std::collections::BTreeMap<String, String>,
+    pub execution_mode: String,
+    pub model: Option<String>,
+    pub api_provider: Option<String>,
+    pub api_base_url: Option<String>,
+    pub api_key: Option<String>,
+    pub supports_headless: bool,
+    pub headless_args: Vec<String>,
+    pub ready_signal: Option<String>,
+    pub exit_command: Option<String>,
+    pub exit_timeout_ms: Option<u64>,
+}
+
+/// Layer 2: Tracking metadata. Not part of execution input; used for audit and binding.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedRuntimeMetadata {
+    pub task_id: String,
+    pub engine_id: String,
+    pub profile_id: Option<String>,
+    pub snapshot_id: Option<String>,
+    pub resolved_from: RuntimeResolvedFrom,
+}
+
+/// Layer 3: Event/frontend projection. Composed from metadata + execution.
+/// ResolvedRuntimeContext is the flat backward-compat form; do not add new fields here.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolvedRuntimeContext {
@@ -55,7 +86,87 @@ pub struct ResolvedRuntimeContext {
     pub resolved_from: RuntimeResolvedFrom,
 }
 
+impl ResolvedRuntimeContext {
+    /// Build from metadata + execution layers. Use this pattern for new code.
+    pub fn from_layers(metadata: ResolvedRuntimeMetadata, execution: ResolvedExecutionConfig) -> Self {
+        Self {
+            task_id: metadata.task_id,
+            engine_id: metadata.engine_id,
+            profile_id: metadata.profile_id,
+            snapshot_id: metadata.snapshot_id,
+            command: execution.command,
+            args: execution.args,
+            env: execution.env,
+            execution_mode: execution.execution_mode,
+            model: execution.model,
+            api_provider: execution.api_provider,
+            api_base_url: execution.api_base_url,
+            api_key: execution.api_key,
+            supports_headless: execution.supports_headless,
+            headless_args: execution.headless_args,
+            ready_signal: execution.ready_signal,
+            exit_command: execution.exit_command,
+            exit_timeout_ms: execution.exit_timeout_ms,
+            resolved_from: metadata.resolved_from,
+        }
+    }
+
+    /// Extract execution config for snapshot freeze. Excludes api_key from frozen payload.
+    pub fn to_execution_config(&self) -> ResolvedExecutionConfig {
+        ResolvedExecutionConfig {
+            command: self.command.clone(),
+            args: self.args.clone(),
+            env: self.env.clone(),
+            execution_mode: self.execution_mode.clone(),
+            model: self.model.clone(),
+            api_provider: self.api_provider.clone(),
+            api_base_url: self.api_base_url.clone(),
+            api_key: self.api_key.clone(),
+            supports_headless: self.supports_headless,
+            headless_args: self.headless_args.clone(),
+            ready_signal: self.ready_signal.clone(),
+            exit_command: self.exit_command.clone(),
+            exit_timeout_ms: self.exit_timeout_ms,
+        }
+    }
+
+    /// Extract metadata for tracking.
+    pub fn to_metadata(&self) -> ResolvedRuntimeMetadata {
+        ResolvedRuntimeMetadata {
+            task_id: self.task_id.clone(),
+            engine_id: self.engine_id.clone(),
+            profile_id: self.profile_id.clone(),
+            snapshot_id: self.snapshot_id.clone(),
+            resolved_from: self.resolved_from.clone(),
+        }
+    }
+}
+
+impl ResolvedExecutionConfig {
+    /// Convert to RuntimeSnapshotPayload for freeze. api_key is excluded (runtime-injected only).
+    pub fn to_snapshot_payload(&self, engine_id: &str, profile_id: Option<&str>) -> RuntimeSnapshotPayload {
+        RuntimeSnapshotPayload {
+            engine_id: engine_id.to_string(),
+            profile_id: profile_id.map(|s| s.to_string()),
+            command: self.command.clone(),
+            args: self.args.clone(),
+            env: self.env.clone(),
+            execution_mode: self.execution_mode.clone(),
+            model: self.model.clone(),
+            api_provider: self.api_provider.clone(),
+            api_base_url: self.api_base_url.clone(),
+            supports_headless: self.supports_headless,
+            headless_args: self.headless_args.clone(),
+            ready_signal: self.ready_signal.clone(),
+            exit_command: self.exit_command.clone(),
+            exit_timeout_ms: self.exit_timeout_ms,
+        }
+    }
+}
+
 /// Stable contract: frozen execution config for reproducibility. Snapshot only freezes resolved execution contract.
+/// Does NOT include api_key (runtime-injected from config for security).
+/// Payload fields must match executor input 1:1 (command, args, env, headless_args, etc.).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeSnapshotPayload {
@@ -112,10 +223,29 @@ pub struct ResolvedTaskRuntimeContext {
 /// Resolve task runtime context from DB + config.
 /// - If task has runtime_snapshot_id, loads from snapshot table (reproducibility)
 /// - Else: reads task.engine_id, task.profile_id; fallback to engine.active_profile_id (migration-only)
+/// - When FallbackProfile is hit, solidifies by writing profile_id back to task (except when called from ensure).
 pub fn resolve_task_runtime_context(
     db_path: &Path,
     task_id: &str,
     cfg: &AppConfig,
+) -> Result<ResolvedRuntimeContext, CoreError> {
+    resolve_task_runtime_context_inner(db_path, task_id, cfg, true)
+}
+
+/// Like resolve_task_runtime_context but does not solidify on fallback. Used by ensure_runtime_snapshot.
+pub(crate) fn resolve_task_runtime_context_no_solidify(
+    db_path: &Path,
+    task_id: &str,
+    cfg: &AppConfig,
+) -> Result<ResolvedRuntimeContext, CoreError> {
+    resolve_task_runtime_context_inner(db_path, task_id, cfg, false)
+}
+
+fn resolve_task_runtime_context_inner(
+    db_path: &Path,
+    task_id: &str,
+    cfg: &AppConfig,
+    solidify_on_fallback: bool,
 ) -> Result<ResolvedRuntimeContext, CoreError> {
     let binding = task_state::get_task_runtime_binding(db_path, task_id)
         .map_err(|e| CoreError::Io {
@@ -188,6 +318,17 @@ pub fn resolve_task_runtime_context(
     let resolved_from = if binding.profile_id.is_some() {
         RuntimeResolvedFrom::LiveProfile
     } else {
+        tracing::warn!(
+            task_id = %task_id,
+            engine_id = %binding.engine_id,
+            profile_id = %profile_id,
+            "migration fallback: task has no profile_id, using engine.active_profile_id"
+        );
+        if solidify_on_fallback {
+            if let Err(e) = task_state::update_task_engine(db_path, task_id, &binding.engine_id, Some(&profile_id)) {
+                tracing::warn!(task_id = %task_id, error = %e, "migration fallback: failed to solidify profile_id");
+            }
+        }
         RuntimeResolvedFrom::FallbackProfile
     };
 
