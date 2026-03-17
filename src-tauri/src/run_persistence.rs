@@ -1,4 +1,5 @@
 use crate::core::execution::Execution;
+use crate::workspace_io::WorkspaceIo;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
@@ -21,15 +22,12 @@ pub fn resolve_root_dir_from_project_path(project_path: &str) -> Result<PathBuf,
     std::env::current_dir().map_err(|e| format!("resolve current dir failed: {e}"))
 }
 
-pub fn run_records_path(root: &PathBuf) -> PathBuf {
-    root.join(".maestro-cli").join("run-records.jsonl")
-}
-
 pub fn append_run_record(root: &PathBuf, record: &Execution) -> Result<(), String> {
     let _guard = RUN_RECORDS_LOCK
         .lock()
         .map_err(|_| "lock run records failed".to_string())?;
-    let path = run_records_path(root);
+    let workspace_io = WorkspaceIo::new(root)?;
+    let path = workspace_io.resolve(".maestro-cli/run-records.jsonl")?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("create run record dir failed: {e}"))?;
     }
@@ -49,7 +47,8 @@ pub fn read_run_records(root: &PathBuf) -> Result<Vec<Execution>, String> {
     let _guard = RUN_RECORDS_LOCK
         .lock()
         .map_err(|_| "lock run records failed".to_string())?;
-    let path = run_records_path(root);
+    let workspace_io = WorkspaceIo::new(root)?;
+    let path = workspace_io.resolve(".maestro-cli/run-records.jsonl")?;
     if !path.exists() {
         return Ok(vec![]);
     }
@@ -81,7 +80,8 @@ pub fn rewrite_run_records(root: &PathBuf, records: &[Execution]) -> Result<(), 
     let _guard = RUN_RECORDS_LOCK
         .lock()
         .map_err(|_| "lock run records failed".to_string())?;
-    let path = run_records_path(root);
+    let workspace_io = WorkspaceIo::new(root)?;
+    let path = workspace_io.resolve(".maestro-cli/run-records.jsonl")?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("create run record dir failed: {e}"))?;
     }
@@ -100,4 +100,62 @@ pub fn rewrite_run_records(root: &PathBuf, records: &[Execution]) -> Result<(), 
     }
     fs::rename(&tmp_path, &path).map_err(|e| format!("replace run records failed: {e}"))?;
     Ok(())
+}
+
+pub fn remove_records_by_task_id(root: &PathBuf, task_id: &str) -> Result<usize, String> {
+    if task_id.trim().is_empty() {
+        return Ok(0);
+    }
+    let mut records = read_run_records(root)?;
+    let before = records.len();
+    records.retain(|item| item.task_id != task_id);
+    if records.len() == before {
+        return Ok(0);
+    }
+    rewrite_run_records(root, &records)?;
+    Ok(before.saturating_sub(records.len()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::execution::{Execution, ExecutionMode, ExecutionStatus};
+
+    fn mock_execution(id: &str, task_id: &str) -> Execution {
+        Execution {
+            id: id.to_string(),
+            engine_id: "cursor".to_string(),
+            task_id: task_id.to_string(),
+            source: "test".to_string(),
+            mode: ExecutionMode::Cli,
+            status: ExecutionStatus::Completed,
+            command: "echo".to_string(),
+            cwd: String::new(),
+            model: "gpt-5".to_string(),
+            created_at: 1,
+            updated_at: 1,
+            log_path: None,
+            output_preview: String::new(),
+            verification: None,
+            error: None,
+            result: None,
+            native_ref: None,
+        }
+    }
+
+    #[test]
+    fn remove_records_by_task_id_keeps_other_tasks() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().to_path_buf();
+        append_run_record(&root, &mock_execution("r1", "t1")).expect("append r1");
+        append_run_record(&root, &mock_execution("r2", "t2")).expect("append r2");
+
+        let removed = remove_records_by_task_id(&root, "t1").expect("remove t1");
+        assert_eq!(removed, 1);
+
+        let remaining = read_run_records(&root).expect("read records");
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, "r2");
+        assert_eq!(remaining[0].task_id, "t2");
+    }
 }
