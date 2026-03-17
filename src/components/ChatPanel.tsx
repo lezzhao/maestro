@@ -7,6 +7,7 @@ import { cn } from "../lib/utils";
 import { useChatSession } from "../hooks/useChatSession";
 import { MessageList } from "./chat/MessageList";
 import { ChatInput } from "./chat/ChatInput";
+import { useTaskRuntimeContext } from "../hooks/useTaskRuntimeContext";
 import type { AppTask, EngineConfig } from "../types";
 
 type ChatPanelProps = {
@@ -24,7 +25,7 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const { t } = useTranslation();
   
-  const activeEngineId = activeTask?.engineId || "";
+  const { engineId: activeEngineId, engine: activeEngine, profile: activeProfile, executionMode } = useTaskRuntimeContext();
   const activeTaskId = activeTask?.id || null;
   const enginePreflight = useAppStore((s) => s.enginePreflight);
   const setShowSettings = useAppStore((s) => s.setShowSettings);
@@ -32,20 +33,6 @@ export function ChatPanel({
   const clearMessages = useChatStore((s) => s.clearMessages);
   const clearTaskRuns = useChatStore((s) => s.clearTaskRuns);
   const [showExecutionTrace, setShowExecutionTrace] = useState(true);
-
-  const activeEngine = engines[activeEngineId];
-  const activeProfile = useMemo(() => {
-    const profiles = activeEngine?.profiles || {};
-    if (!profiles || Object.keys(profiles).length === 0) return undefined;
-    const profileId =
-      (activeTask?.profileId && profiles[activeTask.profileId]
-        ? activeTask.profileId
-        : activeEngine?.active_profile_id && profiles[activeEngine.active_profile_id]
-          ? activeEngine.active_profile_id
-          : Object.keys(profiles)[0]) ?? null;
-    return profileId ? profiles[profileId] : undefined;
-  }, [activeEngine, activeTask?.profileId]);
-  const executionMode = (activeProfile?.execution_mode || "cli") as "api" | "cli";
 
   const {
     input,
@@ -60,9 +47,9 @@ export function ChatPanel({
   } = useChatSession({
     activeTaskId,
     activeEngineId,
-    activeEngine,
+    activeProfileId: activeProfile?.id ?? null,
     activeProfile,
-    activeTaskProfileId: activeTask?.profileId ?? null,
+    executionMode,
   });
 
   const chatLabels = useMemo(

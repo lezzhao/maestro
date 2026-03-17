@@ -6,6 +6,7 @@ import { useTranslation } from "../i18n";
 import { useChatStore } from "../stores/chatStore";
 import { useShallow } from "zustand/react/shallow";
 import { ChatPanel } from "./ChatPanel";
+import { useTaskRuntimeContext } from "../hooks/useTaskRuntimeContext";
 import type { AppTask, EngineConfig } from "../types";
 
 type Props = {
@@ -45,18 +46,7 @@ export function TaskWorkspace({
   const latestRun = useChatStore((s) => s.getLatestRun(activeId));
   const latestTranscript = useChatStore((s) => s.getRunTranscript(latestRun?.id || null));
   const runEvents = useChatStore(useShallow((s) => s.getTaskRunEvents(activeId)));
-  const activeEngineId = activeTask?.engineId || Object.keys(engines)[0] || "";
-  const activeEngine = engines[activeEngineId];
-  const activeProfile = useMemo(() => {
-    if (!activeEngine?.profiles) return null;
-    const profileId =
-      activeEngine.active_profile_id && activeEngine.profiles[activeEngine.active_profile_id]
-        ? activeEngine.active_profile_id
-        : Object.keys(activeEngine.profiles)[0];
-    if (!profileId) return null;
-    return activeEngine.profiles[profileId] || null;
-  }, [activeEngine]);
-  const executionMode = ((activeProfile?.execution_mode || "cli") as "api" | "cli");
+  const { engineId: activeEngineId, engine: activeEngine, executionMode } = useTaskRuntimeContext();
 
   const groupedRunEvents = useMemo(() => {
     const filtered = runEvents.filter((event) => {

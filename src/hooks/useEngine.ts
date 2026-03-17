@@ -204,15 +204,10 @@ export function useEngine() {
     [getActiveProfileId],
   );
 
-  const updateActiveProfileModel = useCallback(
-    async (engineId: string, model: string) => {
+  const updateProfileModel = useCallback(
+    async (engineId: string, profileId: string, model: string) => {
       const engine = engines[engineId];
       if (!engine?.profiles) return;
-      const profileId =
-        engine.active_profile_id && engine.profiles[engine.active_profile_id]
-          ? engine.active_profile_id
-          : Object.keys(engine.profiles)[0];
-      if (!profileId) return;
       const profile = engine.profiles[profileId];
       if (!profile) return;
       await upsertProfile(engineId, profileId, {
@@ -238,6 +233,6 @@ export function useEngine() {
     setActiveProfile,
     upsertProfile,
     listModels,
-    updateActiveProfileModel,
+    updateProfileModel,
   };
 }

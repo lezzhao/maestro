@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useChatStore } from "../stores/chatStore";
 import { useChatAgent } from "./useChatAgent";
@@ -9,23 +9,22 @@ import { useExecutionQueue } from "./useExecutionQueue";
 import { useChatInputHistory } from "./useChatInputHistory";
 import { useAgentExecutor } from "./useAgentExecutor";
 import type { ExecutionEvent } from "../services/ExecutionClient";
-import type { ChatApiMessage, EngineConfig, EngineProfile, RunEvent } from "../types";
+import type { ChatApiMessage, EngineProfile, RunEvent } from "../types";
 
 export interface UseChatSessionParams {
   activeTaskId: string | null;
   activeEngineId: string;
-  activeEngine: EngineConfig | undefined;
-  activeProfile: EngineProfile | undefined;
-  /** When set, used for profile_id in chat requests (task-bound profile). */
-  activeTaskProfileId?: string | null;
+  activeProfileId: string | null;
+  activeProfile: EngineProfile | null;
+  executionMode: "api" | "cli";
 }
 
 export function useChatSession({
   activeTaskId,
   activeEngineId,
-  activeEngine,
+  activeProfileId,
   activeProfile,
-  activeTaskProfileId,
+  executionMode,
 }: UseChatSessionParams) {
   const { t } = useTranslation();
   const updateTask = useAppStore((s) => s.updateTask);
@@ -60,11 +59,6 @@ export function useChatSession({
   const handleRetry = useCallback((id: string) => {
     baseHandleRetry(id, setInput);
   }, [baseHandleRetry, setInput]);
-
-  const executionMode = useMemo(
-    () => ((activeProfile?.execution_mode || "cli") as "api" | "cli"),
-    [activeProfile?.execution_mode],
-  );
 
   const activeAssistantIdRef = useRef<string | null>(null);
   const currentRunIdRef = useRef<string | null>(null);
@@ -324,8 +318,7 @@ export function useChatSession({
             saved_at: Date.now(),
           });
         }
-        const profileId =
-          activeTaskProfileId ?? activeEngine?.active_profile_id ?? null;
+        const profileId = activeProfileId;
         const request = mode === "api"
           ? {
               engine_id: activeEngineId,
@@ -379,14 +372,13 @@ export function useChatSession({
       }
     },
     [
-      activeEngine?.active_profile_id,
       activeEngineId,
       activeProfile?.id,
+      activeProfileId,
       activeTaskId,
-      activeTaskProfileId,
       addMessage,
-      buildApiMessages,
       buildApiMessageIds,
+      buildApiMessages,
       createRun,
       emitRunEvent,
       failRound,

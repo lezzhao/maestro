@@ -23,6 +23,7 @@ import { useProject } from "../../hooks/useProject";
 import { useAppLifecycle } from "../../hooks/useAppLifecycle";
 import { useWorkspaceFlow } from "../../hooks/useWorkspaceFlow";
 import { useTaskSwitchEffects } from "../../hooks/useTaskSwitchEffects";
+import { useTaskRuntimeContext } from "../../hooks/useTaskRuntimeContext";
 import { PanelFallback } from "../ui/PanelFallback";
 
 export function WorkspaceLayout() {
@@ -41,8 +42,13 @@ export function WorkspaceLayout() {
   } = useEngine();
   const { projectPath, detectAndRecommend, gitStatus, gitDiff } = useProject();
   const { activeTaskId, activeTask } = useActiveTask();
-  
-  const activeEngineId = activeTask?.engineId || Object.keys(engines)[0] || "";
+  const { 
+    engineId: activeEngineId, 
+    profileId: activeProfileId, 
+    profile: activeProfile, 
+    executionMode: activeExecutionMode, 
+    isReady: isEngineReady 
+  } = useTaskRuntimeContext();
   const {
     showSettings, setShowSettings,
     setCurrentStep, setSidebarCollapsed,
@@ -72,19 +78,6 @@ export function WorkspaceLayout() {
   const activeTaskMessages = useChatStore((s) => s.getTaskMessages(activeTaskId));
   const latestRun = useChatStore((s) => s.getLatestRun(activeTaskId));
   const latestVerification = useChatStore((s) => s.getRunVerification(latestRun?.id || null));
-
-  const activeProfile = useMemo(() => {
-    const engine = engines[activeEngineId];
-    if (!engine?.profiles) return null;
-    const profileId =
-      engine.active_profile_id && engine.profiles[engine.active_profile_id]
-        ? engine.active_profile_id
-        : Object.keys(engine.profiles)[0];
-    if (!profileId) return null;
-    return engine.profiles[profileId] || null;
-  }, [activeEngineId, engines]);
-  
-  const activeExecutionMode = ((activeProfile?.execution_mode || "cli") as "api" | "cli");
 
   useAppLifecycle(activeExecutionMode, activeEngineId);
 
@@ -140,22 +133,14 @@ export function WorkspaceLayout() {
 
   const handleSetExecutionMode = useCallback(
     async (mode: "api" | "cli") => {
-      const engine = engines[activeEngineId];
-      if (!engine?.profiles) return;
-      const profileId =
-        engine.active_profile_id && engine.profiles[engine.active_profile_id]
-          ? engine.active_profile_id
-          : Object.keys(engine.profiles)[0];
-      if (!profileId) return;
-      const profile = engine.profiles[profileId];
-      if (!profile) return;
-      if ((profile.execution_mode || "cli") === mode) return;
-      await upsertProfile(activeEngineId, profileId, {
-        ...profile,
+      if (!activeEngineId || !activeProfileId || !activeProfile) return;
+      if ((activeProfile.execution_mode || "cli") === mode) return;
+      await upsertProfile(activeEngineId, activeProfileId, {
+        ...activeProfile,
         execution_mode: mode,
       });
     },
-    [activeEngineId, engines, upsertProfile],
+    [activeEngineId, activeProfileId, activeProfile, upsertProfile],
   );
 
   useTaskSwitchEffects({
@@ -182,10 +167,6 @@ export function WorkspaceLayout() {
     }
   }, [projectPath, setSidebarCollapsed, showSettings]);
 
-  const activePreflight = enginePreflight[activeEngineId];
-  const isCliReady = Boolean(activePreflight?.command_exists) && Boolean(activePreflight?.auth_ok);
-  const isApiReady = Boolean(activeProfile?.api_key && activeProfile?.api_base_url && activeProfile?.model);
-  const isEngineReady = activeExecutionMode === "api" ? isApiReady : isCliReady;
   const availableEngineOptions = useMemo(
     () =>
       Object.entries(engines)
