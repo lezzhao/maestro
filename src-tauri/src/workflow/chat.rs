@@ -13,7 +13,6 @@ use crate::run_persistence::{
     append_run_record, current_time_ms,
 };
 use crate::workspace_io::WorkspaceIo;
-use crate::execution_binding::prepare_execution;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -141,17 +140,20 @@ pub async fn chat_execute_api_core(
     headless_state: &HeadlessProcessState,
     on_data: Arc<dyn StringStream>,
 ) -> Result<ChatExecuteApiResult, CoreError> {
-    let (execution_id, resolved) = if let (Some(ref app_handle), Some(ref tid)) = (app.as_ref(), request.task_id.as_ref()) {
-        if !tid.is_empty() {
-            let (r, id) = prepare_execution(app_handle, tid, "chat_api", &cfg)?;
-            (id, r)
-        } else {
-            let id = format!("chat-api-{}-{}", request.engine_id, uuid::Uuid::new_v4());
-            (id, crate::execution_binding::fallback_runtime_context(&cfg, &request.engine_id, request.profile_id.as_deref(), "api")?)
-        }
-    } else {
-        let id = format!("chat-api-{}-{}", request.engine_id, uuid::Uuid::new_v4());
-        (id, crate::execution_binding::fallback_runtime_context(&cfg, &request.engine_id, request.profile_id.as_deref(), "api")?)
+    let (execution_id, resolved) = {
+        let prepared = crate::execution_binding::resolve_execution(
+            app.as_ref(),
+            &request.engine_id,
+            request.profile_id.as_deref(),
+            "api",
+            request.task_id.as_deref(),
+            "chat_api",
+            &cfg,
+        )?;
+        let id = prepared
+            .execution_id
+            .unwrap_or_else(|| format!("chat-api-{}-{}", request.engine_id, uuid::Uuid::new_v4()));
+        (id, prepared.context)
     };
 
     let provider = resolved
@@ -307,17 +309,20 @@ pub async fn chat_execute_cli_core(
     headless_state: &HeadlessProcessState,
     on_data: Arc<dyn StringStream>,
 ) -> Result<ChatExecuteCliResult, CoreError> {
-    let (execution_id, resolved) = if let (Some(ref app_handle), Some(ref tid)) = (app.as_ref(), request.task_id.as_ref()) {
-        if !tid.is_empty() {
-            let (r, id) = prepare_execution(app_handle, tid, "chat_cli", &cfg)?;
-            (id, r)
-        } else {
-            let id = format!("chat-cli-{}-{}", request.engine_id, uuid::Uuid::new_v4());
-            (id, crate::execution_binding::fallback_runtime_context(&cfg, &request.engine_id, request.profile_id.as_deref(), "cli")?)
-        }
-    } else {
-        let id = format!("chat-cli-{}-{}", request.engine_id, uuid::Uuid::new_v4());
-        (id, crate::execution_binding::fallback_runtime_context(&cfg, &request.engine_id, request.profile_id.as_deref(), "cli")?)
+    let (execution_id, resolved) = {
+        let prepared = crate::execution_binding::resolve_execution(
+            app.as_ref(),
+            &request.engine_id,
+            request.profile_id.as_deref(),
+            "cli",
+            request.task_id.as_deref(),
+            "chat_cli",
+            &cfg,
+        )?;
+        let id = prepared
+            .execution_id
+            .unwrap_or_else(|| format!("chat-cli-{}-{}", request.engine_id, uuid::Uuid::new_v4()));
+        (id, prepared.context)
     };
 
     let fallback_headless_args = builtin_headless_defaults(&resolved.engine_id);
@@ -501,16 +506,16 @@ pub fn chat_spawn_core(
     pty_state: &crate::pty::PtyManagerState,
     on_data: Channel<String>,
 ) -> Result<ChatSessionMeta, CoreError> {
-    let resolved = if let (Some(app_handle), Some(ref tid)) = (app, request.task_id.as_ref()) {
-        if !tid.is_empty() {
-            let (r, _) = prepare_execution(app_handle, tid, "chat_spawn", cfg)?;
-            r
-        } else {
-            crate::execution_binding::fallback_runtime_context(cfg, &request.engine_id, request.profile_id.as_deref(), "cli")?
-        }
-    } else {
-        crate::execution_binding::fallback_runtime_context(cfg, &request.engine_id, request.profile_id.as_deref(), "cli")?
-    };
+    let prepared = crate::execution_binding::resolve_execution(
+        app,
+        &request.engine_id,
+        request.profile_id.as_deref(),
+        "cli",
+        request.task_id.as_deref(),
+        "chat_spawn",
+        cfg,
+    )?;
+    let resolved = prepared.context;
 
     let output_buf = Arc::new(Mutex::new(String::new()));
     let output_buf_ch = Arc::clone(&output_buf);

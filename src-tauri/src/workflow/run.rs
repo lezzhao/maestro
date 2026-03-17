@@ -217,12 +217,17 @@ async fn execute_workflow_step(
     pty_state: &PtyManagerState,
 ) -> Result<(WorkflowStepResult, String), String> {
     let step_started = Instant::now();
-    let resolved = crate::execution_binding::fallback_runtime_context(
-        cfg,
+    let prepared = crate::execution_binding::resolve_execution(
+        None,
         &step.engine,
         step.profile_id.as_deref(),
-        "workflow"
-    ).map_err(|e| format!("resolve step engine failed: {e:?}"))?;
+        "workflow",
+        None,
+        "workflow",
+        cfg,
+    )
+    .map_err(|e| format!("resolve step engine failed: {e:?}"))?;
+    let resolved = prepared.context;
 
     emitter.send_event(
         "workflow://progress",
