@@ -65,7 +65,13 @@ pub fn engine_upsert_profile_core(
         },
     );
     // Migration-only fallback: ensure engine has valid active_profile_id.
+    // DEPRECATED: see docs/MIGRATION_FALLBACK_DEPRECATION.md
     if engine.active_profile_id.trim().is_empty() {
+        tracing::warn!(
+            engine_id = %engine_id,
+            profile_id = %profile_id,
+            "migration fallback: engine had no active_profile_id, set to current profile"
+        );
         engine.active_profile_id = profile_id;
     }
     write_config_to_disk(app, &config)?;

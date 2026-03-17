@@ -14,10 +14,17 @@ pub fn resolve_profile_id_for_update(
     profile_id: Option<String>,
 ) -> Option<String> {
     profile_id.or_else(|| {
-        config
+        let fallback = config
             .engines
             .get(engine_id)
-            .map(|e| e.active_profile_id.clone())
+            .map(|e| e.active_profile_id.clone());
+        if fallback.is_some() {
+            tracing::warn!(
+                engine_id = %engine_id,
+                "migration fallback: using engine.active_profile_id for profile_id"
+            );
+        }
+        fallback
     })
 }
 
