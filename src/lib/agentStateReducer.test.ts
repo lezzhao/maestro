@@ -124,4 +124,13 @@ describe("agentStateReducer integration", () => {
     expect(h.messagesByTask.t2[0]?.role).toBe("assistant");
     expect(h.messagesByTask.t2[0]?.content).toBe("ok");
   });
+
+  it("maps execution_cancelled to stopped run status", () => {
+    const h = makeDeps();
+    applyAgentStateUpdate(
+      { type: "execution_cancelled", task_id: "t3", run_id: "run-3" },
+      h.deps,
+    );
+    expect(h.finishedRuns).toEqual([{ runId: "run-3", status: "stopped", error: null }]);
+  });
 });
