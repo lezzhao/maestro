@@ -1,3 +1,8 @@
+/**
+ * useTaskRuntimeContext: read-only consumer of authoritative resolved context.
+ * Does NOT infer execution mode or readiness; backend is source of truth.
+ * Fallback only for startup window: conservative display (executionMode: cli, isReady: false).
+ */
 import { useMemo } from "react";
 import { useAppStore } from "../stores/appStore";
 import { useActiveTask } from "./useActiveTask";
@@ -58,16 +63,14 @@ export function resolveTaskRuntimeContextFromState(
     };
   }
 
-  // 2. Fallback UI Resolution (Before Backend Context Arrives)
-  // Fallback: backend context not yet available. Do not use for execution decisions.
-  // Only provides engineId/profileId/profile for UI display; executionMode/isReady/isHeadless are conservative.
+  // 2. Startup-window fallback: backend context not yet available.
+  // Conservative only: executionMode=cli, isReady=false, isHeadless=false.
+  // Do NOT infer execution mode or readiness; backend is authoritative.
   const engineId = activeTask.engineId || Object.keys(engines)[0] || "";
   const engine = engines[engineId] || null;
-
   if (!engine || !engine.profiles) {
     return { ...defaultEmpty, engineId, engine };
   }
-
   let profileId = activeTask.profileId;
   if (!profileId || !engine.profiles[profileId]) {
     profileId =
@@ -75,7 +78,6 @@ export function resolveTaskRuntimeContextFromState(
         ? engine.active_profile_id
         : Object.keys(engine.profiles)[0] || null;
   }
-
   const profile = profileId ? engine.profiles[profileId] || null : null;
   return {
     engineId,

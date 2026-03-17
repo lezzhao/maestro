@@ -521,9 +521,13 @@ export interface TaskViewState {
 export type TaskViewModel = TaskViewState & TaskRuntimeBinding;
 
 /**
- * Full task representation. Composite of TaskRecord + TaskRuntimeBinding + ResolvedRuntimeContext.
- * Use updateTask / updateTaskRuntimeBinding / setTaskResolvedRuntimeContext to update each layer.
- * Do not add fields without classifying: backend authoritative | runtime ephemeral | UI-only.
+ * State layering for task:
+ * - task record (TaskViewState): persisted entity fields
+ * - runtime binding (TaskRuntimeBinding): runtime binding projection
+ * - resolved runtime context (ResolvedRuntimeContext): executable context projection from backend
+ *
+ * Components should prefer selectors/hooks over consuming a fat AppTask. Use
+ * updateTask / updateTaskRuntimeBinding / setTaskResolvedRuntimeContext per layer.
  */
 export type AppTask = TaskViewModel & {
   resolvedRuntimeContext?: ResolvedRuntimeContext | null;
