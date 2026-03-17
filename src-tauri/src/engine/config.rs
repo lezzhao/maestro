@@ -69,15 +69,3 @@ pub fn engine_upsert_profile_core(
     Ok(())
 }
 
-pub fn engine_set_active_core(
-    engine_id: String,
-    config_state: &AppConfigState,
-) -> Result<(), String> {
-    let config = config_state.get();
-    if !config.engines.contains_key(&engine_id) {
-        return Err(format!("engine not found: {engine_id}"));
-    }
-    Ok(())
-}
-
-

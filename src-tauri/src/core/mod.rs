@@ -428,14 +428,6 @@ impl MaestroCore {
         crate::engine::engine_upsert_profile_core(app, engine_id, profile_id, profile, &self.config)
     }
 
-    pub fn engine_set_active(&self, engine_id: String) -> Result<(), String> {
-        crate::engine::engine_set_active_core(engine_id, &self.config)
-    }
-
-    pub fn engine_get_active(&self) -> Result<Option<String>, String> {
-        Ok(None) // deprecated, frontend uses active task's engineId
-    }
-
     pub async fn engine_preflight(&self, engine_id: String) -> Result<EnginePreflightResult, String> {
         crate::engine::engine_preflight_core(engine_id, self.config.get()).await
     }

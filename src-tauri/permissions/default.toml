@@ -7,8 +7,6 @@ commands.allow = [
   "engine_list",
   "engine_list_models",
   "engine_upsert",
-  "engine_set_active",
-  "engine_get_active",
   "engine_preflight",
   "engine_switch_session",
   "engine_set_active_profile",

@@ -22,8 +22,8 @@ use cli_state::{cli_list_sessions, cli_prune_sessions, cli_read_session_logs, cl
 use config::{load_or_create_config, save_config};
 use core::MaestroCore;
 use engine::{
-    engine_get_active, engine_list, engine_list_models, engine_preflight, engine_set_active,
-    engine_set_active_profile, engine_switch_session, engine_upsert, engine_upsert_profile,
+    engine_list, engine_list_models, engine_preflight, engine_set_active_profile,
+    engine_switch_session, engine_upsert, engine_upsert_profile,
 };
 use process::{
     process_get_stats, process_start_monitor, process_stop_monitor,
@@ -63,8 +63,6 @@ pub fn run() {
             engine_list,
             engine_list_models,
             engine_upsert,
-            engine_set_active,
-            engine_get_active,
             engine_preflight,
             engine_switch_session,
             engine_set_active_profile,

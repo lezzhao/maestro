@@ -4,12 +4,11 @@ use tauri::{command, State, AppHandle};
 
 use super::{
     config::{
-        engine_list_core, engine_set_active_core,
-        engine_set_active_profile_core, engine_upsert_core, engine_upsert_profile_core,
+        engine_list_core, engine_set_active_profile_core, engine_upsert_core, engine_upsert_profile_core,
     },
     models::{engine_list_models_core, EngineModelListResult},
     preflight::{engine_preflight_core, EnginePreflightResult},
-    runtime::{engine_switch_session_core, EngineSwitchResult},
+    runtime::EngineSwitchResult,
 };
 
 #[command]
@@ -50,19 +49,6 @@ pub fn engine_upsert_profile(
     core_state
         .inner()
         .engine_upsert_profile(&app, engine_id, profile_id, profile)
-}
-
-#[command]
-pub fn engine_set_active(
-    engine_id: String,
-    core_state: State<'_, crate::core::MaestroCore>,
-) -> Result<(), String> {
-    core_state.inner().engine_set_active(engine_id)
-}
-
-#[command]
-pub fn engine_get_active(core_state: State<'_, crate::core::MaestroCore>) -> Result<Option<String>, String> {
-    core_state.inner().engine_get_active()
 }
 
 #[command]
