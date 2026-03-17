@@ -1,8 +1,7 @@
 use crate::config::SpecProviderBmad;
 use crate::project::validate_project_scope;
+use crate::workspace_io::WorkspaceIo;
 use serde::Serialize;
-use crate::scoped_fs::ScopedWorkspace;
-use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::command;
 
@@ -44,6 +43,7 @@ impl SpecProvider for BmadProvider {
     }
 
     fn inject(&self, project_path: &Path, mode: &str, target_ide: &str) -> Result<(), String> {
+        let workspace_io = WorkspaceIo::new(project_path)?;
         match mode {
             "full" => {
                 let src = self.conf.source_path.trim();
@@ -53,40 +53,27 @@ impl SpecProvider for BmadProvider {
                             .to_string(),
                     );
                 }
-                copy_dir_all(Path::new(src), &project_path.join("_bmad"))?;
+                workspace_io.copy_dir_from(Path::new(src), "_bmad")?;
             }
             _ => {
                 let content = BMAD_RULES_TEMPLATE;
-                let scoped = ScopedWorkspace::new(project_path)?;
                 let rel_path = match target_ide {
                     "cursor" => ".cursor/rules/bmad.mdc",
                     "claude" => "CLAUDE.md",
                     "gemini" => "GEMINI.md",
                     _ => "AGENTS.md",
                 };
-                let file = scoped.resolve_in_scope(rel_path)?;
-                ensure_parent(&file)?;
-                fs::write(&file, content)
-                    .map_err(|e| format!("write spec file failed: {e}"))?;
+                workspace_io.write_text(rel_path, content)?;
             }
         }
         Ok(())
     }
 
     fn remove(&self, project_path: &Path) -> Result<(), String> {
-        let maybe_paths = [
-            project_path.join("_bmad"),
-            project_path.join(".cursor/rules/bmad.mdc"),
-            project_path.join("CLAUDE.md"),
-            project_path.join("GEMINI.md"),
-            project_path.join("AGENTS.md"),
-        ];
+        let workspace_io = WorkspaceIo::new(project_path)?;
+        let maybe_paths = ["_bmad", ".cursor/rules/bmad.mdc", "CLAUDE.md", "GEMINI.md", "AGENTS.md"];
         for p in maybe_paths {
-            if p.is_dir() {
-                let _ = fs::remove_dir_all(&p);
-            } else if p.exists() {
-                let _ = fs::remove_file(&p);
-            }
+            let _ = workspace_io.remove_path(p);
         }
         Ok(())
     }
@@ -145,34 +132,26 @@ impl SpecProvider for CustomProvider {
     }
 
     fn inject(&self, project_path: &Path, _mode: &str, target_ide: &str) -> Result<(), String> {
+        let workspace_io = WorkspaceIo::new(project_path)?;
         let content = if self.conf.rules_content.trim().is_empty() {
             CUSTOM_RULES_TEMPLATE
         } else {
             &self.conf.rules_content
         };
-        let scoped = ScopedWorkspace::new(project_path)?;
         let rel_path = match target_ide {
             "cursor" => ".cursor/rules/custom.mdc",
             "claude" => "CLAUDE.md",
             "gemini" => "GEMINI.md",
             _ => "AGENTS.md",
         };
-        let file = scoped.resolve_in_scope(rel_path)?;
-        ensure_parent(&file)?;
-        fs::write(&file, content).map_err(|e| format!("write custom rules failed: {e}"))
+        workspace_io.write_text(rel_path, content)
     }
 
     fn remove(&self, project_path: &Path) -> Result<(), String> {
-        let maybe_paths = [
-            project_path.join(".cursor/rules/custom.mdc"),
-            project_path.join("CLAUDE.md"),
-            project_path.join("GEMINI.md"),
-            project_path.join("AGENTS.md"),
-        ];
+        let workspace_io = WorkspaceIo::new(project_path)?;
+        let maybe_paths = [".cursor/rules/custom.mdc", "CLAUDE.md", "GEMINI.md", "AGENTS.md"];
         for p in maybe_paths {
-            if p.exists() {
-                let _ = fs::remove_file(p);
-            }
+            let _ = workspace_io.remove_path(p);
         }
         Ok(())
     }
@@ -245,34 +224,6 @@ pub struct SpecDetectResult {
 pub struct SpecPreviewResult {
     pub file_path: String,
     pub content: String,
-}
-
-fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {
-    if !src.exists() {
-        return Err(format!("source path does not exist: {}", src.display()));
-    }
-    fs::create_dir_all(dst).map_err(|e| format!("create dir failed: {e}"))?;
-    for entry in fs::read_dir(src).map_err(|e| format!("read_dir failed: {e}"))? {
-        let entry = entry.map_err(|e| format!("dir entry failed: {e}"))?;
-        let ty = entry
-            .file_type()
-            .map_err(|e| format!("file_type failed: {e}"))?;
-        let from = entry.path();
-        let to = dst.join(entry.file_name());
-        if ty.is_dir() {
-            copy_dir_all(&from, &to)?;
-        } else {
-            fs::copy(&from, &to).map_err(|e| format!("copy failed {}: {e}", from.display()))?;
-        }
-    }
-    Ok(())
-}
-
-fn ensure_parent(path: &PathBuf) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("create parent failed: {e}"))?;
-    }
-    Ok(())
 }
 
 #[command]
@@ -382,24 +333,14 @@ pub fn spec_backup(
         validate_project_scope(&project_path, &allowed)?;
     }
     let project = PathBuf::from(project_path);
+    let workspace_io = WorkspaceIo::new(&project)?;
     let mut backed_up = Vec::new();
 
-    let paths_to_backup = [
-        project.join(".cursor/rules/bmad.mdc"),
-        project.join(".cursor/rules/custom.mdc"),
-        project.join("CLAUDE.md"),
-        project.join("GEMINI.md"),
-        project.join("AGENTS.md"),
-    ];
+    let paths_to_backup = [".cursor/rules/bmad.mdc", ".cursor/rules/custom.mdc", "CLAUDE.md", "GEMINI.md", "AGENTS.md"];
 
     for p in paths_to_backup {
-        if p.exists() && p.is_file() {
-            let mut backup_path = p.clone().into_os_string();
-            backup_path.push(".bmad-bak");
-            let backup_p = PathBuf::from(backup_path);
-            if fs::copy(&p, &backup_p).is_ok() {
-                backed_up.push(p.to_string_lossy().to_string());
-            }
+        if let Some(src) = workspace_io.backup_file_if_exists(p)? {
+            backed_up.push(src.to_string_lossy().to_string());
         }
     }
 
@@ -416,26 +357,14 @@ pub fn spec_restore(
         validate_project_scope(&project_path, &allowed)?;
     }
     let project = PathBuf::from(project_path);
+    let workspace_io = WorkspaceIo::new(&project)?;
     let mut restored = Vec::new();
 
-    let paths_to_restore = [
-        project.join(".cursor/rules/bmad.mdc"),
-        project.join(".cursor/rules/custom.mdc"),
-        project.join("CLAUDE.md"),
-        project.join("GEMINI.md"),
-        project.join("AGENTS.md"),
-    ];
+    let paths_to_restore = [".cursor/rules/bmad.mdc", ".cursor/rules/custom.mdc", "CLAUDE.md", "GEMINI.md", "AGENTS.md"];
 
     for p in paths_to_restore {
-        let mut backup_path = p.clone().into_os_string();
-        backup_path.push(".bmad-bak");
-        let backup_p = PathBuf::from(backup_path);
-        
-        if backup_p.exists() && backup_p.is_file() {
-            if fs::copy(&backup_p, &p).is_ok() {
-                let _ = fs::remove_file(&backup_p);
-                restored.push(p.to_string_lossy().to_string());
-            }
+        if let Some(dst) = workspace_io.restore_file_if_exists(p)? {
+            restored.push(dst.to_string_lossy().to_string());
         }
     }
 

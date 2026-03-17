@@ -15,6 +15,7 @@ mod pty;
 mod run_persistence;
 mod scoped_fs;
 mod spec;
+mod workspace_io;
 pub mod workflow;
 
 use cli_state::{cli_list_sessions, cli_prune_sessions, cli_read_session_logs, cli_reconcile_active_sessions};
