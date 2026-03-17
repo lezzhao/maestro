@@ -48,6 +48,8 @@ impl ExecutionStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Execution {
+    // Execution is the backend runtime/persistence unit under a task.
+    // UI `run` should be treated as an execution projection, not a separate source of truth.
     #[serde(alias = "run_id")] // For backward compatibility with UnifiedRunRecord
     pub id: String,
     pub engine_id: String,

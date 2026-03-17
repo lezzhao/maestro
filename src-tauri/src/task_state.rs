@@ -1,11 +1,11 @@
 //! Task state machine (Logic to Rust).
 //! States: BACKLOG -> PLANNING -> IN_PROGRESS -> CODE_REVIEW -> DONE
 
-use crate::agent_state::{emit_state_update, AgentStateUpdate, TaskRecordPayload};
+use crate::agent_state::TaskRecordPayload;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use tauri::Manager;
 use std::process::Command;
+use tauri::Manager;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -238,7 +238,7 @@ pub fn create_task(
 }
 
 /// Resolve bmad_state.db path. Tries app_data_dir then app_config_dir to align with tauri-plugin-sql.
-fn bmad_db_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+pub(crate) fn bmad_db_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     let path_resolver = app.path();
     if let Ok(dir) = path_resolver.app_data_dir() {
         return Ok(dir.join("bmad_state.db"));
@@ -274,58 +274,17 @@ pub struct TaskCreateResult {
 
 #[tauri::command]
 pub async fn task_create(app: tauri::AppHandle, request: TaskCreateRequest) -> Result<TaskCreateResult, String> {
-    let db_path = bmad_db_path(&app)?;
-    let workspace_boundary = if request.workspace_boundary.is_empty() {
-        let core = app.state::<crate::core::MaestroCore>();
-        let project_path = core.config.get().project.path.clone();
-        if project_path.is_empty() {
-            "{}".to_string()
-        } else {
-            serde_json::json!({ "root": project_path }).to_string()
-        }
-    } else {
-        request.workspace_boundary
-    };
-
-    let id = create_task(
-        &db_path,
-        &request.title,
-        &request.description,
-        &workspace_boundary,
-    )?;
-
-    let result = TaskCreateResult {
-        id: id.clone(),
-        title: request.title.clone(),
-        description: request.description.clone(),
-        current_state: TaskState::Backlog.as_str().to_string(),
-        workspace_boundary: workspace_boundary.clone(),
-    };
-
-    // Emit TaskCreated for other listeners (e.g. multi-window)
-    let payload = AgentStateUpdate::TaskCreated {
-        task: TaskRecordPayload {
-            id: id.clone(),
-            title: request.title,
-            description: request.description,
-            current_state: TaskState::Backlog.as_str().to_string(),
-            workspace_boundary,
-            created_at: String::new(),
-            updated_at: String::new(),
-        },
-    };
-    emit_state_update(Some(&app), payload);
-
-    Ok(result)
+    let core = app.state::<crate::core::MaestroCore>();
+    core.task_create(&app, request)
 }
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskTransitionRequest {
-    task_id: String,
-    from_state: String,
-    event_type: String,
-    event_reason: Option<String>,
+    pub task_id: String,
+    pub from_state: String,
+    pub event_type: String,
+    pub event_reason: Option<String>,
     /// When true (default), take git snapshot on transition. Policy-controlled.
     #[serde(default = "default_true")]
     pub take_snapshot: bool,
@@ -340,61 +299,32 @@ pub async fn task_transition(
     app: tauri::AppHandle,
     request: TaskTransitionRequest,
 ) -> Result<String, String> {
-    let event = TaskEvent::from_str(&request.event_type, request.event_reason)
-        .ok_or_else(|| format!("invalid event: {}", request.event_type))?;
-    let db_path = bmad_db_path(&app)?;
-    let project_path = {
-        let core = app.state::<crate::core::MaestroCore>();
-        std::path::PathBuf::from(core.config.get().project.path.as_str())
-    };
-    let to_state = transition(
-        &db_path,
-        &project_path,
-        &request.task_id,
-        &request.from_state,
-        &event,
-        request.take_snapshot,
-    )?;
-    emit_state_update(
-        Some(&app),
-        AgentStateUpdate::TaskStateChanged {
-            task_id: request.task_id,
-            from_state: request.from_state,
-            to_state: to_state.clone(),
-        },
-    );
-    Ok(to_state)
+    let core = app.state::<crate::core::MaestroCore>();
+    core.task_transition(&app, request)
 }
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskGetStateRequest {
-    task_id: String,
+    pub task_id: String,
 }
 
 #[tauri::command]
 pub async fn task_delete(app: tauri::AppHandle, task_id: String) -> Result<(), String> {
-    let db_path = bmad_db_path(&app)?;
-    delete_task(&db_path, &task_id)?;
-    emit_state_update(
-        Some(&app),
-        AgentStateUpdate::TaskDeleted {
-            task_id: task_id.clone(),
-        },
-    );
-    Ok(())
+    let core = app.state::<crate::core::MaestroCore>();
+    core.task_delete(&app, task_id)
 }
 
 #[tauri::command]
 pub async fn task_list(app: tauri::AppHandle) -> Result<Vec<TaskRecordPayload>, String> {
-    let db_path = bmad_db_path(&app)?;
-    list_tasks(&db_path)
+    let core = app.state::<crate::core::MaestroCore>();
+    core.task_list(&app)
 }
 
 #[tauri::command]
 pub async fn task_get_state(app: tauri::AppHandle, request: TaskGetStateRequest) -> Result<Option<String>, String> {
-    let db_path = bmad_db_path(&app)?;
-    get_task_state(&db_path, &request.task_id)
+    let core = app.state::<crate::core::MaestroCore>();
+    core.task_get_state(&app, request)
 }
 
 /// List all tasks from DB.
