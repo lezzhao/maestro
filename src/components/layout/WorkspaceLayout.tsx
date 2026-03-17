@@ -13,7 +13,6 @@ import { Group, Panel, Separator } from "react-resizable-panels";
 import { Button } from "../ui/button";
 import { Select } from "../ui/select";
 import { cn } from "../../lib/utils";
-import { recordPerf } from "../../lib/utils/perf";
 
 import { SetupPanel } from "../SetupPanel";
 import { TaskWorkspace } from "../TaskWorkspace";
@@ -22,6 +21,8 @@ import { ResourcePanel, type RightPanelTab } from "../ResourcePanel";
 import { useEngine } from "../../hooks/useEngine";
 import { useProject } from "../../hooks/useProject";
 import { useAppLifecycle } from "../../hooks/useAppLifecycle";
+import { useWorkspaceFlow } from "../../hooks/useWorkspaceFlow";
+import { useTaskSwitchEffects } from "../../hooks/useTaskSwitchEffects";
 import { PanelFallback } from "../ui/PanelFallback";
 
 export function WorkspaceLayout() {
@@ -66,8 +67,6 @@ export function WorkspaceLayout() {
   const [activeFile, setActiveFile] = useState<string>("");
   const [activeDiff, setActiveDiff] = useState<string>("");
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>("runs");
-  
-  const taskSwitchStartRef = useRef<number>(performance.now());
   const sidebarPanelRef = useRef<any>(null);
 
   const activeTaskMessages = useChatStore((s) => s.getTaskMessages(activeTaskId));
@@ -89,39 +88,14 @@ export function WorkspaceLayout() {
 
   useAppLifecycle(activeExecutionMode);
 
-  const handleImport = useCallback(
-    async (path: string) => {
-      try {
-        const result = await detectAndRecommend(path);
-        setShowSettings(false);
-        setErrorMessageStore(null);
-        return result;
-      } catch (e) {
-        setErrorMessageStore(`${t("import_fail")}: ${String(e)}`);
-        throw e;
-      }
-    },
-    [detectAndRecommend, setErrorMessageStore, setShowSettings, t],
-  );
-
-  const handleOpenProjectPicker = useCallback(async () => {
-    try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: t("select_project_title"),
-      });
-      if (typeof selected === "string") {
-        await handleImport(selected);
-      }
-    } catch (e) {
-      const msg = String(e);
-      if (!/user cancelled|canceled|aborted/i.test(msg)) {
-        setErrorMessageStore(`${t("picker_error")}: ${msg}`);
-      }
-    }
-  }, [handleImport, setErrorMessageStore, t]);
+  const { handleOpenProjectPicker } = useWorkspaceFlow({
+    projectPath,
+    showSettings,
+    detectAndRecommend,
+    setShowSettings,
+    setCurrentStep,
+    setErrorMessage: setErrorMessageStore,
+  });
 
   const refreshGitStatus = useCallback(async (options?: { force?: boolean }) => {
     if (!projectPath || !activeTaskId) return;
@@ -184,45 +158,16 @@ export function WorkspaceLayout() {
     [activeEngineId, engines, upsertProfile],
   );
 
-  useEffect(() => {
-    taskSwitchStartRef.current = performance.now();
-  }, [activeTaskId]);
-
-  useEffect(() => {
-    const duration = performance.now() - taskSwitchStartRef.current;
-    recordPerf("workspace_task_switch", duration, {
-      taskId: activeTaskId || "none",
-      messageCount: activeTaskMessages.length,
-    });
-  }, [activeTaskId, activeTaskMessages.length]);
-
-  useEffect(() => {
-    setActiveFile("");
-    setActiveDiff("");
-  }, [activeTaskId]);
-
-  useEffect(() => {
-    if (!projectPath || !activeTaskId) return;
-    void refreshGitStatus({ force: true });
-  }, [activeTaskId, projectPath, refreshGitStatus]);
-
-  useEffect(() => {
-    const status = latestRun?.status;
-    if (!projectPath || !activeTaskId || !status) return;
-    if (status === "done" || status === "error" || status === "stopped") {
-      void refreshGitStatus({ force: true });
-    }
-  }, [activeTaskId, latestRun?.id, latestRun?.status, projectPath, refreshGitStatus]);
-
-  useEffect(() => {
-    if (showSettings) {
-      setCurrentStep("setup");
-    } else if (!projectPath) {
-      setCurrentStep("project");
-    } else {
-      setCurrentStep("compose");
-    }
-  }, [projectPath, setCurrentStep, showSettings]);
+  useTaskSwitchEffects({
+    activeTaskId,
+    activeTaskMessagesLength: activeTaskMessages.length,
+    projectPath,
+    latestRunId: latestRun?.id,
+    latestRunStatus: latestRun?.status,
+    setActiveFile,
+    setActiveDiff,
+    refreshGitStatus,
+  });
 
   useEffect(() => {
     if (projectPath && !showSettings) {
