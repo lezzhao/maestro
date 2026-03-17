@@ -1,6 +1,9 @@
 mod agent_state;
 mod api_provider;
 mod task_state;
+mod task_runtime;
+mod task_runtime_service;
+mod profile_snapshot;
 mod cli_state;
 pub mod config;
 pub mod core;

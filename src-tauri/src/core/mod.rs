@@ -355,17 +355,6 @@ impl MaestroCore {
         request: crate::task_state::TaskSwitchEngineRequest,
     ) -> Result<(), String> {
         let config = self.config.get();
-        if !config.engines.contains_key(&request.engine_id) {
-            return Err(format!("engine not found: {}", request.engine_id));
-        }
-
-        let profile_id = request.profile_id.or_else(|| {
-            config
-                .engines
-                .get(&request.engine_id)
-                .map(|e| e.active_profile_id.clone())
-        });
-
         if let Some(ref session_id) = request.session_id {
             crate::engine::cleanup_session_for_task_engine_switch(
                 request.engine_id.clone(),
@@ -374,17 +363,13 @@ impl MaestroCore {
                 &self.pty_state,
             )?;
         }
-        let db_path = crate::task_state::bmad_db_path(app)?;
-        crate::task_state::update_task_engine(&db_path, &request.task_id, &request.engine_id, profile_id.as_deref())?;
-        emit_state_update(
-            Some(app),
-            AgentStateUpdate::TaskEngineChanged {
-                task_id: request.task_id,
-                engine_id: request.engine_id,
-                profile_id,
-            },
-        );
-        Ok(())
+        crate::task_runtime_service::update_task_runtime_context(
+            app,
+            &request.task_id,
+            &request.engine_id,
+            request.profile_id,
+            &config,
+        )
     }
 
     /// Use-Case: Update task's engine and broadcast state event.
@@ -395,28 +380,13 @@ impl MaestroCore {
         request: crate::task_state::TaskUpdateEngineRequest,
     ) -> Result<(), String> {
         let config = self.config.get();
-        if !config.engines.contains_key(&request.engine_id) {
-            return Err(format!("engine not found: {}", request.engine_id));
-        }
-
-        let profile_id = request.profile_id.or_else(|| {
-            config
-                .engines
-                .get(&request.engine_id)
-                .map(|e| e.active_profile_id.clone())
-        });
-
-        let db_path = crate::task_state::bmad_db_path(app)?;
-        crate::task_state::update_task_engine(&db_path, &request.task_id, &request.engine_id, profile_id.as_deref())?;
-        emit_state_update(
-            Some(app),
-            AgentStateUpdate::TaskEngineChanged {
-                task_id: request.task_id,
-                engine_id: request.engine_id,
-                profile_id,
-            },
-        );
-        Ok(())
+        crate::task_runtime_service::update_task_runtime_context(
+            app,
+            &request.task_id,
+            &request.engine_id,
+            request.profile_id,
+            &config,
+        )
     }
 
     pub fn spec_list(&self) -> Vec<SpecDescriptor> {

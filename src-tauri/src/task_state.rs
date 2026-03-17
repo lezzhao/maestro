@@ -140,6 +140,22 @@ fn ensure_profile_id_column(conn: &rusqlite::Connection) -> Result<(), String> {
     Ok(())
 }
 
+/// Ensure runtime_snapshot_id column exists (migration for profile snapshot support).
+fn ensure_runtime_snapshot_id_column(conn: &rusqlite::Connection) -> Result<(), String> {
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name='runtime_snapshot_id'",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|e| format!("pragma failed: {e}"))?;
+    if count == 0 {
+        conn.execute("ALTER TABLE tasks ADD COLUMN runtime_snapshot_id TEXT", [])
+            .map_err(|e| format!("add runtime_snapshot_id column failed: {e}"))?;
+    }
+    Ok(())
+}
+
 /// Ensure tasks and state_transitions tables exist.
 fn ensure_tables(conn: &rusqlite::Connection) -> Result<(), String> {
     conn.execute_batch(
@@ -169,6 +185,7 @@ fn ensure_tables(conn: &rusqlite::Connection) -> Result<(), String> {
     )
     .map_err(|e| format!("create tables failed: {e}"))?;
     ensure_profile_id_column(conn)?;
+    ensure_runtime_snapshot_id_column(conn)?;
     Ok(())
 }
 
@@ -226,6 +243,7 @@ pub fn transition(
 }
 
 /// Update a task's engine_id and profile_id in the database.
+/// Clears runtime_snapshot_id so task uses fresh config until next execution.
 pub fn update_task_engine(
     db_path: &Path,
     task_id: &str,
@@ -235,7 +253,7 @@ pub fn update_task_engine(
     let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
     ensure_tables(&conn)?;
     conn.execute(
-        "UPDATE tasks SET engine_id = ?1, profile_id = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?3",
+        "UPDATE tasks SET engine_id = ?1, profile_id = ?2, runtime_snapshot_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?3",
         rusqlite::params![engine_id, profile_id, task_id],
     )
     .map_err(|e| format!("update task engine failed: {e}"))?;
@@ -412,6 +430,91 @@ pub async fn task_list(app: tauri::AppHandle) -> Result<Vec<TaskRecordPayload>, 
 pub async fn task_get_state(app: tauri::AppHandle, request: TaskGetStateRequest) -> Result<Option<String>, String> {
     let core = app.state::<crate::core::MaestroCore>();
     core.task_get_state(&app, request)
+}
+
+/// Runtime binding info for a task (engine, profile, optional snapshot).
+pub struct TaskRuntimeBinding {
+    pub engine_id: String,
+    pub profile_id: Option<String>,
+    pub runtime_snapshot_id: Option<String>,
+}
+
+/// Get task's runtime binding (engine_id, profile_id, runtime_snapshot_id).
+pub fn get_task_runtime_binding(
+    db_path: &Path,
+    task_id: &str,
+) -> Result<Option<TaskRuntimeBinding>, String> {
+    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
+    ensure_tables(&conn)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT engine_id, profile_id, runtime_snapshot_id FROM tasks WHERE id = ?1",
+        )
+        .map_err(|e| format!("prepare failed: {e}"))?;
+    let mut rows = stmt
+        .query(rusqlite::params![task_id])
+        .map_err(|e| format!("query failed: {e}"))?;
+    if let Some(row) = rows.next().map_err(|e| format!("row failed: {e}"))? {
+        let engine_id: String = row.get(0).map_err(|e| format!("get failed: {e}"))?;
+        let profile_id: Option<String> = row.get::<_, Option<String>>(1).ok().flatten();
+        let runtime_snapshot_id: Option<String> = row.get::<_, Option<String>>(2).ok().flatten();
+        Ok(Some(TaskRuntimeBinding {
+            engine_id,
+            profile_id,
+            runtime_snapshot_id,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Update task's runtime_snapshot_id.
+pub fn update_task_runtime_snapshot(
+    db_path: &Path,
+    task_id: &str,
+    snapshot_id: Option<&str>,
+) -> Result<(), String> {
+    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
+    ensure_tables(&conn)?;
+    conn.execute(
+        "UPDATE tasks SET runtime_snapshot_id = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
+        rusqlite::params![snapshot_id, task_id],
+    )
+    .map_err(|e| format!("update runtime_snapshot_id failed: {e}"))?;
+    if conn.changes() == 0 {
+        return Err(format!("task not found: {task_id}"));
+    }
+    Ok(())
+}
+
+/// Get a single task by id from DB.
+pub fn get_task_by_id(db_path: &Path, task_id: &str) -> Result<Option<TaskRecordPayload>, String> {
+    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
+    ensure_tables(&conn)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, title, description, engine_id, current_state, workspace_boundary, profile_id, created_at, updated_at FROM tasks WHERE id = ?1",
+        )
+        .map_err(|e| format!("prepare failed: {e}"))?;
+    let mut rows = stmt
+        .query(rusqlite::params![task_id])
+        .map_err(|e| format!("query failed: {e}"))?;
+    if let Some(row) = rows.next().map_err(|e| format!("row failed: {e}"))? {
+        let payload = TaskRecordPayload {
+            id: row.get(0).map_err(|e| format!("get failed: {e}"))?,
+            title: row.get(1).map_err(|e| format!("get failed: {e}"))?,
+            description: row.get(2).map_err(|e| format!("get failed: {e}"))?,
+            engine_id: row.get(3).map_err(|e| format!("get failed: {e}"))?,
+            current_state: row.get(4).map_err(|e| format!("get failed: {e}"))?,
+            workspace_boundary: row.get(5).map_err(|e| format!("get failed: {e}"))?,
+            profile_id: row.get::<_, Option<String>>(6).ok().flatten(),
+            created_at: row.get::<_, String>(7).unwrap_or_default(),
+            updated_at: row.get::<_, String>(8).unwrap_or_default(),
+        };
+        Ok(Some(payload))
+    } else {
+        Ok(None)
+    }
 }
 
 /// List all tasks from DB.

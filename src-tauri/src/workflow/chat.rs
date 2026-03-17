@@ -4,6 +4,7 @@ use crate::core::events::{ChannelStringStream, StringStream};
 use crate::config::AppConfig;
 use crate::core::error::CoreError;
 use crate::headless::HeadlessProcessState;
+use crate::task_runtime::resolve_task_runtime_context_for_app;
 use crate::plugin_engine::maestro_engine::{
     ApiChatRequest, CliChatRequest, DefaultMaestroEngine, MaestroEngine,
 };
@@ -160,7 +161,41 @@ pub async fn chat_execute_api_core(
     headless_state: &HeadlessProcessState,
     on_data: Arc<dyn StringStream>,
 ) -> Result<ChatExecuteApiResult, CoreError> {
-    let profile = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
+    let (engine_id, profile_id, profile) = if let (Some(ref app_handle), Some(ref tid)) = (app.as_ref(), request.task_id.as_ref()) {
+        if !tid.is_empty() {
+            match resolve_task_runtime_context_for_app(app_handle, tid, &cfg) {
+                Ok(resolved) => (
+                    resolved.engine_id,
+                    resolved.profile_id,
+                    resolved.profile,
+                ),
+                Err(_) => {
+                    let p = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
+                    (request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
+                }
+            }
+        } else {
+            let p = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
+            (request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
+        }
+    } else {
+        let p = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
+        (request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
+    };
+
+    // Create snapshot and pin task for reproducibility (when app + task_id available)
+    if let (Some(ref app_handle), Some(ref tid)) = (app.as_ref(), request.task_id.as_ref()) {
+        if !tid.is_empty() && !engine_id.is_empty() && !profile_id.is_empty() {
+            let _ = crate::task_runtime::create_snapshot_and_pin_task(
+                app_handle,
+                tid,
+                &engine_id,
+                &profile_id,
+                &profile,
+            );
+        }
+    }
+
     let provider = profile
         .api_provider()
         .unwrap_or_else(|| "openai-compatible".to_string());
@@ -180,8 +215,8 @@ pub async fn chat_execute_api_core(
     
     let now_ms = current_time_ms().unwrap_or_default();
     let execution = Execution {
-        id: format!("chat-api-{}-{}", request.engine_id, uuid::Uuid::new_v4()),
-        engine_id: request.engine_id.clone(),
+        id: format!("chat-api-{}-{}", engine_id, uuid::Uuid::new_v4()),
+        engine_id: engine_id.clone(),
         task_id: task_id.clone(),
         source: "chat_execute_api".to_string(),
         mode: ExecutionMode::Api,
@@ -209,7 +244,7 @@ pub async fn chat_execute_api_core(
     let run_payload = crate::agent_state::task_run_from_execution(
         &run_id_for_return,
         &task_id,
-        &request.engine_id,
+        &engine_id,
         "api",
         now_ms,
     );
@@ -278,8 +313,8 @@ pub async fn chat_execute_api_core(
     Ok(ChatExecuteApiResult {
         exec_id,
         run_id: run_id_for_return,
-        engine_id: request.engine_id,
-        profile_id: profile.id,
+        engine_id,
+        profile_id,
     })
 }
 
@@ -310,8 +345,42 @@ pub async fn chat_execute_cli_core(
     headless_state: &HeadlessProcessState,
     on_data: Arc<dyn StringStream>,
 ) -> Result<ChatExecuteCliResult, CoreError> {
-    let profile = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
-    let fallback_headless_args = builtin_headless_defaults(&request.engine_id);
+    let (engine_id, profile_id, profile) = if let (Some(ref app_handle), Some(ref tid)) = (app.as_ref(), request.task_id.as_ref()) {
+        if !tid.is_empty() {
+            match resolve_task_runtime_context_for_app(app_handle, tid, &cfg) {
+                Ok(resolved) => (
+                    resolved.engine_id,
+                    resolved.profile_id,
+                    resolved.profile,
+                ),
+                Err(_) => {
+                    let p = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
+                    (request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
+                }
+            }
+        } else {
+            let p = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
+            (request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
+        }
+    } else {
+        let p = resolve_profile(&cfg, &request.engine_id, request.profile_id.as_deref())?;
+        (request.engine_id.clone(), request.profile_id.clone().unwrap_or_else(|| "default".to_string()), p)
+    };
+
+    // Create snapshot and pin task for reproducibility (when app + task_id available)
+    if let (Some(ref app_handle), Some(ref tid)) = (app.as_ref(), request.task_id.as_ref()) {
+        if !tid.is_empty() && !engine_id.is_empty() && !profile_id.is_empty() {
+            let _ = crate::task_runtime::create_snapshot_and_pin_task(
+                app_handle,
+                tid,
+                &engine_id,
+                &profile_id,
+                &profile,
+            );
+        }
+    }
+
+    let fallback_headless_args = builtin_headless_defaults(&engine_id);
     let supports_headless = profile.supports_headless() || fallback_headless_args.is_some();
     if !supports_headless {
         return Err(CoreError::Unsupported { feature: "headless mode".to_string() });
@@ -324,8 +393,8 @@ pub async fn chat_execute_cli_core(
     } else {
         profile.args().clone()
     };
-    args = with_model_args(args, &request.engine_id, &profile.model());
-    if request.is_continuation && engine_supports_continue(&request.engine_id) {
+    args = with_model_args(args, &engine_id, &profile.model());
+    if request.is_continuation && engine_supports_continue(&engine_id) {
         args.push("--continue".to_string());
     }
     args.push(request.prompt.clone());
@@ -340,8 +409,8 @@ pub async fn chat_execute_cli_core(
 
     let now_ms = current_time_ms().unwrap_or_default();
     let execution = Execution {
-        id: format!("chat-cli-{}-{}", request.engine_id, uuid::Uuid::new_v4()),
-        engine_id: request.engine_id.clone(),
+        id: format!("chat-cli-{}-{}", engine_id, uuid::Uuid::new_v4()),
+        engine_id: engine_id.clone(),
         task_id: task_id.clone(),
         source: "chat_execute_cli".to_string(),
         mode: ExecutionMode::Cli,
@@ -369,7 +438,7 @@ pub async fn chat_execute_cli_core(
     let run_payload = crate::agent_state::task_run_from_execution(
         &run_id_for_return,
         &task_id,
-        &request.engine_id,
+        &engine_id,
         "cli",
         now_ms,
     );
@@ -470,8 +539,8 @@ pub async fn chat_execute_cli_core(
         exec_id,
         run_id: run_id_for_return,
         pid: None,
-        engine_id: request.engine_id,
-        profile_id: profile.id,
+        engine_id,
+        profile_id,
     })
 }
 
