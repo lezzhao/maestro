@@ -58,14 +58,22 @@ impl ScopedWorkspace {
         let candidate = if requested.is_absolute() {
             requested
         } else {
-            self.root.join(requested)
+            self.root.join(&requested)
         };
-        let canonical = candidate
-            .canonicalize()
-            .map_err(|e| format!("canonicalize file path failed: {e}"))?;
-        if !canonical.starts_with(&self.canonical_root) {
-            return Err("file path is outside current project".to_string());
+        if candidate.exists() {
+            let canonical = candidate
+                .canonicalize()
+                .map_err(|e| format!("canonicalize file path failed: {e}"))?;
+            if !canonical.starts_with(&self.canonical_root) {
+                return Err("file path is outside current project".to_string());
+            }
+            Ok(canonical)
+        } else {
+            // For new files: reject paths that could escape (contain "..")
+            if candidate.components().any(|c| c == std::path::Component::ParentDir) {
+                return Err("file path is outside current project".to_string());
+            }
+            Ok(candidate)
         }
-        Ok(canonical)
     }
 }

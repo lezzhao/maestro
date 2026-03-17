@@ -1,6 +1,7 @@
 use crate::config::SpecProviderBmad;
 use crate::project::validate_project_scope;
 use serde::Serialize;
+use crate::scoped_fs::ScopedWorkspace;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::command;
@@ -56,26 +57,17 @@ impl SpecProvider for BmadProvider {
             }
             _ => {
                 let content = BMAD_RULES_TEMPLATE;
-                match target_ide {
-                    "cursor" => {
-                        let file = project_path.join(".cursor/rules/bmad.mdc");
-                        ensure_parent(&file)?;
-                        fs::write(file, content)
-                            .map_err(|e| format!("write cursor bmad rule failed: {e}"))?;
-                    }
-                    "claude" => {
-                        fs::write(project_path.join("CLAUDE.md"), content)
-                            .map_err(|e| format!("write CLAUDE.md failed: {e}"))?;
-                    }
-                    "gemini" => {
-                        fs::write(project_path.join("GEMINI.md"), content)
-                            .map_err(|e| format!("write GEMINI.md failed: {e}"))?;
-                    }
-                    _ => {
-                        fs::write(project_path.join("AGENTS.md"), content)
-                            .map_err(|e| format!("write AGENTS.md failed: {e}"))?;
-                    }
-                }
+                let scoped = ScopedWorkspace::new(project_path)?;
+                let rel_path = match target_ide {
+                    "cursor" => ".cursor/rules/bmad.mdc",
+                    "claude" => "CLAUDE.md",
+                    "gemini" => "GEMINI.md",
+                    _ => "AGENTS.md",
+                };
+                let file = scoped.resolve_in_scope(rel_path)?;
+                ensure_parent(&file)?;
+                fs::write(&file, content)
+                    .map_err(|e| format!("write spec file failed: {e}"))?;
             }
         }
         Ok(())
@@ -158,14 +150,16 @@ impl SpecProvider for CustomProvider {
         } else {
             &self.conf.rules_content
         };
-        let file = match target_ide {
-            "cursor" => project_path.join(".cursor/rules/custom.mdc"),
-            "claude" => project_path.join("CLAUDE.md"),
-            "gemini" => project_path.join("GEMINI.md"),
-            _ => project_path.join("AGENTS.md"),
+        let scoped = ScopedWorkspace::new(project_path)?;
+        let rel_path = match target_ide {
+            "cursor" => ".cursor/rules/custom.mdc",
+            "claude" => "CLAUDE.md",
+            "gemini" => "GEMINI.md",
+            _ => "AGENTS.md",
         };
+        let file = scoped.resolve_in_scope(rel_path)?;
         ensure_parent(&file)?;
-        fs::write(file, content).map_err(|e| format!("write custom rules failed: {e}"))
+        fs::write(&file, content).map_err(|e| format!("write custom rules failed: {e}"))
     }
 
     fn remove(&self, project_path: &Path) -> Result<(), String> {
