@@ -1,11 +1,23 @@
 //! MaestroCore: application facade. Does not absorb domain rules.
 //!
 //! Service boundaries (logical; implemented via delegation):
-//! - Task: task_create, task_transition, task_delete, task_list, task_switch_runtime_binding, task_update_runtime_binding
-//! - Execution: list_executions, cancel_execution, fetch_logs, reconcile, export_archive
-//! - Engine: engine_list, engine_upsert, engine_set_active_profile, engine_upsert_profile, engine_preflight
-//! - Workflow: workflow_run, workflow_run_step, chat_execute_api, chat_execute_cli, chat_spawn
+//! - task_app_service: task_create, task_transition, task_delete, task_list, task_switch_runtime_binding, task_update_runtime_binding
+//! - execution_app_service: list_executions, cancel_execution, fetch_logs, reconcile, export_archive
+//! - engine_app_service: engine_list, engine_upsert, engine_set_active_profile, engine_upsert_profile, engine_preflight
+//! - workflow_app_service: workflow_run, workflow_run_step, chat_execute_api, chat_execute_cli, chat_spawn
 //! - WorkspaceIo: workspace_io (delegates to crate::workspace_io)
+//!
+//! Dependency direction (one-way; no cycles):
+//!   workflow_app_service → execution_binding (resolve_execution)
+//!   execution_app_service → task_runtime, execution_binding
+//!   task_app_service → task_state, task_runtime_service
+//!   engine_app_service → config, engine
+//!
+//! Rules for code review:
+//! - workflow_app_service: does NOT do runtime fallback; uses resolve_execution only
+//! - execution_app_service: does NOT change task lifecycle core rules
+//! - task_app_service: does NOT directly own low-level IO
+//! - workspace_io: infrastructure only; no business policy
 
 pub mod error;
 pub mod events;
