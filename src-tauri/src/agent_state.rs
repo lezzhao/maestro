@@ -1,5 +1,8 @@
 //! Agent state persistence and event emission for "Logic to Rust" architecture.
 //! Emits `agent://state-update` events so the frontend can stay in sync with backend state.
+//!
+//! Event hierarchy: Prefer binding-level (TaskRuntimeBindingChanged, TaskRuntimeContextResolved)
+//! over field-level events. Do not add new field-level events (e.g. task_engine_changed).
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
@@ -33,12 +36,6 @@ pub enum AgentStateUpdate {
         to_state: String,
     },
     TaskDeleted { task_id: String },
-    TaskEngineChanged {
-        task_id: String,
-        engine_id: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        profile_id: Option<String>,
-    },
     TaskRuntimeBindingChanged {
         task_id: String,
         binding: crate::task_state::TaskRuntimeBinding,

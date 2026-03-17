@@ -138,20 +138,30 @@ describe("agentStateReducer integration", () => {
     expect(h.finishedRuns).toEqual([{ runId: "run-3", status: "stopped", error: null }]);
   });
 
-  it("handles task_engine_changed by updating task engineId and clearing sessionId", () => {
+  it("handles task_runtime_binding_changed by updating task engineId, profileId, runtimeSnapshotId", () => {
     const taskA = toTaskViewModel(mockTaskRecord("a"));
     taskA.sessionId = "sess-1";
     const h = makeDeps([taskA], "a");
 
     applyAgentStateUpdate(
-      { type: "task_engine_changed", task_id: "a", engine_id: "claude", profile_id: "test_profile" },
+      {
+        type: "task_runtime_binding_changed",
+        task_id: "a",
+        binding: {
+          engineId: "claude",
+          profileId: "test_profile",
+          runtimeSnapshotId: "snap-1",
+          sessionId: null,
+        },
+      },
       h.deps,
     );
 
-    expect(h.updatedTasks).toHaveLength(1);
-    expect(h.updatedTasks[0]).toEqual({
-      id: "a",
-      patch: { engineId: "claude", profileId: "test_profile" },
+    expect(h.deps.updateTaskRuntimeBinding).toHaveBeenCalledWith("a", {
+      engineId: "claude",
+      profileId: "test_profile",
+      runtimeSnapshotId: "snap-1",
+      sessionId: null,
     });
   });
 
@@ -161,7 +171,7 @@ describe("agentStateReducer integration", () => {
     expect(vm.profileId).toBe("review_profile");
   });
 
-  it("task_engine_changed updates only the target task, leaving others untouched", () => {
+  it("task_runtime_binding_changed updates only the target task via updateTaskRuntimeBinding", () => {
     const taskA = toTaskViewModel(mockTaskRecord("a"));
     taskA.sessionId = "sess-a";
     taskA.engineId = "cursor";
@@ -171,15 +181,24 @@ describe("agentStateReducer integration", () => {
     const h = makeDeps([taskA, taskB], "a");
 
     applyAgentStateUpdate(
-      { type: "task_engine_changed", task_id: "a", engine_id: "gemini" },
+      {
+        type: "task_runtime_binding_changed",
+        task_id: "a",
+        binding: {
+          engineId: "gemini",
+          profileId: null,
+          runtimeSnapshotId: null,
+          sessionId: null,
+        },
+      },
       h.deps,
     );
 
-    expect(h.updatedTasks).toHaveLength(1);
-    expect(h.updatedTasks[0]).toEqual({
-      id: "a",
-      patch: { engineId: "gemini", profileId: null },
+    expect(h.deps.updateTaskRuntimeBinding).toHaveBeenCalledWith("a", {
+      engineId: "gemini",
+      profileId: null,
+      runtimeSnapshotId: null,
+      sessionId: null,
     });
-    expect(h.updatedTasks.some((u) => u.id === "b")).toBe(false);
   });
 });

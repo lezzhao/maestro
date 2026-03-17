@@ -4,7 +4,8 @@
  * - task_create -> task_created
  * - task_transition -> task_state_changed
  * - task_delete -> task_deleted
- * - task_switch_runtime_binding / task_update_runtime_binding -> task_engine_changed
+ * - task_switch_runtime_binding / task_update_runtime_binding -> task_runtime_binding_changed + task_runtime_context_resolved
+ * DEPRECATED: task_engine_changed is never emitted; use task_runtime_binding_changed (binding includes engineId/profileId).
  */
 import type { AppTask, ChatMessage, TaskRecord, TaskRun, TaskViewModel } from "../types";
 import {
@@ -25,7 +26,6 @@ export type AgentStateUpdate =
   | { type: "task_created"; task: TaskRecord }
   | { type: "task_state_changed"; task_id: string; from_state: string; to_state: string }
   | { type: "task_deleted"; task_id: string }
-  | { type: "task_engine_changed"; task_id: string; engine_id: string; profile_id?: string | null }
   | { type: "task_runtime_binding_changed"; task_id: string; binding: import("../types").TaskRuntimeBinding }
   | { type: "task_runtime_context_resolved"; task_id: string; context: import("../types").ResolvedRuntimeContext }
   | { type: "execution_started"; task_id: string; run_id: string; mode: string }
@@ -81,14 +81,10 @@ export function applyAgentStateUpdate(payload: AgentStateUpdate, deps: AgentRedu
       });
       break;
     }
-    case "task_engine_changed":
-      deps.updateTask(payload.task_id, {
-        engineId: payload.engine_id,
-        profileId: payload.profile_id ?? null,
-      });
-      break;
     case "task_runtime_binding_changed":
       deps.updateTaskRuntimeBinding(payload.task_id, {
+        engineId: payload.binding.engineId ?? undefined,
+        profileId: payload.binding.profileId ?? null,
         runtimeSnapshotId: payload.binding.runtimeSnapshotId,
         sessionId: payload.binding.sessionId ?? null,
       });

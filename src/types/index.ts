@@ -472,10 +472,14 @@ export type ResolvedRuntimeContext = {
 };
 
 /**
- * Runtime binding fields. Ephemeral or synchronized array of bindings.
- * Updated by agent state sync from backend events; cleared on engine switch.
+ * Runtime binding projection. Backend authoritative when from events.
+ * engineId, profileId, runtimeSnapshotId from binding; sessionId/activeExecId from CLI.
  */
 export type TaskRuntimeBinding = {
+  /** Backend authoritative engine id (from binding change event) */
+  engineId?: string | null;
+  /** Backend authoritative profile id (from binding change event) */
+  profileId?: string | null;
   /** Backend authoritative runtime snapshot ID bound to this task */
   runtimeSnapshotId?: string | null;
   /** Currently bound CLI session for the task. */

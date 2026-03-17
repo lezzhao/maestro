@@ -117,7 +117,9 @@ describe("resolveTaskRuntimeContextFromState", () => {
     );
     expect(result.profileId).toBe("review");
     expect(result.profile?.id).toBe("review");
-    expect(result.executionMode).toBe("api");
+    // Fallback returns conservative values; do not use for execution decisions
+    expect(result.executionMode).toBe("cli");
+    expect(result.isReady).toBe(false);
   });
 
   it("falls back to engine.active_profile_id when task has no profileId (fallback logic)", () => {

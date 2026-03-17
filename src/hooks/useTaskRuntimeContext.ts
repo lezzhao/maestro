@@ -59,6 +59,8 @@ export function resolveTaskRuntimeContextFromState(
   }
 
   // 2. Fallback UI Resolution (Before Backend Context Arrives)
+  // Fallback: backend context not yet available. Do not use for execution decisions.
+  // Only provides engineId/profileId/profile for UI display; executionMode/isReady/isHeadless are conservative.
   const engineId = activeTask.engineId || Object.keys(engines)[0] || "";
   const engine = engines[engineId] || null;
 
@@ -75,22 +77,14 @@ export function resolveTaskRuntimeContextFromState(
   }
 
   const profile = profileId ? engine.profiles[profileId] || null : null;
-  const executionMode = (profile?.execution_mode || "cli") as "api" | "cli";
-  const isHeadless = Boolean(profile?.supports_headless ?? engine.supports_headless);
-
-  const activePreflight = enginePreflight[engineId];
-  const isCliReady = Boolean(activePreflight?.command_exists) && Boolean(activePreflight?.auth_ok);
-  const isApiReady = Boolean(profile?.api_key && profile?.api_base_url && profile?.model);
-  const isReady = executionMode === "api" ? isApiReady : isCliReady;
-
   return {
     engineId,
     engine,
     profileId,
     profile,
-    executionMode,
-    isReady,
-    isHeadless,
+    executionMode: "cli" as const,
+    isReady: false,
+    isHeadless: false,
   };
 }
 
