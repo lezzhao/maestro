@@ -142,14 +142,14 @@ describe("agentStateReducer integration", () => {
     const h = makeDeps([taskA], "a");
 
     applyAgentStateUpdate(
-      { type: "task_engine_changed", task_id: "a", engine_id: "claude" },
+      { type: "task_engine_changed", task_id: "a", engine_id: "claude", profile_id: "test_profile" },
       h.deps,
     );
 
     expect(h.updatedTasks).toHaveLength(1);
     expect(h.updatedTasks[0]).toEqual({
       id: "a",
-      patch: { engineId: "claude", sessionId: null },
+      patch: { engineId: "claude", profileId: "test_profile", sessionId: null },
     });
   });
 
@@ -176,7 +176,7 @@ describe("agentStateReducer integration", () => {
     expect(h.updatedTasks).toHaveLength(1);
     expect(h.updatedTasks[0]).toEqual({
       id: "a",
-      patch: { engineId: "gemini", sessionId: null },
+      patch: { engineId: "gemini", profileId: null, sessionId: null },
     });
     expect(h.updatedTasks.some((u) => u.id === "b")).toBe(false);
   });

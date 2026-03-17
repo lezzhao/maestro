@@ -225,13 +225,18 @@ pub fn transition(
     Ok(to_str.to_string())
 }
 
-/// Update a task's engine_id in the database.
-pub fn update_task_engine(db_path: &Path, task_id: &str, engine_id: &str) -> Result<(), String> {
+/// Update a task's engine_id and profile_id in the database.
+pub fn update_task_engine(
+    db_path: &Path,
+    task_id: &str,
+    engine_id: &str,
+    profile_id: Option<&str>,
+) -> Result<(), String> {
     let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
     ensure_tables(&conn)?;
     conn.execute(
-        "UPDATE tasks SET engine_id = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
-        rusqlite::params![engine_id, task_id],
+        "UPDATE tasks SET engine_id = ?1, profile_id = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?3",
+        rusqlite::params![engine_id, profile_id, task_id],
     )
     .map_err(|e| format!("update task engine failed: {e}"))?;
     if conn.changes() == 0 {
@@ -359,6 +364,8 @@ pub struct TaskGetStateRequest {
 pub struct TaskUpdateEngineRequest {
     pub task_id: String,
     pub engine_id: String,
+    #[serde(default)]
+    pub profile_id: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -367,6 +374,8 @@ pub struct TaskSwitchEngineRequest {
     pub task_id: String,
     pub engine_id: String,
     pub session_id: Option<String>,
+    #[serde(default)]
+    pub profile_id: Option<String>,
 }
 
 #[tauri::command]
@@ -480,10 +489,11 @@ mod tests {
     fn test_task_update_engine_persists() {
         let (_dir, db_path) = temp_db_path();
         let id = create_task(&db_path, "Task", "", "cursor", "{}", None).expect("create_task");
-        update_task_engine(&db_path, &id, "claude").expect("update_task_engine");
+        update_task_engine(&db_path, &id, "claude", Some("haiku")).expect("update_task_engine");
         let tasks = list_tasks(&db_path).expect("list_tasks");
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].engine_id, "claude");
+        assert_eq!(tasks[0].profile_id.as_deref(), Some("haiku"));
     }
 
     #[test]
@@ -504,7 +514,7 @@ mod tests {
         let conn = rusqlite::Connection::open(&db_path).unwrap();
         ensure_tables(&conn).unwrap();
         drop(conn);
-        let err = update_task_engine(&db_path, "nonexistent", "cursor").unwrap_err();
+        let err = update_task_engine(&db_path, "nonexistent", "cursor", None).unwrap_err();
         assert!(err.contains("task not found"));
     }
 

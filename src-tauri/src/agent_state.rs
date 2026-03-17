@@ -36,6 +36,8 @@ pub enum AgentStateUpdate {
     TaskEngineChanged {
         task_id: String,
         engine_id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        profile_id: Option<String>,
     },
     ExecutionStarted {
         task_id: String,
