@@ -134,4 +134,21 @@ describe("agentStateReducer integration", () => {
     );
     expect(h.finishedRuns).toEqual([{ runId: "run-3", status: "stopped", error: null }]);
   });
+
+  it("handles task_engine_changed by updating task engineId and clearing sessionId", () => {
+    const taskA = toTaskViewModel(mockTaskRecord("a"));
+    taskA.sessionId = "sess-1";
+    const h = makeDeps([taskA], "a");
+
+    applyAgentStateUpdate(
+      { type: "task_engine_changed", task_id: "a", engine_id: "claude" },
+      h.deps,
+    );
+
+    expect(h.updatedTasks).toHaveLength(1);
+    expect(h.updatedTasks[0]).toEqual({
+      id: "a",
+      patch: { engineId: "claude", sessionId: null },
+    });
+  });
 });

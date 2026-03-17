@@ -17,6 +17,7 @@ export type AgentStateUpdate =
   | { type: "task_created"; task: TaskRecord }
   | { type: "task_state_changed"; task_id: string; from_state: string; to_state: string }
   | { type: "task_deleted"; task_id: string }
+  | { type: "task_engine_changed"; task_id: string; engine_id: string }
   | { type: "execution_started"; task_id: string; run_id: string; mode: string }
   | { type: "execution_cancelled"; task_id: string; run_id: string }
   | { type: "execution_output_chunk"; task_id: string; run_id: string; chunk: string };
@@ -68,6 +69,12 @@ export function applyAgentStateUpdate(payload: AgentStateUpdate, deps: AgentRedu
       });
       break;
     }
+    case "task_engine_changed":
+      deps.updateTask(payload.task_id, {
+        engineId: payload.engine_id,
+        sessionId: null,
+      });
+      break;
     case "execution_cancelled":
       deps.finishRun(payload.run_id, "stopped", null);
       break;

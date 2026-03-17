@@ -16,7 +16,7 @@ export function useEngine() {
   const enginePreflight = useAppStore((s) => s.enginePreflight);
   const setEnginePreflight = useAppStore((s) => s.setEnginePreflight);
   
-  const { activeTask, updateActiveTask } = useActiveTask();
+  const { activeTask, activeTaskId } = useActiveTask();
   const sessionId = activeTask?.sessionId;
 
   const preflightCacheRef = useRef<
@@ -129,11 +129,12 @@ export function useEngine() {
         engineId,
         sessionId: sessionId ?? null,
       });
-      // The frontend now updates the task's engine explicitly, global active doesn't exist.
-      updateActiveTask({ engineId, sessionId: null });
+      if (activeTaskId) {
+        await invoke("task_update_engine", { taskId: activeTaskId, engineId });
+      }
       void preflightEngine(engineId, { force: true });
     },
-    [preflightEngine, sessionId, updateActiveTask],
+    [activeTaskId, preflightEngine, sessionId],
   );
 
   const upsertEngine = useCallback(

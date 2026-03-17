@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useChatStore } from "../stores/chatStore";
 import { useChatAgent } from "./useChatAgent";
 import { useAppStore } from "../stores/appStore";
@@ -457,7 +458,10 @@ export function useChatSession({
             engineId !== activeEngineId && result.command_exists && result.auth_ok,
         )?.[0];
         if (fallbackEngineId && activeTaskId) {
-          updateTask(activeTaskId, { engineId: fallbackEngineId });
+          void invoke("task_update_engine", {
+            taskId: activeTaskId,
+            engineId: fallbackEngineId,
+          });
           setErrorMessage(
             `${t("execution_error")}: \u5f53\u524d\u5f15\u64ce ${activeEngineId} \u4e0d\u53ef\u7528\uff08\u547d\u4ee4\u6216auth\u5931\u8d25\uff09\uff0c\u5df2\u5207\u6362\u5230 ${fallbackEngineId}\u3002\u8bf7\u91cd\u65b0\u53d1\u9001\u3002`,
           );
