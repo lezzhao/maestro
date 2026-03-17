@@ -211,6 +211,7 @@ pub struct EngineHistoryPage {
 pub struct ChatSpawnRequest {
     pub engine_id: String,
     pub profile_id: Option<String>,
+    pub task_id: Option<String>,
     pub cols: Option<u16>,
     pub rows: Option<u16>,
 }
@@ -230,6 +231,7 @@ pub struct ChatStopRequest {
 #[derive(Debug, Clone, Serialize)]
 pub struct ChatSessionMeta {
     pub session_id: String,
+    pub task_id: Option<String>,
     pub engine_id: String,
     pub profile_id: String,
     pub ready_signal: Option<String>,

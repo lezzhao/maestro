@@ -513,8 +513,9 @@ pub async fn chat_spawn(
 
     let session_id = uuid::Uuid::new_v4().to_string();
 
-    let spawn: PtySessionInfo = core_state.inner().pty_state.spawn_session(
+    let spawn: PtySessionInfo = core_state.inner().pty_spawn(
         session_id,
+        request.task_id.clone(),
         profile.command().clone(),
         with_model_args(profile.args().clone(), &request.engine_id, &profile.model()),
         if cfg.project.path.trim().is_empty() {
@@ -546,6 +547,7 @@ pub async fn chat_spawn(
 
     Ok(ChatSessionMeta {
         session_id: spawn.session_id.clone(),
+        task_id: request.task_id.clone(),
         engine_id: request.engine_id,
         profile_id: profile.id.clone(),
         ready_signal: profile.ready_signal(),
@@ -562,7 +564,13 @@ pub fn chat_send(
     } else {
         request.content
     };
-    core_state.inner().pty_state.write_to_session(Some(request.session_id.clone()), &payload).map_err(|e| CoreError::ExecutionFailed { id: request.session_id.clone(), reason: e })
+    core_state
+        .inner()
+        .pty_write(Some(request.session_id.clone()), payload)
+        .map_err(|e| CoreError::ExecutionFailed {
+            id: request.session_id.clone(),
+            reason: e,
+        })
 }
 
 #[command]
@@ -570,5 +578,11 @@ pub fn chat_stop(
     request: ChatStopRequest,
     core_state: State<'_, crate::core::MaestroCore>,
 ) -> Result<(), CoreError> {
-    core_state.inner().pty_state.kill_session(&request.session_id).map_err(|e| CoreError::ExecutionFailed { id: request.session_id.clone(), reason: e })
+    core_state
+        .inner()
+        .pty_kill(request.session_id.clone())
+        .map_err(|e| CoreError::ExecutionFailed {
+            id: request.session_id.clone(),
+            reason: e,
+        })
 }

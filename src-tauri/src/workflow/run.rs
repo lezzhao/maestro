@@ -422,6 +422,7 @@ async fn execute_workflow_step(
         let session_id = uuid::Uuid::new_v4().to_string();
         let spawn = pty_state.spawn_session(
             session_id,
+            None,
             profile.command().clone(),
             args_for_pty,
             if cfg.project.path.trim().is_empty() {
