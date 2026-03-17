@@ -1,6 +1,9 @@
 //! Task runtime context: authoritative resolution of engine + profile for a task.
 //! Provides the single source of truth for "which profile does this task run with".
 //! When task has runtime_snapshot_id, uses snapshot for reproducibility; else resolves from config.
+//!
+//! Snapshot semantics: snapshot freezes the resolved execution contract only (RuntimeSnapshotPayload),
+//! not a profile template copy. Reproducible execution reads from runtime_snapshot exclusively.
 
 use crate::config::{AppConfig, EngineProfile};
 use crate::core::error::CoreError;

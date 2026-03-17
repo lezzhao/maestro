@@ -3,6 +3,9 @@
 //! All execution entries that produce run records MUST go through `prepare_execution` or
 //! `prepare_execution_binding`. Flow: task binding -> resolved runtime -> runtime snapshot
 //! -> execution binding -> run.
+//!
+//! Snapshot semantics: snapshot freezes the resolved execution contract only (RuntimeSnapshotPayload),
+//! not a profile template. Reproducible execution uses runtime_snapshot exclusively.
 
 use crate::config::AppConfig;
 use crate::core::error::CoreError;

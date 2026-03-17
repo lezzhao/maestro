@@ -1,7 +1,11 @@
-//! Profile snapshot: immutable copy of EngineProfile for reproducibility and audit.
+//! Profile snapshot: immutable copy of EngineProfile for audit and migration compatibility.
 //!
-//! LEGACY: Do not use for new execution. Use runtime_snapshot (snapshot_repository) only.
-//! All reproducible execution should read from RuntimeSnapshotPayload via snapshot_repository.
+//! LEGACY: Do not use for new execution.
+//!
+//! Snapshot semantics:
+//! - Reproducible execution uses ONLY `runtime_snapshot` (RuntimeSnapshotPayload via snapshot_repository).
+//! - `profile_snapshot` is for audit/migration only; it must NOT participate in any execution path.
+//! - New code must NOT derive real execution config from profile snapshot.
 
 use crate::config::EngineProfile;
 use rusqlite::params;
