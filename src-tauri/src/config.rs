@@ -61,6 +61,7 @@ pub struct EngineConfig {
     pub icon: String,
     #[serde(default)]
     pub profiles: BTreeMap<String, EngineProfile>,
+    /// Migration-only fallback when task binding has no profile_id. Task should be runtime owner.
     #[serde(default)]
     pub active_profile_id: String,
     #[serde(flatten, skip_serializing)]
@@ -389,6 +390,7 @@ pub(crate) fn migrate_engine_profiles(config: &mut AppConfig) {
             engine.profiles.insert(profile_id.clone(), profile);
             engine.active_profile_id = profile_id;
         }
+        // Migration-only: ensure active_profile_id is valid; task binding is preferred source.
         if engine.active_profile_id.trim().is_empty()
             || !engine.profiles.contains_key(&engine.active_profile_id)
         {

@@ -107,7 +107,7 @@ pub struct ResolvedTaskRuntimeContext {
 
 /// Resolve task runtime context from DB + config.
 /// - If task has runtime_snapshot_id, loads from snapshot table (reproducibility)
-/// - Else: reads task.engine_id, task.profile_id; fallback to engine.active_profile_id
+/// - Else: reads task.engine_id, task.profile_id; fallback to engine.active_profile_id (migration-only)
 pub fn resolve_task_runtime_context(
     db_path: &Path,
     task_id: &str,
@@ -157,6 +157,7 @@ pub fn resolve_task_runtime_context(
             id: binding.engine_id.clone(),
         })?;
 
+    // Prefer task binding; engine.active_profile_id is migration-only fallback.
     let profile_id = binding
         .profile_id
         .clone()

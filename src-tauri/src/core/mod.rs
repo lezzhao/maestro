@@ -224,7 +224,8 @@ impl MaestroCore {
     }
 
     /// Use-Case: Create task and broadcast state event.
-    /// When profile_id is not specified, uses engine's active_profile_id.
+    /// New tasks must explicitly write binding fields (engine_id, profile_id).
+    /// engine.active_profile_id fallback is migration-only; prefer explicit profile_id in request.
     pub fn task_create(
         &self,
         app: &AppHandle,
@@ -243,6 +244,8 @@ impl MaestroCore {
             request.workspace_boundary.clone()
         };
 
+        // Migration-only fallback: when profile_id not specified, use engine.active_profile_id.
+        // Task should be runtime owner; explicit profile_id preferred.
         let profile_id = request.profile_id.or_else(|| {
             config
                 .engines

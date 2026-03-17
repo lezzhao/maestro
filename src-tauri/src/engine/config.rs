@@ -64,6 +64,7 @@ pub fn engine_upsert_profile_core(
             ..profile
         },
     );
+    // Migration-only fallback: ensure engine has valid active_profile_id.
     if engine.active_profile_id.trim().is_empty() {
         engine.active_profile_id = profile_id;
     }

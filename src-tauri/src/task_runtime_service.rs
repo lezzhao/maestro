@@ -7,7 +7,7 @@ use crate::task_state;
 use tauri::AppHandle;
 
 /// Resolve profile_id for a task runtime context update.
-/// Uses request profile_id if provided, else engine's active_profile_id.
+/// Uses request profile_id if provided; engine.active_profile_id is migration-only fallback.
 pub fn resolve_profile_id_for_update(
     config: &AppConfig,
     engine_id: &str,
