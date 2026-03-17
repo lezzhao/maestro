@@ -10,8 +10,9 @@ use crate::plugin_engine::maestro_engine::{
 use crate::pty::PtySessionInfo;
 use crate::core::execution::{Execution, ExecutionMode, ExecutionStatus};
 use crate::run_persistence::{
-    append_run_record, current_time_ms, resolve_root_dir_from_project_path,
+    append_run_record, current_time_ms,
 };
+use crate::workspace_io::WorkspaceIo;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -71,8 +72,7 @@ fn builtin_headless_defaults(engine_id: &str) -> Option<Vec<String>> {
     }
 }
 
-#[command]
-pub async fn chat_save_last_conversation(
+pub async fn chat_save_last_conversation_core(
     app: AppHandle,
     payload: serde_json::Value,
 ) -> Result<(), CoreError> {
@@ -110,7 +110,15 @@ pub async fn chat_save_last_conversation(
 }
 
 #[command]
-pub async fn chat_load_last_conversation(
+pub async fn chat_save_last_conversation(
+    app: AppHandle,
+    payload: serde_json::Value,
+    core_state: State<'_, crate::core::MaestroCore>,
+) -> Result<(), CoreError> {
+    core_state.inner().chat_save_last_conversation(app, payload).await
+}
+
+pub async fn chat_load_last_conversation_core(
     app: AppHandle,
 ) -> Result<Option<serde_json::Value>, CoreError> {
     let path = last_conversation_path(&app).await?;
@@ -123,6 +131,14 @@ pub async fn chat_load_last_conversation(
     let payload = serde_json::from_str::<serde_json::Value>(&text)
         .map_err(|e| CoreError::Serialization { message: format!("parse last conversation failed: {e}") })?;
     Ok(Some(payload))
+}
+
+#[command]
+pub async fn chat_load_last_conversation(
+    app: AppHandle,
+    core_state: State<'_, crate::core::MaestroCore>,
+) -> Result<Option<serde_json::Value>, CoreError> {
+    core_state.inner().chat_load_last_conversation(app).await
 }
 
 #[command]
@@ -185,7 +201,8 @@ pub async fn chat_execute_api_core(
     let run_id_for_return = execution.id.clone();
     let exec_id = headless_state.register(execution, cancel_token.clone());
     let on_data_clone = on_data.clone();
-    let root_dir = resolve_root_dir_from_project_path(&cfg.project.path).ok();
+    let root_path = std::path::PathBuf::from(&cfg.project.path);
+    let io_opt = WorkspaceIo::new(&root_path).ok();
     let _ = on_data.send_string(format!("\u{0}RUN_ID:{run_id_for_return}"));
 
     // Emit run_created for event-driven frontend sync
@@ -242,8 +259,8 @@ pub async fn chat_execute_api_core(
                 err.chars().take(300).collect::<String>(),
             ),
         };
-        if let (Some(root), Ok(exec)) = (root_dir.as_ref(), execution) {
-            if let Err(e) = append_run_record(root, &exec) {
+        if let (Some(io), Ok(exec)) = (io_opt.as_ref(), execution) {
+            if let Err(e) = append_run_record(io, &exec) {
                 eprintln!("chat_execute_api: append_run_record failed: {e}");
             }
         }
@@ -344,7 +361,8 @@ pub async fn chat_execute_cli_core(
     let run_id_for_return = execution.id.clone();
     let exec_id = headless_state.register(execution, cancel_token.clone());
     let on_data_clone = on_data.clone();
-    let root_dir = resolve_root_dir_from_project_path(&cfg.project.path).ok();
+    let root_path = std::path::PathBuf::from(&cfg.project.path);
+    let io_opt = WorkspaceIo::new(&root_path).ok();
     let _ = on_data.send_string(format!("\u{0}RUN_ID:{run_id_for_return}"));
 
     // Emit run_created for event-driven frontend sync
@@ -432,8 +450,8 @@ pub async fn chat_execute_cli_core(
                 err.to_string().chars().take(300).collect::<String>(),
             ),
         };
-        if let (Some(root), Ok(exec)) = (root_dir.as_ref(), execution) {
-            if let Err(e) = append_run_record(root, &exec) {
+        if let (Some(io), Ok(exec)) = (io_opt.as_ref(), execution) {
+            if let Err(e) = append_run_record(io, &exec) {
                 eprintln!("chat_execute_cli: append_run_record failed: {e}");
             }
         }
@@ -465,13 +483,12 @@ pub fn chat_execute_cli_stop(
     core_state.inner().cancel_execution(&request.exec_id)
 }
 
-#[command]
-pub async fn chat_spawn(
+pub fn chat_spawn_core(
     request: ChatSpawnRequest,
-    core_state: State<'_, crate::core::MaestroCore>,
+    cfg: &crate::config::AppConfig,
+    pty_state: &crate::pty::PtyManagerState,
     on_data: Channel<String>,
 ) -> Result<ChatSessionMeta, CoreError> {
-    let cfg = core_state.inner().config.get();
     let engine = cfg
         .engines
         .get(&request.engine_id)
@@ -484,13 +501,6 @@ pub async fn chat_spawn(
     } else {
         engine.active_profile()
     };
-
-    *core_state
-        .inner()
-        .engine_runtime
-        .active_engine_id
-        .lock()
-        .expect("active_engine lock poisoned") = Some(request.engine_id.clone());
 
     let output_buf = Arc::new(Mutex::new(String::new()));
     let output_buf_ch = Arc::clone(&output_buf);
@@ -513,7 +523,7 @@ pub async fn chat_spawn(
 
     let session_id = uuid::Uuid::new_v4().to_string();
 
-    let spawn: PtySessionInfo = core_state.inner().pty_spawn(
+    let spawn: PtySessionInfo = pty_state.spawn_session(
         session_id,
         request.task_id.clone(),
         profile.command().clone(),
@@ -527,7 +537,7 @@ pub async fn chat_spawn(
         request.cols.unwrap_or(120).clamp(60, 240),
         request.rows.unwrap_or(36).clamp(20, 80),
         bridge,
-    )?;
+    ).map_err(|e| CoreError::ExecutionFailed { id: "chat_spawn".to_string(), reason: e })?;
 
     if let Some(ready_signal) = profile.ready_signal().as_deref() {
         if !ready_signal.trim().is_empty() {
@@ -540,7 +550,7 @@ pub async fn chat_spawn(
                 if completion_matched(Some(ready_signal), &snap) {
                     break;
                 }
-                tokio::time::sleep(Duration::from_millis(50)).await;
+                std::thread::sleep(Duration::from_millis(50));
             }
         }
     }
@@ -555,6 +565,15 @@ pub async fn chat_spawn(
 }
 
 #[command]
+pub async fn chat_spawn(
+    request: ChatSpawnRequest,
+    core_state: State<'_, crate::core::MaestroCore>,
+    on_data: Channel<String>,
+) -> Result<ChatSessionMeta, CoreError> {
+    core_state.inner().chat_spawn(request, on_data)
+}
+
+#[command]
 pub fn chat_send(
     request: ChatSendRequest,
     core_state: State<'_, crate::core::MaestroCore>,
@@ -566,7 +585,7 @@ pub fn chat_send(
     };
     core_state
         .inner()
-        .pty_write(Some(request.session_id.clone()), payload)
+        .pty_write(request.session_id.clone(), payload)
         .map_err(|e| CoreError::ExecutionFailed {
             id: request.session_id.clone(),
             reason: e,

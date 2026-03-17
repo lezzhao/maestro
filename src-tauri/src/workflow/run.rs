@@ -7,8 +7,9 @@ use crate::engine::EngineRuntimeState;
 use crate::pty::PtyManagerState;
 use crate::core::execution::{Execution, ExecutionMode};
 use crate::run_persistence::{
-    append_run_record, current_time_ms, resolve_root_dir_from_project_path,
+    append_run_record, current_time_ms,
 };
+use crate::workspace_io::WorkspaceIo;
 use regex::Regex;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
@@ -212,7 +213,7 @@ async fn execute_workflow_step(
     step: &WorkflowRunStep,
     step_index: usize,
     total_steps: usize,
-    runtime_state: &EngineRuntimeState,
+    _runtime_state: &EngineRuntimeState,
     cfg: &crate::config::AppConfig,
     pty_state: &PtyManagerState,
 ) -> Result<(WorkflowStepResult, String), String> {
@@ -230,10 +231,6 @@ async fn execute_workflow_step(
         } else {
             engine.active_profile()
         };
-    *runtime_state
-        .active_engine_id
-        .lock()
-        .expect("active_engine lock poisoned") = Some(step.engine.clone());
 
     emitter.send_event(
         "workflow://progress",
@@ -451,7 +448,7 @@ async fn execute_workflow_step(
             }
         }
 
-        pty_state.write_to_session(Some(spawn.session_id.clone()), &format!("{}\n", step.prompt))?;
+        pty_state.write_to_session(&spawn.session_id, &format!("{}\n", step.prompt))?;
 
         let timeout = step.timeout_ms.unwrap_or(30_000).max(500);
         let deadline = Instant::now() + Duration::from_millis(timeout);
@@ -685,12 +682,7 @@ pub async fn workflow_run_core(
             workflow_name: workflow_name.clone(),
             step_index: total,
             total_steps: total,
-            engine: runtime_state
-                .active_engine_id
-                .lock()
-                .expect("active_engine lock poisoned")
-                .clone()
-                .unwrap_or_default(),
+            engine: request.steps.last().map(|s| s.engine.clone()).unwrap_or_default(),
             status: "finished".to_string(),
             message: "workflow completed".to_string(),
             token_estimate: None,
@@ -723,8 +715,8 @@ pub async fn workflow_run_core(
     } else {
         execution.fail_with("workflow failed".to_string(), output_preview);
     }
-    if let Ok(root) = resolve_root_dir_from_project_path(&cfg.project.path) {
-        let _ = append_run_record(&root, &execution);
+    if let Ok(io) = WorkspaceIo::new(&std::path::PathBuf::from(&cfg.project.path)) {
+        let _ = append_run_record(&io, &execution);
     }
 
     Ok(run_result)
