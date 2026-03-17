@@ -1,5 +1,8 @@
-use crate::config::{migrate_engine_profiles, write_config_to_disk, AppConfig, EngineConfig, EngineProfile};
-use crate::pty::{resolve_exit_payload, wait_exit_status};
+use crate::config::{
+    migrate_engine_profiles, write_config_to_disk, AppConfig, AppConfigState, EngineConfig,
+    EngineProfile,
+};
+use crate::pty::{resolve_exit_payload, wait_exit_status, PtyManagerState};
 use regex::Regex;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashSet};
@@ -361,34 +364,31 @@ fn model_list_commands(engine_id: &str, profile_command: &str) -> Vec<String> {
     }
 }
 
-#[command]
-pub fn engine_list(core_state: State<'_, crate::core::MaestroCore>) -> BTreeMap<String, EngineConfig> {
-    core_state.inner().config.get().engines
+pub fn engine_list_core(config: &AppConfigState) -> BTreeMap<String, EngineConfig> {
+    config.get().engines
 }
 
-#[command]
-pub fn engine_upsert(
-    app: AppHandle,
+pub fn engine_upsert_core(
+    app: &AppHandle,
     id: String,
     engine: EngineConfig,
-    core_state: State<'_, crate::core::MaestroCore>,
+    config_state: &AppConfigState,
 ) -> Result<(), String> {
-    let mut config = core_state.inner().config.get();
+    let mut config = config_state.get();
     config.engines.insert(id, engine);
     migrate_engine_profiles(&mut config);
-    write_config_to_disk(&app, &config)?;
-    core_state.inner().config.set(config);
+    write_config_to_disk(app, &config)?;
+    config_state.set(config);
     Ok(())
 }
 
-#[command]
-pub fn engine_set_active_profile(
-    app: AppHandle,
+pub fn engine_set_active_profile_core(
+    app: &AppHandle,
     engine_id: String,
     profile_id: String,
-    core_state: State<'_, crate::core::MaestroCore>,
+    config_state: &AppConfigState,
 ) -> Result<(), String> {
-    let mut config = core_state.inner().config.get();
+    let mut config = config_state.get();
     let engine = config
         .engines
         .get_mut(&engine_id)
@@ -397,20 +397,19 @@ pub fn engine_set_active_profile(
         return Err(format!("profile not found: {profile_id}"));
     }
     engine.active_profile_id = profile_id;
-    write_config_to_disk(&app, &config)?;
-    core_state.inner().config.set(config);
+    write_config_to_disk(app, &config)?;
+    config_state.set(config);
     Ok(())
 }
 
-#[command]
-pub fn engine_upsert_profile(
-    app: AppHandle,
+pub fn engine_upsert_profile_core(
+    app: &AppHandle,
     engine_id: String,
     profile_id: String,
     profile: EngineProfile,
-    core_state: State<'_, crate::core::MaestroCore>,
+    config_state: &AppConfigState,
 ) -> Result<(), String> {
-    let mut config = core_state.inner().config.get();
+    let mut config = config_state.get();
     let engine = config
         .engines
         .get_mut(&engine_id)
@@ -425,46 +424,39 @@ pub fn engine_upsert_profile(
     if engine.active_profile_id.trim().is_empty() {
         engine.active_profile_id = profile_id;
     }
-    write_config_to_disk(&app, &config)?;
-    core_state.inner().config.set(config);
+    write_config_to_disk(app, &config)?;
+    config_state.set(config);
     Ok(())
 }
 
-#[command]
-pub fn engine_set_active(
+pub fn engine_set_active_core(
     engine_id: String,
-    core_state: State<'_, crate::core::MaestroCore>,
+    config_state: &AppConfigState,
+    runtime_state: &EngineRuntimeState,
 ) -> Result<(), String> {
-    let config = core_state.inner().config.get();
+    let config = config_state.get();
     if !config.engines.contains_key(&engine_id) {
         return Err(format!("engine not found: {engine_id}"));
     }
-    *core_state
-        .inner()
-        .engine_runtime
+    *runtime_state
         .active_engine_id
         .lock()
         .expect("active_engine lock poisoned") = Some(engine_id);
     Ok(())
 }
 
-#[command]
-pub fn engine_get_active(core_state: State<'_, crate::core::MaestroCore>) -> Option<String> {
-    core_state
-        .inner()
-        .engine_runtime
+pub fn engine_get_active_core(runtime_state: &EngineRuntimeState) -> Option<String> {
+    runtime_state
         .active_engine_id
         .lock()
         .expect("active_engine lock poisoned")
         .clone()
 }
 
-#[command]
-pub async fn engine_preflight(
+pub async fn engine_preflight_core(
     engine_id: String,
-    core_state: State<'_, crate::core::MaestroCore>,
+    config: AppConfig,
 ) -> Result<EnginePreflightResult, String> {
-    let config: AppConfig = core_state.inner().config.get();
     let engine = config
         .engines
         .get(&engine_id)
@@ -581,12 +573,10 @@ pub async fn engine_preflight(
     })
 }
 
-#[command]
-pub async fn engine_list_models(
+pub async fn engine_list_models_core(
     engine_id: String,
-    core_state: State<'_, crate::core::MaestroCore>,
+    config: AppConfig,
 ) -> Result<EngineModelListResult, String> {
-    let config: AppConfig = core_state.inner().config.get();
     let engine = config
         .engines
         .get(&engine_id)
@@ -646,19 +636,18 @@ pub async fn engine_list_models(
     })
 }
 
-#[command]
-pub fn engine_switch_session(
+pub fn engine_switch_session_core(
     engine_id: String,
     session_id: Option<String>,
-    core_state: State<'_, crate::core::MaestroCore>,
+    config: AppConfig,
+    runtime_state: &EngineRuntimeState,
+    pty_state: &PtyManagerState,
 ) -> Result<EngineSwitchResult, String> {
-    let config: AppConfig = core_state.inner().config.get();
     let engine = config
         .engines
         .get(&engine_id)
         .ok_or_else(|| format!("engine not found: {engine_id}"))?;
 
-    let pty_state = &core_state.inner().pty_state;
     let mut killed = false;
     if let Some(id) = session_id {
         let payload = resolve_exit_payload(&engine.exit_command());
@@ -678,9 +667,7 @@ pub fn engine_switch_session(
         }
     }
 
-    *core_state
-        .inner()
-        .engine_runtime
+    *runtime_state
         .active_engine_id
         .lock()
         .expect("active_engine lock poisoned") = Some(engine_id.clone());
@@ -689,4 +676,82 @@ pub fn engine_switch_session(
         active_engine_id: engine_id,
         previous_session_killed: killed,
     })
+}
+
+#[command]
+pub fn engine_list(core_state: State<'_, crate::core::MaestroCore>) -> BTreeMap<String, EngineConfig> {
+    core_state.inner().engine_list()
+}
+
+#[command]
+pub fn engine_upsert(
+    app: AppHandle,
+    id: String,
+    engine: EngineConfig,
+    core_state: State<'_, crate::core::MaestroCore>,
+) -> Result<(), String> {
+    core_state.inner().engine_upsert(&app, id, engine)
+}
+
+#[command]
+pub fn engine_set_active_profile(
+    app: AppHandle,
+    engine_id: String,
+    profile_id: String,
+    core_state: State<'_, crate::core::MaestroCore>,
+) -> Result<(), String> {
+    core_state
+        .inner()
+        .engine_set_active_profile(&app, engine_id, profile_id)
+}
+
+#[command]
+pub fn engine_upsert_profile(
+    app: AppHandle,
+    engine_id: String,
+    profile_id: String,
+    profile: EngineProfile,
+    core_state: State<'_, crate::core::MaestroCore>,
+) -> Result<(), String> {
+    core_state
+        .inner()
+        .engine_upsert_profile(&app, engine_id, profile_id, profile)
+}
+
+#[command]
+pub fn engine_set_active(
+    engine_id: String,
+    core_state: State<'_, crate::core::MaestroCore>,
+) -> Result<(), String> {
+    core_state.inner().engine_set_active(engine_id)
+}
+
+#[command]
+pub fn engine_get_active(core_state: State<'_, crate::core::MaestroCore>) -> Option<String> {
+    core_state.inner().engine_get_active()
+}
+
+#[command]
+pub async fn engine_preflight(
+    engine_id: String,
+    core_state: State<'_, crate::core::MaestroCore>,
+) -> Result<EnginePreflightResult, String> {
+    core_state.inner().engine_preflight(engine_id).await
+}
+
+#[command]
+pub async fn engine_list_models(
+    engine_id: String,
+    core_state: State<'_, crate::core::MaestroCore>,
+) -> Result<EngineModelListResult, String> {
+    core_state.inner().engine_list_models(engine_id).await
+}
+
+#[command]
+pub fn engine_switch_session(
+    engine_id: String,
+    session_id: Option<String>,
+    core_state: State<'_, crate::core::MaestroCore>,
+) -> Result<EngineSwitchResult, String> {
+    core_state.inner().engine_switch_session(engine_id, session_id)
 }

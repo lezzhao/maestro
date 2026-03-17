@@ -226,9 +226,7 @@ pub struct SpecPreviewResult {
     pub content: String,
 }
 
-#[command]
-pub fn spec_list(core_state: tauri::State<'_, crate::core::MaestroCore>) -> Vec<SpecDescriptor> {
-    let cfg = core_state.inner().config.get();
+pub fn spec_descriptors(cfg: &crate::config::AppConfig) -> Vec<SpecDescriptor> {
     vec![
         SpecDescriptor {
             id: "none".to_string(),
@@ -237,15 +235,124 @@ pub fn spec_list(core_state: tauri::State<'_, crate::core::MaestroCore>) -> Vec<
         },
         SpecDescriptor {
             id: "bmad".to_string(),
-            display_name: cfg.providers.bmad.display_name,
+            display_name: cfg.providers.bmad.display_name.clone(),
             modes: vec!["full".to_string(), "rules_only".to_string()],
         },
         SpecDescriptor {
             id: "custom".to_string(),
-            display_name: cfg.providers.custom.display_name,
+            display_name: cfg.providers.custom.display_name.clone(),
             modes: vec!["rules_only".to_string()],
         },
     ]
+}
+
+pub fn spec_inject_core(
+    cfg: &crate::config::AppConfig,
+    provider: String,
+    project_path: String,
+    mode: String,
+    target_ide: String,
+) -> Result<(), String> {
+    if provider == "none" {
+        return Ok(());
+    }
+    let allowed = cfg.project.path.clone();
+    if !allowed.is_empty() {
+        validate_project_scope(&project_path, &allowed)?;
+    }
+    let registry = SpecProviderRegistry::new(cfg);
+    let p = registry.get(&provider).ok_or_else(|| format!("unsupported provider: {provider}"))?;
+    let project = PathBuf::from(project_path);
+    p.inject(&project, &mode, &target_ide)
+}
+
+pub fn spec_remove_core(
+    cfg: &crate::config::AppConfig,
+    provider: String,
+    project_path: String,
+) -> Result<(), String> {
+    if provider == "none" {
+        return Ok(());
+    }
+    let allowed = cfg.project.path.clone();
+    if !allowed.is_empty() {
+        validate_project_scope(&project_path, &allowed)?;
+    }
+    let registry = SpecProviderRegistry::new(cfg);
+    let p = registry.get(&provider).ok_or_else(|| format!("unsupported provider: {provider}"))?;
+    let project = PathBuf::from(project_path);
+    p.remove(&project)
+}
+
+pub fn spec_detect_core(cfg: &crate::config::AppConfig, project_path: String) -> Vec<SpecDetectResult> {
+    let project = PathBuf::from(project_path);
+    let registry = SpecProviderRegistry::new(cfg);
+    registry
+        .all()
+        .map(|p| SpecDetectResult {
+            provider: p.id().to_string(),
+            detected: p.detect(&project),
+        })
+        .collect()
+}
+
+pub fn spec_preview_core(
+    cfg: &crate::config::AppConfig,
+    provider: String,
+    mode: String,
+    target_ide: String,
+) -> Result<Vec<SpecPreviewResult>, String> {
+    if provider == "none" {
+        return Ok(Vec::new());
+    }
+    let registry = SpecProviderRegistry::new(cfg);
+    let p = registry.get(&provider).ok_or_else(|| format!("unsupported provider: {provider}"))?;
+    p.preview(&mode, &target_ide)
+}
+
+pub fn spec_backup_core(
+    cfg: &crate::config::AppConfig,
+    project_path: String,
+) -> Result<Vec<String>, String> {
+    let allowed = cfg.project.path.clone();
+    if !allowed.is_empty() {
+        validate_project_scope(&project_path, &allowed)?;
+    }
+    let project = PathBuf::from(project_path);
+    let workspace_io = WorkspaceIo::new(&project)?;
+    let mut backed_up = Vec::new();
+    let paths_to_backup = [".cursor/rules/bmad.mdc", ".cursor/rules/custom.mdc", "CLAUDE.md", "GEMINI.md", "AGENTS.md"];
+    for p in paths_to_backup {
+        if let Some(src) = workspace_io.backup_file_if_exists(p)? {
+            backed_up.push(src.to_string_lossy().to_string());
+        }
+    }
+    Ok(backed_up)
+}
+
+pub fn spec_restore_core(
+    cfg: &crate::config::AppConfig,
+    project_path: String,
+) -> Result<Vec<String>, String> {
+    let allowed = cfg.project.path.clone();
+    if !allowed.is_empty() {
+        validate_project_scope(&project_path, &allowed)?;
+    }
+    let project = PathBuf::from(project_path);
+    let workspace_io = WorkspaceIo::new(&project)?;
+    let mut restored = Vec::new();
+    let paths_to_restore = [".cursor/rules/bmad.mdc", ".cursor/rules/custom.mdc", "CLAUDE.md", "GEMINI.md", "AGENTS.md"];
+    for p in paths_to_restore {
+        if let Some(dst) = workspace_io.restore_file_if_exists(p)? {
+            restored.push(dst.to_string_lossy().to_string());
+        }
+    }
+    Ok(restored)
+}
+
+#[command]
+pub fn spec_list(core_state: tauri::State<'_, crate::core::MaestroCore>) -> Vec<SpecDescriptor> {
+    core_state.inner().spec_list()
 }
 
 #[command]
@@ -256,18 +363,9 @@ pub fn spec_inject(
     target_ide: String,
     core_state: tauri::State<'_, crate::core::MaestroCore>,
 ) -> Result<(), String> {
-    if provider == "none" {
-        return Ok(());
-    }
-    let cfg = core_state.inner().config.get();
-    let allowed = cfg.project.path.clone();
-    if !allowed.is_empty() {
-        validate_project_scope(&project_path, &allowed)?;
-    }
-    let registry = SpecProviderRegistry::new(&cfg);
-    let p = registry.get(&provider).ok_or_else(|| format!("unsupported provider: {provider}"))?;
-    let project = PathBuf::from(project_path);
-    p.inject(&project, &mode, &target_ide)
+    core_state
+        .inner()
+        .spec_inject(provider, project_path, mode, target_ide)
 }
 
 #[command]
@@ -276,18 +374,7 @@ pub fn spec_remove(
     project_path: String,
     core_state: tauri::State<'_, crate::core::MaestroCore>,
 ) -> Result<(), String> {
-    if provider == "none" {
-        return Ok(());
-    }
-    let cfg = core_state.inner().config.get();
-    let allowed = cfg.project.path.clone();
-    if !allowed.is_empty() {
-        validate_project_scope(&project_path, &allowed)?;
-    }
-    let registry = SpecProviderRegistry::new(&cfg);
-    let p = registry.get(&provider).ok_or_else(|| format!("unsupported provider: {provider}"))?;
-    let project = PathBuf::from(project_path);
-    p.remove(&project)
+    core_state.inner().spec_remove(provider, project_path)
 }
 
 #[command]
@@ -295,16 +382,7 @@ pub fn spec_detect(
     project_path: String,
     core_state: tauri::State<'_, crate::core::MaestroCore>,
 ) -> Vec<SpecDetectResult> {
-    let cfg = core_state.inner().config.get();
-    let project = PathBuf::from(project_path);
-    let registry = SpecProviderRegistry::new(&cfg);
-    registry
-        .all()
-        .map(|p| SpecDetectResult {
-            provider: p.id().to_string(),
-            detected: p.detect(&project),
-        })
-        .collect()
+    core_state.inner().spec_detect(project_path)
 }
 
 #[command]
@@ -314,13 +392,7 @@ pub fn spec_preview(
     target_ide: String,
     core_state: tauri::State<'_, crate::core::MaestroCore>,
 ) -> Result<Vec<SpecPreviewResult>, String> {
-    if provider == "none" {
-        return Ok(Vec::new());
-    }
-    let cfg = core_state.inner().config.get();
-    let registry = SpecProviderRegistry::new(&cfg);
-    let p = registry.get(&provider).ok_or_else(|| format!("unsupported provider: {provider}"))?;
-    p.preview(&mode, &target_ide)
+    core_state.inner().spec_preview(provider, mode, target_ide)
 }
 
 #[command]
@@ -328,23 +400,7 @@ pub fn spec_backup(
     project_path: String,
     core_state: tauri::State<'_, crate::core::MaestroCore>,
 ) -> Result<Vec<String>, String> {
-    let allowed = core_state.inner().config.get().project.path.clone();
-    if !allowed.is_empty() {
-        validate_project_scope(&project_path, &allowed)?;
-    }
-    let project = PathBuf::from(project_path);
-    let workspace_io = WorkspaceIo::new(&project)?;
-    let mut backed_up = Vec::new();
-
-    let paths_to_backup = [".cursor/rules/bmad.mdc", ".cursor/rules/custom.mdc", "CLAUDE.md", "GEMINI.md", "AGENTS.md"];
-
-    for p in paths_to_backup {
-        if let Some(src) = workspace_io.backup_file_if_exists(p)? {
-            backed_up.push(src.to_string_lossy().to_string());
-        }
-    }
-
-    Ok(backed_up)
+    core_state.inner().spec_backup(project_path)
 }
 
 #[command]
@@ -352,21 +408,5 @@ pub fn spec_restore(
     project_path: String,
     core_state: tauri::State<'_, crate::core::MaestroCore>,
 ) -> Result<Vec<String>, String> {
-    let allowed = core_state.inner().config.get().project.path.clone();
-    if !allowed.is_empty() {
-        validate_project_scope(&project_path, &allowed)?;
-    }
-    let project = PathBuf::from(project_path);
-    let workspace_io = WorkspaceIo::new(&project)?;
-    let mut restored = Vec::new();
-
-    let paths_to_restore = [".cursor/rules/bmad.mdc", ".cursor/rules/custom.mdc", "CLAUDE.md", "GEMINI.md", "AGENTS.md"];
-
-    for p in paths_to_restore {
-        if let Some(dst) = workspace_io.restore_file_if_exists(p)? {
-            restored.push(dst.to_string_lossy().to_string());
-        }
-    }
-
-    Ok(restored)
+    core_state.inner().spec_restore(project_path)
 }
