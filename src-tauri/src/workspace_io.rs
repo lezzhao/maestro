@@ -15,8 +15,17 @@ impl WorkspaceIo {
         })
     }
 
+    pub fn root(&self) -> &Path {
+        self.scoped.root()
+    }
+
     pub fn resolve(&self, rel_path: &str) -> Result<PathBuf, String> {
         self.scoped.resolve_in_scope(rel_path)
+    }
+
+    pub fn read_text(&self, rel_path: &str) -> Result<String, String> {
+        let file = self.resolve(rel_path)?;
+        fs::read_to_string(&file).map_err(|e| format!("read file failed: {e}"))
     }
 
     pub fn write_text(&self, rel_path: &str, content: &str) -> Result<(), String> {

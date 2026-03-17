@@ -5,7 +5,7 @@ pub mod execution;
 use crate::config::{AppConfigState, AppConfig};
 use crate::core::events::EventStream;
 use crate::config::{EngineConfig, EngineProfile};
-use crate::engine::{EngineModelListResult, EnginePreflightResult, EngineRuntimeState};
+use crate::engine::{EngineModelListResult, EnginePreflightResult};
 use crate::headless::HeadlessProcessState;
 use crate::process::ProcessMonitorState;
 use crate::pty::{PtyManagerState, PtySessionInfo};
@@ -24,7 +24,6 @@ use tauri::AppHandle;
 pub struct MaestroCore {
     pub config: AppConfigState,
     pub pty_state: PtyManagerState,
-    pub engine_runtime: EngineRuntimeState,
     pub process_monitor: ProcessMonitorState,
     pub headless_state: HeadlessProcessState,
     deleted_task_ids: Mutex<HashSet<String>>,
@@ -35,7 +34,6 @@ impl MaestroCore {
         Self {
             config: AppConfigState::new(config),
             pty_state: PtyManagerState::default(),
-            engine_runtime: EngineRuntimeState::default(),
             process_monitor: ProcessMonitorState::default(),
             headless_state: HeadlessProcessState::default(),
             deleted_task_ids: Mutex::new(HashSet::new()),
@@ -52,7 +50,6 @@ impl MaestroCore {
         workflow_run_core(
             emitter,
             request,
-            &self.engine_runtime,
             &self.config.get(),
             &self.pty_state,
         )
@@ -68,7 +65,6 @@ impl MaestroCore {
         workflow_run_step_core(
             emitter,
             request,
-            &self.engine_runtime,
             &self.config.get(),
             &self.pty_state,
         )
@@ -143,6 +139,8 @@ impl MaestroCore {
                 id: id.to_string(),
             })?;
         if let Some(path) = record.log_path {
+            // Logs are typically in global ~/.bmad/sessions, not scoped to workspace,
+            // so we keep using std::fs::read_to_string here.
             let text = std::fs::read_to_string(path).map_err(|e| error::CoreError::Io {
                 message: format!("read execution log failed: {e}"),
             })?;
@@ -243,6 +241,7 @@ impl MaestroCore {
             &db_path,
             &request.title,
             &request.description,
+            &request.engine_id,
             &workspace_boundary,
         )?;
         let current_state = crate::task_state::TaskState::Backlog.as_str().to_string();
@@ -250,6 +249,7 @@ impl MaestroCore {
             id: id.clone(),
             title: request.title.clone(),
             description: request.description.clone(),
+            engine_id: request.engine_id.clone(),
             current_state: current_state.clone(),
             workspace_boundary: workspace_boundary.clone(),
         };
@@ -261,6 +261,7 @@ impl MaestroCore {
                     id,
                     title: request.title,
                     description: request.description,
+                    engine_id: request.engine_id,
                     current_state,
                     workspace_boundary,
                     created_at: String::new(),
@@ -280,10 +281,10 @@ impl MaestroCore {
         let event = crate::task_state::TaskEvent::from_str(&request.event_type, request.event_reason)
             .ok_or_else(|| format!("invalid event: {}", request.event_type))?;
         let db_path = crate::task_state::bmad_db_path(app)?;
-        let project_path = std::path::PathBuf::from(self.config.get().project.path.as_str());
+        let io = self.workspace_io()?;
         let to_state = crate::task_state::transition(
             &db_path,
-            &project_path,
+            &io,
             &request.task_id,
             &request.from_state,
             &event,
@@ -406,11 +407,11 @@ impl MaestroCore {
     }
 
     pub fn engine_set_active(&self, engine_id: String) -> Result<(), String> {
-        crate::engine::engine_set_active_core(engine_id, &self.config, &self.engine_runtime)
+        crate::engine::engine_set_active_core(engine_id, &self.config)
     }
 
-    pub fn engine_get_active(&self) -> Option<String> {
-        crate::engine::engine_get_active_core(&self.engine_runtime)
+    pub fn engine_get_active(&self) -> Result<Option<String>, String> {
+        Ok(None) // deprecated, frontend uses active task's engineId
     }
 
     pub async fn engine_preflight(&self, engine_id: String) -> Result<EnginePreflightResult, String> {
@@ -430,7 +431,6 @@ impl MaestroCore {
             engine_id,
             session_id,
             self.config.get(),
-            &self.engine_runtime,
             &self.pty_state,
         )
     }

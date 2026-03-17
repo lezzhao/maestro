@@ -3,7 +3,6 @@ use super::history::persist_engine_history;
 use super::types::*;
 use super::util::*;
 use crate::core::MaestroCore;
-use crate::engine::EngineRuntimeState;
 use crate::pty::PtyManagerState;
 use crate::core::execution::{Execution, ExecutionMode};
 use crate::run_persistence::{
@@ -213,7 +212,6 @@ async fn execute_workflow_step(
     step: &WorkflowRunStep,
     step_index: usize,
     total_steps: usize,
-    _runtime_state: &EngineRuntimeState,
     cfg: &crate::config::AppConfig,
     pty_state: &PtyManagerState,
 ) -> Result<(WorkflowStepResult, String), String> {
@@ -540,7 +538,6 @@ pub async fn workflow_run_step(
 pub async fn workflow_run_step_core(
     emitter: Arc<dyn EventStream>,
     request: StepRunRequest,
-    runtime_state: &EngineRuntimeState,
     cfg: &crate::config::AppConfig,
     pty_state: &PtyManagerState,
 ) -> Result<StepRunResult, String> {
@@ -552,7 +549,6 @@ pub async fn workflow_run_step_core(
         &request.step,
         step_index,
         total_steps,
-        runtime_state,
         cfg,
         pty_state,
     )
@@ -610,7 +606,6 @@ pub async fn workflow_run(
 pub async fn workflow_run_core(
     emitter: Arc<dyn EventStream>,
     request: WorkflowRunRequest,
-    runtime_state: &EngineRuntimeState,
     cfg: &crate::config::AppConfig,
     pty_state: &PtyManagerState,
 ) -> Result<WorkflowRunResult, String> {
@@ -642,7 +637,6 @@ pub async fn workflow_run_core(
             step,
             idx,
             total,
-            runtime_state,
             cfg,
             pty_state,
         )

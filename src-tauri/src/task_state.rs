@@ -83,8 +83,11 @@ fn valid_transition(from: TaskState, event: &TaskEvent) -> Option<TaskState> {
     }
 }
 
+use crate::workspace_io::WorkspaceIo;
+
 /// Take git snapshot in project directory. Returns commit hash or None.
-pub fn take_git_snapshot(project_path: &Path, task_id: &str, to_state: &str) -> Option<String> {
+pub fn take_git_snapshot(io: &WorkspaceIo, task_id: &str, to_state: &str) -> Option<String> {
+    let project_path = io.root();
     if project_path.as_os_str().is_empty() || !project_path.exists() {
         return None;
     }
@@ -129,6 +132,7 @@ fn ensure_tables(conn: &rusqlite::Connection) -> Result<(), String> {
             id TEXT PRIMARY KEY,
             title TEXT NOT NULL,
             description TEXT NOT NULL,
+            engine_id TEXT NOT NULL,
             current_state TEXT NOT NULL,
             workspace_boundary TEXT NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -154,7 +158,7 @@ fn ensure_tables(conn: &rusqlite::Connection) -> Result<(), String> {
 /// When take_snapshot is true, runs git snapshot before persisting (policy-controlled).
 pub fn transition(
     db_path: &Path,
-    project_path: &Path,
+    io: &WorkspaceIo,
     task_id: &str,
     from_state: &str,
     event: &TaskEvent,
@@ -167,7 +171,7 @@ pub fn transition(
     let to_str = to.as_str();
 
     let git_hash = if take_snapshot {
-        take_git_snapshot(project_path, task_id, to_str)
+        take_git_snapshot(io, task_id, to_str)
     } else {
         None
     };
@@ -220,6 +224,7 @@ pub fn create_task(
     db_path: &Path,
     title: &str,
     description: &str,
+    engine_id: &str,
     workspace_boundary: &str,
 ) -> Result<String, String> {
     let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
@@ -229,8 +234,8 @@ pub fn create_task(
     let initial_state = TaskState::Backlog.as_str();
 
     conn.execute(
-        "INSERT INTO tasks (id, title, description, current_state, workspace_boundary) VALUES (?1, ?2, ?3, ?4, ?5)",
-        rusqlite::params![id, title, description, initial_state, workspace_boundary],
+        "INSERT INTO tasks (id, title, description, engine_id, current_state, workspace_boundary) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![id, title, description, engine_id, initial_state, workspace_boundary],
     )
     .map_err(|e| format!("insert task failed: {e}"))?;
 
@@ -258,6 +263,7 @@ pub struct TaskCreateRequest {
     pub title: String,
     #[serde(default)]
     pub description: String,
+    pub engine_id: String,
     #[serde(default)]
     pub workspace_boundary: String,
 }
@@ -268,6 +274,7 @@ pub struct TaskCreateResult {
     pub id: String,
     pub title: String,
     pub description: String,
+    pub engine_id: String,
     pub current_state: String,
     pub workspace_boundary: String,
 }
@@ -333,7 +340,7 @@ pub fn list_tasks(db_path: &Path) -> Result<Vec<TaskRecordPayload>, String> {
     ensure_tables(&conn)?;
     let mut stmt = conn
         .prepare(
-            "SELECT id, title, description, current_state, workspace_boundary, created_at, updated_at FROM tasks ORDER BY updated_at DESC",
+            "SELECT id, title, description, engine_id, current_state, workspace_boundary, created_at, updated_at FROM tasks ORDER BY updated_at DESC",
         )
         .map_err(|e| format!("prepare failed: {e}"))?;
     let rows = stmt
@@ -342,10 +349,11 @@ pub fn list_tasks(db_path: &Path) -> Result<Vec<TaskRecordPayload>, String> {
                 id: row.get(0)?,
                 title: row.get(1)?,
                 description: row.get(2)?,
-                current_state: row.get(3)?,
-                workspace_boundary: row.get(4)?,
-                created_at: row.get::<_, String>(5).unwrap_or_default(),
-                updated_at: row.get::<_, String>(6).unwrap_or_default(),
+                engine_id: row.get(3)?,
+                current_state: row.get(4)?,
+                workspace_boundary: row.get(5)?,
+                created_at: row.get::<_, String>(6).unwrap_or_default(),
+                updated_at: row.get::<_, String>(7).unwrap_or_default(),
             })
         })
         .map_err(|e| format!("query failed: {e}"))?;

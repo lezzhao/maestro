@@ -55,7 +55,6 @@ pub async fn run_cli_mode(args: Vec<String>) {
                             let result = workflow_run_core(
                                 stream,
                                 req,
-                                &core_clone.engine_runtime,
                                 &core_clone.config.get(),
                                 &core_clone.pty_state,
                             ).await;
@@ -93,7 +92,6 @@ pub async fn run_cli_mode(args: Vec<String>) {
                             let result = workflow_run_step_core(
                                 stream,
                                 req,
-                                &core_clone.engine_runtime,
                                 &core_clone.config.get(),
                                 &core_clone.pty_state,
                             ).await;

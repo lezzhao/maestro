@@ -54,6 +54,7 @@ pub struct TaskRecordPayload {
     pub id: String,
     pub title: String,
     pub description: String,
+    pub engine_id: String,
     pub current_state: String,
     pub workspace_boundary: String,
     pub created_at: String,
