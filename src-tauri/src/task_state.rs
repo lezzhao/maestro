@@ -2,11 +2,12 @@
 //! Commands live in task_commands; lifecycle in task_lifecycle.
 
 use crate::agent_state::TaskRecordPayload;
+use crate::core::error::CoreError;
 use std::path::Path;
 use tauri::Manager;
 
 pub use crate::task_lifecycle::{TaskEvent, TaskState, transition};
-pub use crate::task_repository::TaskRuntimeBinding;
+pub use crate::task_repository::{CreateTaskResult, TaskRuntimeBinding};
 
 // Request/result types for core and task_commands
 #[derive(serde::Deserialize)]
@@ -41,11 +42,11 @@ pub struct TaskTransitionRequest {
     pub from_state: String,
     pub event_type: String,
     pub event_reason: Option<String>,
-    #[serde(default = "default_true")]
+    #[serde(default = "default_take_snapshot")]
     pub take_snapshot: bool,
 }
 
-fn default_true() -> bool {
+fn default_take_snapshot() -> bool {
     true
 }
 
@@ -81,12 +82,12 @@ pub fn update_task_engine(
     task_id: &str,
     engine_id: &str,
     profile_id: Option<&str>,
-) -> Result<(), String> {
+) -> Result<(), CoreError> {
     crate::task_repository::update_task_engine(db_path, task_id, engine_id, profile_id)
 }
 
 /// Delete a task from the database.
-pub fn delete_task(db_path: &Path, task_id: &str) -> Result<(), String> {
+pub fn delete_task(db_path: &Path, task_id: &str) -> Result<(), CoreError> {
     crate::task_repository::delete_task(db_path, task_id)
 }
 
@@ -98,7 +99,7 @@ pub fn create_task(
     engine_id: &str,
     workspace_boundary: &str,
     profile_id: Option<&str>,
-) -> Result<String, String> {
+) -> Result<CreateTaskResult, CoreError> {
     let initial_state = TaskState::Backlog.as_str();
     crate::task_repository::create_task(
         db_path,
@@ -112,7 +113,7 @@ pub fn create_task(
 }
 
 /// Resolve bmad_state.db path.
-pub(crate) fn bmad_db_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+pub(crate) fn bmad_db_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, CoreError> {
     let path_resolver = app.path();
     if let Ok(dir) = path_resolver.app_data_dir() {
         return Ok(dir.join("bmad_state.db"));
@@ -123,14 +124,16 @@ pub(crate) fn bmad_db_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf,
     path_resolver
         .app_data_dir()
         .map(|d| d.join("bmad_state.db"))
-        .map_err(|e| format!("app dir: {e}"))
+        .map_err(|e| CoreError::Io {
+            message: format!("app dir: {e}"),
+        })
 }
 
 /// Get task's runtime binding (engine_id, profile_id, runtime_snapshot_id).
 pub fn get_task_runtime_binding(
     db_path: &Path,
     task_id: &str,
-) -> Result<Option<TaskRuntimeBinding>, String> {
+) -> Result<Option<TaskRuntimeBinding>, CoreError> {
     crate::task_repository::get_task_runtime_binding(db_path, task_id)
 }
 
@@ -139,29 +142,30 @@ pub fn update_task_runtime_snapshot(
     db_path: &Path,
     task_id: &str,
     snapshot_id: Option<&str>,
-) -> Result<(), String> {
+) -> Result<(), CoreError> {
     crate::task_repository::update_task_runtime_snapshot(db_path, task_id, snapshot_id)
 }
 
 /// Get a single task by id from DB.
 #[allow(dead_code)]
-pub fn get_task_by_id(db_path: &Path, task_id: &str) -> Result<Option<TaskRecordPayload>, String> {
+pub fn get_task_by_id(db_path: &Path, task_id: &str) -> Result<Option<TaskRecordPayload>, CoreError> {
     crate::task_repository::get_task_by_id(db_path, task_id)
 }
 
 /// List all tasks from DB.
-pub fn list_tasks(db_path: &Path) -> Result<Vec<TaskRecordPayload>, String> {
+pub fn list_tasks(db_path: &Path) -> Result<Vec<TaskRecordPayload>, CoreError> {
     crate::task_repository::list_tasks(db_path)
 }
 
 /// Get current task state from DB.
-pub fn get_task_state(db_path: &Path, task_id: &str) -> Result<Option<String>, String> {
+pub fn get_task_state(db_path: &Path, task_id: &str) -> Result<Option<String>, CoreError> {
     crate::task_repository::get_task_state(db_path, task_id)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::error::CoreError;
     use std::path::PathBuf;
 
     fn temp_db_path() -> (tempfile::TempDir, PathBuf) {
@@ -173,7 +177,8 @@ mod tests {
     #[test]
     fn test_task_create_persists_engine_id() {
         let (_dir, db_path) = temp_db_path();
-        let id = create_task(&db_path, "Test Task", "", "cursor", "{}", None).expect("create_task");
+        let created = create_task(&db_path, "Test Task", "", "cursor", "{}", None).expect("create_task");
+        let id = created.id;
         let tasks = list_tasks(&db_path).expect("list_tasks");
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].id, id);
@@ -183,7 +188,8 @@ mod tests {
     #[test]
     fn test_task_update_runtime_binding_persists() {
         let (_dir, db_path) = temp_db_path();
-        let id = create_task(&db_path, "Task", "", "cursor", "{}", None).expect("create_task");
+        let created = create_task(&db_path, "Task", "", "cursor", "{}", None).expect("create_task");
+        let id = created.id;
         update_task_engine(&db_path, &id, "claude", Some("haiku")).expect("update_task_engine");
         let tasks = list_tasks(&db_path).expect("list_tasks");
         assert_eq!(tasks.len(), 1);
@@ -210,13 +216,13 @@ mod tests {
         crate::task_repository::ensure_tables(&conn).unwrap();
         drop(conn);
         let err = update_task_engine(&db_path, "nonexistent", "cursor", None).unwrap_err();
-        assert!(err.contains("task not found"));
+        assert!(matches!(err, CoreError::NotFound { resource, .. } if resource == "task"));
     }
 
     #[test]
     fn test_task_create_persists_profile_id() {
         let (_dir, db_path) = temp_db_path();
-        let _id = create_task(&db_path, "Task", "", "cursor", "{}", Some("default"))
+        let _created = create_task(&db_path, "Task", "", "cursor", "{}", Some("default"))
             .expect("create_task");
         let tasks = list_tasks(&db_path).expect("list_tasks");
         assert_eq!(tasks.len(), 1);
@@ -226,7 +232,8 @@ mod tests {
     #[test]
     fn test_update_task_engine_clears_runtime_snapshot_id() {
         let (_dir, db_path) = temp_db_path();
-        let id = create_task(&db_path, "Task", "", "cursor", "{}", None).expect("create_task");
+        let created = create_task(&db_path, "Task", "", "cursor", "{}", None).expect("create_task");
+        let id = created.id;
         update_task_runtime_snapshot(&db_path, &id, Some("snap-123")).expect("set snapshot");
         let binding = get_task_runtime_binding(&db_path, &id).expect("get binding");
         assert_eq!(binding.as_ref().and_then(|b| b.runtime_snapshot_id.as_deref()), Some("snap-123"));

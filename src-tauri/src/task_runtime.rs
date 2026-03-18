@@ -230,28 +230,24 @@ pub fn resolve_task_runtime_context(
     task_id: &str,
     cfg: &AppConfig,
 ) -> Result<ResolvedRuntimeContext, CoreError> {
-    resolve_task_runtime_context_inner(db_path, task_id, cfg, true)
+    resolve_task_runtime_context_inner(db_path, task_id, cfg)
 }
 
-/// Like resolve_task_runtime_context but does not solidify on fallback. Used by ensure_runtime_snapshot.
+/// Like resolve_task_runtime_context. Used by ensure_runtime_snapshot.
 pub(crate) fn resolve_task_runtime_context_no_solidify(
     db_path: &Path,
     task_id: &str,
     cfg: &AppConfig,
 ) -> Result<ResolvedRuntimeContext, CoreError> {
-    resolve_task_runtime_context_inner(db_path, task_id, cfg, false)
+    resolve_task_runtime_context_inner(db_path, task_id, cfg)
 }
 
 fn resolve_task_runtime_context_inner(
     db_path: &Path,
     task_id: &str,
     cfg: &AppConfig,
-    solidify_on_fallback: bool,
 ) -> Result<ResolvedRuntimeContext, CoreError> {
-    let binding = task_state::get_task_runtime_binding(db_path, task_id)
-        .map_err(|e| CoreError::Io {
-            message: format!("get task binding failed: {e}"),
-        })?
+    let binding = task_state::get_task_runtime_binding(db_path, task_id)?
         .ok_or_else(|| CoreError::NotFound {
             resource: "task".to_string(),
             id: task_id.to_string(),
@@ -296,42 +292,18 @@ fn resolve_task_runtime_context_inner(
             id: binding.engine_id.clone(),
         })?;
 
-    // Prefer task binding; engine.active_profile_id is migration-only fallback.
+    // Task profile_id (from binding or migration backfill); else first profile in engine.
     let profile_id = binding
         .profile_id
         .clone()
         .filter(|s| !s.is_empty())
-        .or_else(|| {
-            let aid = &engine.active_profile_id;
-            if aid.is_empty() {
-                None
-            } else {
-                Some(aid.clone())
-            }
-        })
-        .or_else(|| engine.profiles.keys().next().cloned());
+        .or_else(|| engine.profiles.keys().next().cloned())
+        .ok_or_else(|| CoreError::NotFound {
+            resource: "profile".to_string(),
+            id: "no profile in engine".to_string(),
+        })?;
 
-    let profile_id = profile_id.ok_or_else(|| CoreError::NotFound {
-        resource: "profile".to_string(),
-        id: "no profile in engine".to_string(),
-    })?;
-
-    let resolved_from = if binding.profile_id.is_some() {
-        RuntimeResolvedFrom::LiveProfile
-    } else {
-        tracing::warn!(
-            task_id = %task_id,
-            engine_id = %binding.engine_id,
-            profile_id = %profile_id,
-            "migration fallback: task has no profile_id, using engine.active_profile_id"
-        );
-        if solidify_on_fallback {
-            if let Err(e) = task_state::update_task_engine(db_path, task_id, &binding.engine_id, Some(&profile_id)) {
-                tracing::warn!(task_id = %task_id, error = %e, "migration fallback: failed to solidify profile_id");
-            }
-        }
-        RuntimeResolvedFrom::FallbackProfile
-    };
+    let resolved_from = RuntimeResolvedFrom::LiveProfile;
 
     let profile = engine
         .profiles
@@ -374,9 +346,7 @@ pub fn create_snapshot_and_pin_task(
     profile_id: &str,
     profile: &EngineProfile,
 ) -> Result<(), CoreError> {
-    let db_path = bmad_db_path(app).map_err(|e| CoreError::Io {
-        message: format!("resolve db path failed: {e}"),
-    })?;
+    let db_path = bmad_db_path(app)?;
     let snapshot_id = uuid::Uuid::new_v4().to_string();
     let payload = RuntimeSnapshotPayload {
         engine_id: engine_id.to_string(),
@@ -406,13 +376,8 @@ pub fn create_snapshot_and_pin_task(
         reason: "manual_freeze".to_string(),
         created_at: "".to_string(), // Will be default by DB
     };
-    crate::snapshot_repository::insert_runtime_snapshot(&db_path, &snapshot).map_err(|e| CoreError::Io {
-        message: format!("insert snapshot failed: {e}"),
-    })?;
-    task_state::update_task_runtime_snapshot(&db_path, task_id, Some(&snapshot_id))
-        .map_err(|e| CoreError::Io {
-            message: format!("update task snapshot failed: {e}"),
-        })?;
+    crate::snapshot_repository::insert_runtime_snapshot(&db_path, &snapshot)?;
+    task_state::update_task_runtime_snapshot(&db_path, task_id, Some(&snapshot_id))?;
     Ok(())
 }
 
@@ -422,9 +387,7 @@ pub fn resolve_task_runtime_context_for_app(
     task_id: &str,
     cfg: &AppConfig,
 ) -> Result<ResolvedRuntimeContext, CoreError> {
-    let db_path = bmad_db_path(app).map_err(|e| CoreError::Io {
-        message: format!("resolve db path failed: {e}"),
-    })?;
+    let db_path = bmad_db_path(app)?;
     resolve_task_runtime_context(&db_path, task_id, cfg)
 }
 
@@ -464,7 +427,8 @@ mod tests {
             "{}",
             Some("profile_b"),
         )
-            .expect("create_task");
+            .expect("create_task")
+            .id;
 
         let mut profiles = BTreeMap::new();
         profiles.insert("profile_a".to_string(), mock_profile("profile_a"));
@@ -492,7 +456,8 @@ mod tests {
     fn resolve_falls_back_to_active_profile_when_task_profile_empty() {
         let (_dir, db_path) = temp_db_path();
         let task_id = task_state::create_task(&db_path, "Task", "", "eng1", "{}", None)
-            .expect("create_task");
+            .expect("create_task")
+            .id;
 
         let mut profiles = BTreeMap::new();
         profiles.insert("default".to_string(), mock_profile("default"));
@@ -518,7 +483,8 @@ mod tests {
     fn resolve_uses_snapshot_when_task_has_runtime_snapshot_id() {
         let (_dir, db_path) = temp_db_path();
         let task_id = task_state::create_task(&db_path, "Task", "", "eng1", "{}", Some("profile_a"))
-            .expect("create_task");
+            .expect("create_task")
+            .id;
 
         // Create runtime snapshot (not profile_snapshot) - the authoritative execution config
         let snapshot_id = uuid::Uuid::new_v4().to_string();

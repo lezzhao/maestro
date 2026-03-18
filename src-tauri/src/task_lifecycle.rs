@@ -1,6 +1,7 @@
 //! Task state machine and lifecycle transitions.
 //! States: BACKLOG -> PLANNING -> IN_PROGRESS -> CODE_REVIEW -> DONE
 
+use crate::core::error::CoreError;
 use crate::workspace_io::WorkspaceIo;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -130,11 +131,17 @@ pub fn transition(
     from_state: &str,
     event: &TaskEvent,
     take_snapshot: bool,
-) -> Result<String, String> {
+) -> Result<String, CoreError> {
     let from = TaskState::from_str(from_state)
-        .ok_or_else(|| format!("invalid from_state: {from_state}"))?;
+        .ok_or_else(|| CoreError::ValidationError {
+            field: "from_state".to_string(),
+            message: format!("invalid from_state: {from_state}"),
+        })?;
     let to = valid_transition(from, event)
-        .ok_or_else(|| format!("invalid transition: {} + {:?}", from_state, event))?;
+        .ok_or_else(|| CoreError::ValidationError {
+            field: "transition".to_string(),
+            message: format!("invalid transition: {} + {:?}", from_state, event),
+        })?;
     let to_str = to.as_str();
 
     let git_hash = if take_snapshot {
@@ -143,7 +150,9 @@ pub fn transition(
         None
     };
 
-    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
+    let conn = rusqlite::Connection::open(db_path).map_err(|e| CoreError::Db {
+        message: format!("open db failed: {e}"),
+    })?;
     crate::task_repository::ensure_tables(&conn)?;
 
     let transition_id = uuid::Uuid::new_v4().to_string();

@@ -45,23 +45,28 @@ fn create_test_config() -> AppConfig {
     cfg
 }
 
-// 1. 验证迁移回退场景（Task没有明确的profile_id时，回退使用engine.active_profile_id，并标记为FallbackProfile）
+// 1. 验证 Task 无 profile_id 时使用 engine 的第一个 profile 解析（迁移回退已移除）
 #[test]
-fn breakage_contract_migration_fallback_resolves_correctly() {
+fn breakage_contract_task_without_profile_id_uses_first_profile() {
     let (_dir, db_path) = temp_db_path();
     let cfg = create_test_config();
-    
+
     let task_id = task_state::create_task(&db_path, "Task", "", "eng1", "{}", None)
-        .expect("create_task");
+        .expect("create_task")
+        .id;
 
     let _ctx = prepare_execution_binding_with_path(&db_path, "exec-1", &task_id, &cfg)
         .expect("prepare_execution_binding");
 
     task_state::update_task_runtime_snapshot(&db_path, &task_id, None).expect("clear");
     let raw_ctx_no_snap = resolve_task_runtime_context(&db_path, &task_id, &cfg).expect("resolve");
-    
-    assert!(matches!(raw_ctx_no_snap.resolved_from, RuntimeResolvedFrom::FallbackProfile));
-    assert_eq!(raw_ctx_no_snap.profile_id.as_deref(), Some("default"));
+
+    assert!(matches!(
+        raw_ctx_no_snap.resolved_from,
+        RuntimeResolvedFrom::LiveProfile
+    ));
+    // BTreeMap keys are sorted; "custom" < "default" so first profile is "custom"
+    assert_eq!(raw_ctx_no_snap.profile_id.as_deref(), Some("custom"));
 }
 
 // 2. 验证并发 binding 篡改场景 (Binding altered while execution is preparing or snapshot exists)
@@ -71,7 +76,8 @@ fn breakage_contract_binding_tamper_invalidates_snapshot() {
     let cfg = create_test_config();
     
     let task_id = task_state::create_task(&db_path, "Task", "", "eng1", "{}", Some("default"))
-        .expect("create_task");
+        .expect("create_task")
+        .id;
 
     let ctx1 = prepare_execution_binding_with_path(&db_path, "exec-1", &task_id, &cfg)
         .expect("prepare 1");
@@ -97,7 +103,8 @@ fn breakage_contract_old_snapshot_will_not_leak_to_new_binding() {
     let cfg = create_test_config();
     
     let task_id = task_state::create_task(&db_path, "Task", "", "eng1", "{}", Some("default"))
-        .expect("create_task");
+        .expect("create_task")
+        .id;
 
     let _ctx1 = prepare_execution_binding_with_path(&db_path, "exec-1", &task_id, &cfg).unwrap();
     
@@ -159,7 +166,7 @@ fn breakage_contract_resolved_runtime_context_json_has_execution_fields() {
         headless_args: vec!["agent".to_string()],
         ready_signal: Some(">".to_string()),
         exit_command: Some("ctrl-c".to_string()),
-        exit_timeout_ms: Some(3000),
+        exit_timeout_ms: Some(crate::constants::DEFAULT_EXIT_TIMEOUT_MS),
         resolved_from: RuntimeResolvedFrom::Snapshot,
     };
     let json = serde_json::to_value(&ctx).expect("serialize");

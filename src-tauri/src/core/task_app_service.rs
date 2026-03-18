@@ -13,7 +13,7 @@ impl MaestroCore {
         request: crate::task_state::TaskCreateRequest,
     ) -> Result<crate::task_state::TaskCreateResult, String> {
         let config = self.config.get();
-        let db_path = crate::task_state::bmad_db_path(app)?;
+        let db_path = crate::task_state::bmad_db_path(app).map_err(|e| e.to_string())?;
         let workspace_boundary = if request.workspace_boundary.is_empty() {
             let project_path = config.project.path.clone();
             if project_path.is_empty() {
@@ -25,23 +25,24 @@ impl MaestroCore {
             request.workspace_boundary.clone()
         };
 
-        // Migration-only fallback: when profile_id not specified, use engine.active_profile_id.
-        // Task should be runtime owner; explicit profile_id preferred.
+        // Use request profile_id or first profile in engine.
         let profile_id = request.profile_id.or_else(|| {
             config
                 .engines
                 .get(&request.engine_id)
-                .map(|e| e.active_profile_id.clone())
+                .and_then(|e| e.profiles.keys().next().cloned())
         });
 
-        let id = crate::task_state::create_task(
+        let created = crate::task_state::create_task(
             &db_path,
             &request.title,
             &request.description,
             &request.engine_id,
             &workspace_boundary,
             profile_id.as_deref(),
-        )?;
+        )
+        .map_err(|e| e.to_string())?;
+        let id = created.id.clone();
         let current_state = crate::task_state::TaskState::Backlog.as_str().to_string();
         let result = crate::task_state::TaskCreateResult {
             id: id.clone(),
@@ -64,8 +65,8 @@ impl MaestroCore {
                     current_state,
                     workspace_boundary,
                     profile_id: profile_id,
-                    created_at: String::new(),
-                    updated_at: String::new(),
+                    created_at: created.created_at_ms,
+                    updated_at: created.updated_at_ms,
                 },
             },
         );
@@ -80,7 +81,7 @@ impl MaestroCore {
     ) -> Result<String, String> {
         let event = crate::task_state::TaskEvent::from_str(&request.event_type, request.event_reason)
             .ok_or_else(|| format!("invalid event: {}", request.event_type))?;
-        let db_path = crate::task_state::bmad_db_path(app)?;
+        let db_path = crate::task_state::bmad_db_path(app).map_err(|e| e.to_string())?;
         let io = self.workspace_io()?;
         let to_state = crate::task_state::transition(
             &db_path,
@@ -89,7 +90,8 @@ impl MaestroCore {
             &request.from_state,
             &event,
             request.take_snapshot,
-        )?;
+        )
+        .map_err(|e| e.to_string())?;
         emit_state_update(
             Some(app),
             AgentStateUpdate::TaskStateChanged {
@@ -103,8 +105,8 @@ impl MaestroCore {
 
     /// Use-Case: Delete task and broadcast state event.
     pub fn task_delete(&self, app: &AppHandle, task_id: String) -> Result<(), String> {
-        let db_path = crate::task_state::bmad_db_path(app)?;
-        crate::task_state::delete_task(&db_path, &task_id)?;
+        let db_path = crate::task_state::bmad_db_path(app).map_err(|e| e.to_string())?;
+        crate::task_state::delete_task(&db_path, &task_id).map_err(|e| e.to_string())?;
         self.deleted_task_ids
             .lock()
             .expect("deleted_task_ids lock poisoned")
@@ -121,8 +123,8 @@ impl MaestroCore {
     }
 
     pub fn task_list(&self, app: &AppHandle) -> Result<Vec<TaskRecordPayload>, String> {
-        let db_path = crate::task_state::bmad_db_path(app)?;
-        crate::task_state::list_tasks(&db_path)
+        let db_path = crate::task_state::bmad_db_path(app).map_err(|e| e.to_string())?;
+        crate::task_state::list_tasks(&db_path).map_err(|e| e.to_string())
     }
 
     pub fn task_get_state(
@@ -130,8 +132,8 @@ impl MaestroCore {
         app: &AppHandle,
         request: crate::task_state::TaskGetStateRequest,
     ) -> Result<Option<String>, String> {
-        let db_path = crate::task_state::bmad_db_path(app)?;
-        crate::task_state::get_task_state(&db_path, &request.task_id)
+        let db_path = crate::task_state::bmad_db_path(app).map_err(|e| e.to_string())?;
+        crate::task_state::get_task_state(&db_path, &request.task_id).map_err(|e| e.to_string())
     }
 
     /// Use-Case: Switch task's engine atomically.

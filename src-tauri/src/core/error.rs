@@ -35,6 +35,9 @@ pub enum CoreError {
 
     #[error("PermissionDenied: {reason}")]
     PermissionDenied { reason: String },
+
+    #[error("Db: {message}")]
+    Db { message: String },
 }
 
 impl Serialize for CoreError {
@@ -54,6 +57,7 @@ impl Serialize for CoreError {
             CoreError::Serialization { message } => ("ERR_SERIALIZATION", message.clone()),
             CoreError::Unsupported { feature } => ("ERR_UNSUPPORTED", format!("Unsupported: {}", feature)),
             CoreError::PermissionDenied { reason } => ("ERR_PERMISSION_DENIED", reason.clone()),
+            CoreError::Db { message } => ("ERR_DB", message.clone()),
         };
         let mut state = serializer.serialize_struct("CoreError", 2)?;
         state.serialize_field("code", code)?;

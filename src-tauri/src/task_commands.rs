@@ -52,8 +52,8 @@ pub async fn task_get_runtime_binding(
     app: tauri::AppHandle,
     request: TaskGetRuntimeBindingRequest,
 ) -> Result<Option<TaskRuntimeBinding>, String> {
-    let db_path = task_state::bmad_db_path(&app)?;
-    task_state::get_task_runtime_binding(&db_path, &request.task_id)
+    let db_path = task_state::bmad_db_path(&app).map_err(|e| e.to_string())?;
+    task_state::get_task_runtime_binding(&db_path, &request.task_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -61,13 +61,14 @@ pub async fn task_refresh_runtime_snapshot(
     app: tauri::AppHandle,
     request: TaskRefreshRuntimeSnapshotRequest,
 ) -> Result<(), String> {
-    crate::task_runtime_service::invalidate_runtime_snapshot(&app, &request.task_id)?;
+    crate::task_runtime_service::invalidate_runtime_snapshot(&app, &request.task_id)
+        .map_err(|e| e.to_string())?;
     let core = app.state::<crate::core::MaestroCore>();
     let cfg = core.config.get();
     let _ = crate::execution_binding::ensure_runtime_snapshot(&app, &request.task_id, &cfg)
         .map_err(|e| format!("refresh snapshot failed: {:?}", e))?;
 
-    let db_path = task_state::bmad_db_path(&app)?;
+    let db_path = task_state::bmad_db_path(&app).map_err(|e| e.to_string())?;
     if let Ok(Some(binding)) = task_state::get_task_runtime_binding(&db_path, &request.task_id) {
         crate::agent_state::emit_state_update(
             Some(&app),

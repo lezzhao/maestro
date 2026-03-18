@@ -19,25 +19,17 @@ pub struct UpdateTaskRuntimeContextResult {
 }
 
 /// Resolve profile_id for a task runtime context update.
-/// Uses request profile_id if provided; engine.active_profile_id is migration-only fallback.
-/// REMOVAL: See docs/MIGRATION_FALLBACK_REMOVAL.md.
+/// Uses request profile_id if provided; else first profile in engine.
 pub fn resolve_profile_id_for_update(
     config: &AppConfig,
     engine_id: &str,
     profile_id: Option<String>,
 ) -> Option<String> {
     profile_id.or_else(|| {
-        let fallback = config
+        config
             .engines
             .get(engine_id)
-            .map(|e| e.active_profile_id.clone());
-        if fallback.is_some() {
-            tracing::warn!(
-                engine_id = %engine_id,
-                "migration fallback: using engine.active_profile_id for profile_id"
-            );
-        }
-        fallback
+            .and_then(|e| e.profiles.keys().next().cloned())
     })
 }
 
@@ -57,10 +49,12 @@ pub fn update_task_runtime_context(
 
     let profile_id = resolve_profile_id_for_update(config, engine_id, profile_id);
 
-    let db_path = task_state::bmad_db_path(app)?;
-    task_state::update_task_engine(&db_path, task_id, engine_id, profile_id.as_deref())?;
+    let db_path = task_state::bmad_db_path(app).map_err(|e| e.to_string())?;
+    task_state::update_task_engine(&db_path, task_id, engine_id, profile_id.as_deref())
+        .map_err(|e| e.to_string())?;
 
-    let binding = task_state::get_task_runtime_binding(&db_path, task_id)?
+    let binding = task_state::get_task_runtime_binding(&db_path, task_id)
+        .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("task not found: {}", task_id))?;
 
     let resolved_context =
@@ -74,7 +68,7 @@ pub fn update_task_runtime_context(
 
 /// Explicitly invalidate the runtime snapshot for a task.
 pub fn invalidate_runtime_snapshot(app: &AppHandle, task_id: &str) -> Result<(), String> {
-    let db_path = task_state::bmad_db_path(app)?;
-    task_state::update_task_runtime_snapshot(&db_path, task_id, None)?;
+    let db_path = task_state::bmad_db_path(app).map_err(|e| e.to_string())?;
+    task_state::update_task_runtime_snapshot(&db_path, task_id, None).map_err(|e| e.to_string())?;
     Ok(())
 }

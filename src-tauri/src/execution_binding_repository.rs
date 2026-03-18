@@ -1,11 +1,18 @@
+use crate::core::error::CoreError;
 use std::path::Path;
+
+fn db_err(e: impl std::fmt::Display) -> CoreError {
+    CoreError::Db {
+        message: e.to_string(),
+    }
+}
 
 /// Insert a new execution binding.
 pub fn insert_execution_binding(
     db_path: &Path,
     binding: &crate::task_runtime::ExecutionBinding,
-) -> Result<(), String> {
-    let conn = rusqlite::Connection::open(db_path).map_err(|e| format!("open db failed: {e}"))?;
+) -> Result<(), CoreError> {
+    let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
     crate::task_repository::ensure_tables(&conn)?;
     conn.execute(
         "INSERT INTO execution_bindings (execution_id, task_id, snapshot_id, engine_id, profile_id, created_at)
@@ -19,6 +26,6 @@ pub fn insert_execution_binding(
             binding.created_at,
         ],
     )
-    .map_err(|e| format!("insert execution binding failed: {e}"))?;
+    .map_err(db_err)?;
     Ok(())
 }
