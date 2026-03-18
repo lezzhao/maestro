@@ -8,8 +8,6 @@ mod task_lifecycle;
 mod task_state;
 mod task_runtime;
 mod task_runtime_service;
-/// LEGACY: audit/migration only. Do not use for execution. See legacy::profile_snapshot.
-mod legacy;
 mod cli_state;
 pub mod config;
 pub mod core;

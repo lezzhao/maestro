@@ -47,7 +47,7 @@ pub struct TaskTransitionRequest {
 }
 
 fn default_take_snapshot() -> bool {
-    true
+    crate::constants::DEFAULT_TAKE_SNAPSHOT
 }
 
 #[derive(serde::Deserialize)]
