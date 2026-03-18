@@ -35,7 +35,7 @@ pub struct CliPruneResult {
 }
 
 fn resolve_workspace_io(core: &MaestroCore) -> Result<crate::workspace_io::WorkspaceIo, String> {
-    core.workspace_io()
+    core.workspace_io().map_err(|e| e.to_string())
 }
 
 fn cli_log_dir(io: &crate::workspace_io::WorkspaceIo) -> PathBuf {

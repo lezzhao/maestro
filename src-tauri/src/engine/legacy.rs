@@ -1,4 +1,5 @@
 use crate::config::{EngineConfig, EngineProfile};
+use crate::core::error::CoreError;
 use std::collections::BTreeMap;
 use tauri::{command, State, AppHandle};
 
@@ -9,7 +10,7 @@ use super::{
 };
 
 #[command]
-pub fn engine_list(core_state: State<'_, crate::core::MaestroCore>) -> Result<BTreeMap<String, EngineConfig>, String> {
+pub fn engine_list(core_state: State<'_, crate::core::MaestroCore>) -> Result<BTreeMap<String, EngineConfig>, CoreError> {
     Ok(core_state.inner().engine_list())
 }
 
@@ -19,7 +20,7 @@ pub fn engine_upsert(
     id: String,
     engine: EngineConfig,
     core_state: State<'_, crate::core::MaestroCore>,
-) -> Result<(), String> {
+) -> Result<(), CoreError> {
     core_state.inner().engine_upsert(&app, id, engine)
 }
 
@@ -29,7 +30,7 @@ pub fn engine_set_active_profile(
     engine_id: String,
     profile_id: String,
     core_state: State<'_, crate::core::MaestroCore>,
-) -> Result<(), String> {
+) -> Result<(), CoreError> {
     core_state
         .inner()
         .engine_set_active_profile(&app, engine_id, profile_id)
@@ -42,7 +43,7 @@ pub fn engine_upsert_profile(
     profile_id: String,
     profile: EngineProfile,
     core_state: State<'_, crate::core::MaestroCore>,
-) -> Result<(), String> {
+) -> Result<(), CoreError> {
     core_state
         .inner()
         .engine_upsert_profile(&app, engine_id, profile_id, profile)
@@ -52,7 +53,7 @@ pub fn engine_upsert_profile(
 pub async fn engine_preflight(
     engine_id: String,
     core_state: State<'_, crate::core::MaestroCore>,
-) -> Result<EnginePreflightResult, String> {
+) -> Result<EnginePreflightResult, CoreError> {
     core_state.inner().engine_preflight(engine_id).await
 }
 
@@ -60,7 +61,7 @@ pub async fn engine_preflight(
 pub async fn engine_list_models(
     engine_id: String,
     core_state: State<'_, crate::core::MaestroCore>,
-) -> Result<EngineModelListResult, String> {
+) -> Result<EngineModelListResult, CoreError> {
     core_state.inner().engine_list_models(engine_id).await
 }
 
@@ -69,6 +70,6 @@ pub fn engine_switch_session(
     engine_id: String,
     session_id: Option<String>,
     core_state: State<'_, crate::core::MaestroCore>,
-) -> Result<EngineSwitchResult, String> {
+) -> Result<EngineSwitchResult, CoreError> {
     core_state.inner().engine_switch_session(engine_id, session_id)
 }

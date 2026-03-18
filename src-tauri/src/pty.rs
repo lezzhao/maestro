@@ -298,7 +298,7 @@ pub fn pty_spawn(
     rows: u16,
     on_data: Channel<String>,
     core_state: tauri::State<'_, crate::core::MaestroCore>,
-) -> Result<PtySessionInfo, String> {
+) -> Result<PtySessionInfo, crate::core::error::CoreError> {
     core_state
         .inner()
         .pty_spawn(session_id, task_id, file, args, cwd, env, cols, rows, on_data)
@@ -309,7 +309,7 @@ pub fn pty_write(
     session_id: String,
     data: String,
     core_state: tauri::State<'_, crate::core::MaestroCore>,
-) -> Result<(), String> {
+) -> Result<(), crate::core::error::CoreError> {
     core_state.inner().pty_write(session_id, data)
 }
 
@@ -319,12 +319,12 @@ pub fn pty_resize(
     cols: u16,
     rows: u16,
     core_state: tauri::State<'_, crate::core::MaestroCore>,
-) -> Result<(), String> {
+) -> Result<(), crate::core::error::CoreError> {
     core_state.inner().pty_resize(session_id, cols, rows)
 }
 
 #[command]
-pub fn pty_kill(session_id: String, core_state: tauri::State<'_, crate::core::MaestroCore>) -> Result<(), String> {
+pub fn pty_kill(session_id: String, core_state: tauri::State<'_, crate::core::MaestroCore>) -> Result<(), crate::core::error::CoreError> {
     core_state.inner().pty_kill(session_id)
 }
 

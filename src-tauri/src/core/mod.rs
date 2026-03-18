@@ -61,13 +61,15 @@ impl MaestroCore {
     }
 
     /// Use-Case: Get WorkspaceIo instance for current project
-    pub fn workspace_io(&self) -> Result<crate::workspace_io::WorkspaceIo, String> {
+    pub fn workspace_io(&self) -> Result<crate::workspace_io::WorkspaceIo, error::CoreError> {
         let path = self.config.get().project.path.clone();
         let project = if path.trim().is_empty() {
-            std::env::current_dir().map_err(|e| format!("resolve current dir failed: {e}"))?
+            std::env::current_dir().map_err(|e| error::CoreError::Io {
+                message: format!("resolve current dir failed: {e}"),
+            })?
         } else {
             std::path::PathBuf::from(path)
         };
-        crate::workspace_io::WorkspaceIo::new(&project)
+        crate::workspace_io::WorkspaceIo::new(&project).map_err(error::CoreError::from)
     }
 }

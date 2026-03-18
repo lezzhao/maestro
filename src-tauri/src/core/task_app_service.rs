@@ -1,3 +1,4 @@
+use super::error;
 use super::MaestroCore;
 use tauri::AppHandle;
 use crate::agent_state::{emit_state_update, AgentStateUpdate, TaskRecordPayload};
@@ -10,9 +11,9 @@ impl MaestroCore {
         &self,
         app: &AppHandle,
         request: crate::task_state::TaskCreateRequest,
-    ) -> Result<crate::task_state::TaskCreateResult, String> {
+    ) -> Result<crate::task_state::TaskCreateResult, error::CoreError> {
         let config = self.config.get();
-        let db_path = crate::task_state::bmad_db_path(app).map_err(|e| e.to_string())?;
+        let db_path = crate::task_state::bmad_db_path(app)?;
         let workspace_boundary = if request.workspace_boundary.is_empty() {
             let project_path = config.project.path.clone();
             if project_path.is_empty() {
@@ -25,7 +26,10 @@ impl MaestroCore {
         };
 
         let profile_id = request.profile_id.ok_or_else(|| {
-            "profile_id is required for task_create".to_string()
+            error::CoreError::ValidationError {
+                field: "profile_id".to_string(),
+                message: "profile_id is required for task_create".to_string(),
+            }
         })?;
 
         let created = crate::task_state::create_task(
@@ -35,8 +39,7 @@ impl MaestroCore {
             &request.engine_id,
             &workspace_boundary,
             profile_id.as_deref(),
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
         let id = created.id.clone();
         let current_state = crate::task_state::TaskState::Backlog.as_str().to_string();
         let result = crate::task_state::TaskCreateResult {
@@ -73,10 +76,13 @@ impl MaestroCore {
         &self,
         app: &AppHandle,
         request: crate::task_state::TaskTransitionRequest,
-    ) -> Result<String, String> {
+    ) -> Result<String, error::CoreError> {
         let event = crate::task_state::TaskEvent::from_str(&request.event_type, request.event_reason)
-            .ok_or_else(|| format!("invalid event: {}", request.event_type))?;
-        let db_path = crate::task_state::bmad_db_path(app).map_err(|e| e.to_string())?;
+            .ok_or_else(|| error::CoreError::ValidationError {
+                field: "event_type".to_string(),
+                message: format!("invalid event: {}", request.event_type),
+            })?;
+        let db_path = crate::task_state::bmad_db_path(app)?;
         let io = self.workspace_io()?;
         let to_state = crate::task_state::transition(
             &db_path,
@@ -85,8 +91,7 @@ impl MaestroCore {
             &request.from_state,
             &event,
             request.take_snapshot,
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
         emit_state_update(
             Some(app),
             AgentStateUpdate::TaskStateChanged {
@@ -99,14 +104,16 @@ impl MaestroCore {
     }
 
     /// Use-Case: Delete task and broadcast state event.
-    pub fn task_delete(&self, app: &AppHandle, task_id: String) -> Result<(), String> {
-        let db_path = crate::task_state::bmad_db_path(app).map_err(|e| e.to_string())?;
-        crate::task_state::delete_task(&db_path, &task_id).map_err(|e| e.to_string())?;
+    pub fn task_delete(&self, app: &AppHandle, task_id: String) -> Result<(), error::CoreError> {
+        let db_path = crate::task_state::bmad_db_path(app)?;
+        crate::task_state::delete_task(&db_path, &task_id)?;
         self.deleted_task_ids
             .lock()
             .expect("deleted_task_ids lock poisoned")
             .insert(task_id.clone());
-        let _ = self.workspace_io().and_then(|io| crate::run_persistence::remove_records_by_task_id(&io, &task_id));
+        if let Ok(io) = self.workspace_io() {
+            let _ = crate::run_persistence::remove_records_by_task_id(&io, &task_id);
+        }
         let _ = self.pty_state.kill_sessions_by_task(&task_id);
         emit_state_update(
             Some(app),
@@ -117,18 +124,18 @@ impl MaestroCore {
         Ok(())
     }
 
-    pub fn task_list(&self, app: &AppHandle) -> Result<Vec<TaskRecordPayload>, String> {
-        let db_path = crate::task_state::bmad_db_path(app).map_err(|e| e.to_string())?;
-        crate::task_state::list_tasks(&db_path).map_err(|e| e.to_string())
+    pub fn task_list(&self, app: &AppHandle) -> Result<Vec<TaskRecordPayload>, error::CoreError> {
+        let db_path = crate::task_state::bmad_db_path(app)?;
+        crate::task_state::list_tasks(&db_path)
     }
 
     pub fn task_get_state(
         &self,
         app: &AppHandle,
         request: crate::task_state::TaskGetStateRequest,
-    ) -> Result<Option<String>, String> {
-        let db_path = crate::task_state::bmad_db_path(app).map_err(|e| e.to_string())?;
-        crate::task_state::get_task_state(&db_path, &request.task_id).map_err(|e| e.to_string())
+    ) -> Result<Option<String>, error::CoreError> {
+        let db_path = crate::task_state::bmad_db_path(app)?;
+        crate::task_state::get_task_state(&db_path, &request.task_id)
     }
 
     /// Use-Case: Switch task's engine atomically.
@@ -138,7 +145,7 @@ impl MaestroCore {
         &self,
         app: &AppHandle,
         request: crate::task_state::TaskSwitchRuntimeBindingRequest,
-    ) -> Result<(), String> {
+    ) -> Result<(), error::CoreError> {
         let config = self.config.get();
         let result = task_runtime_service::update_task_runtime_context(
             app,
@@ -146,7 +153,7 @@ impl MaestroCore {
             &request.engine_id,
             request.profile_id,
             &config,
-        )?;
+        ).map_err(error::CoreError::from)?;
         emit_state_update(
             Some(app),
             AgentStateUpdate::TaskRuntimeBindingChanged {
@@ -180,7 +187,7 @@ impl MaestroCore {
         &self,
         app: &AppHandle,
         request: crate::task_state::TaskUpdateRuntimeBindingRequest,
-    ) -> Result<(), String> {
+    ) -> Result<(), error::CoreError> {
         let config = self.config.get();
         let result = task_runtime_service::update_task_runtime_context(
             app,
@@ -188,7 +195,7 @@ impl MaestroCore {
             &request.engine_id,
             request.profile_id,
             &config,
-        )?;
+        ).map_err(error::CoreError::from)?;
         emit_state_update(
             Some(app),
             AgentStateUpdate::TaskRuntimeBindingChanged {

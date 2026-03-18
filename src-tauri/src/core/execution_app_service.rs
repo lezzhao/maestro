@@ -32,9 +32,7 @@ impl MaestroCore {
 
     /// Use-Case: List all executions
     pub fn list_executions(&self) -> Result<Vec<crate::core::execution::Execution>, error::CoreError> {
-        let io = self.workspace_io().map_err(|e| error::CoreError::Io {
-            message: format!("workspace_io failed: {e}"),
-        })?;
+        let io = self.workspace_io()?;
         let records = crate::run_persistence::read_run_records(&io).unwrap_or_default();
         Ok(records)
     }
@@ -62,10 +60,7 @@ impl MaestroCore {
 
     /// Use-Case: Reconcile active executions against running OS processes
     pub fn reconcile(&self) -> Result<(), error::CoreError> {
-        let io = self.workspace_io().map_err(|reason| error::CoreError::ValidationError {
-            field: "project.path".to_string(),
-            message: reason,
-        })?;
+        let io = self.workspace_io()?;
         let mut records = crate::run_persistence::read_run_records(&io).map_err(|e| {
             error::CoreError::Io {
                 message: format!("read run records failed: {e}"),

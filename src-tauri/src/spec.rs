@@ -360,7 +360,7 @@ pub fn spec_inject(
     mode: String,
     target_ide: String,
     core_state: tauri::State<'_, crate::core::MaestroCore>,
-) -> Result<(), String> {
+) -> Result<(), crate::core::error::CoreError> {
     core_state
         .inner()
         .spec_inject(provider, project_path, mode, target_ide)
@@ -371,7 +371,7 @@ pub fn spec_remove(
     provider: String,
     project_path: String,
     core_state: tauri::State<'_, crate::core::MaestroCore>,
-) -> Result<(), String> {
+) -> Result<(), crate::core::error::CoreError> {
     core_state.inner().spec_remove(provider, project_path)
 }
 
@@ -389,7 +389,7 @@ pub fn spec_preview(
     mode: String,
     target_ide: String,
     core_state: tauri::State<'_, crate::core::MaestroCore>,
-) -> Result<Vec<SpecPreviewResult>, String> {
+) -> Result<Vec<SpecPreviewResult>, crate::core::error::CoreError> {
     core_state.inner().spec_preview(provider, mode, target_ide)
 }
 
@@ -397,7 +397,7 @@ pub fn spec_preview(
 pub fn spec_backup(
     project_path: String,
     core_state: tauri::State<'_, crate::core::MaestroCore>,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, crate::core::error::CoreError> {
     core_state.inner().spec_backup(project_path)
 }
 
@@ -405,6 +405,6 @@ pub fn spec_backup(
 pub fn spec_restore(
     project_path: String,
     core_state: tauri::State<'_, crate::core::MaestroCore>,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, crate::core::error::CoreError> {
     core_state.inner().spec_restore(project_path)
 }
