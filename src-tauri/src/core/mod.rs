@@ -22,6 +22,7 @@
 pub mod error;
 pub mod events;
 pub mod execution;
+pub mod task_switch_transaction;
 
 // Application Services (Facade Splitting)
 pub mod engine_app_service;

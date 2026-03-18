@@ -139,46 +139,19 @@ impl MaestroCore {
     }
 
     /// Use-Case: Switch task's engine atomically.
-    /// Performs: DB update -> event broadcast -> session cleanup (if session_id provided).
-    /// Order ensures: if DB fails, session is untouched and user can retry; if cleanup fails after DB success, binding is already updated and orphan session can be recovered later.
+    /// Delegates to task_switch_transaction which enforces: DB update -> event broadcast -> session cleanup.
     pub fn task_switch_runtime_binding(
         &self,
         app: &AppHandle,
         request: crate::task_state::TaskSwitchRuntimeBindingRequest,
     ) -> Result<(), error::CoreError> {
         let config = self.config.get();
-        let result = task_runtime_service::update_task_runtime_context(
+        super::task_switch_transaction::execute(
             app,
-            &request.task_id,
-            &request.engine_id,
-            request.profile_id,
+            request,
             &config,
-        ).map_err(error::CoreError::from)?;
-        emit_state_update(
-            Some(app),
-            AgentStateUpdate::TaskRuntimeBindingChanged {
-                task_id: request.task_id.clone(),
-                binding: result.binding,
-            },
-        );
-        if let Some(ctx) = result.resolved_context {
-            emit_state_update(
-                Some(app),
-                AgentStateUpdate::TaskRuntimeContextResolved {
-                    task_id: request.task_id,
-                    context: ctx,
-                },
-            );
-        }
-        if let Some(ref session_id) = request.session_id {
-            let _ = crate::engine::cleanup_session_for_task_engine_switch(
-                request.engine_id.clone(),
-                Some(session_id.clone()),
-                config.clone(),
-                &self.pty_state,
-            );
-        }
-        Ok(())
+            &self.pty_state,
+        )
     }
 
     /// Use-Case: Update task's engine and broadcast state event.
