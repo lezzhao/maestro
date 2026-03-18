@@ -2,6 +2,7 @@ use super::archive::save_archive;
 use super::history::persist_engine_history;
 use super::types::*;
 use super::util::*;
+use crate::core::error::CoreError;
 use crate::core::MaestroCore;
 use crate::execution_binding::prepare_execution_binding;
 use crate::pty::PtyManagerState;
@@ -215,7 +216,7 @@ async fn execute_workflow_step(
     total_steps: usize,
     cfg: &crate::config::AppConfig,
     pty_state: &PtyManagerState,
-) -> Result<(WorkflowStepResult, String), String> {
+) -> Result<(WorkflowStepResult, String), CoreError> {
     let step_started = Instant::now();
     let prepared = crate::execution_binding::resolve_execution(
         None,
@@ -225,8 +226,7 @@ async fn execute_workflow_step(
         None,
         "workflow",
         cfg,
-    )
-    .map_err(|e| format!("resolve step engine failed: {e:?}"))?;
+    )?;
     let resolved = prepared.context;
 
     emitter.send_event(
@@ -239,9 +239,9 @@ async fn execute_workflow_step(
             status: "starting".to_string(),
             message: "starting step".to_string(),
             token_estimate: None,
-        }).map_err(|e| format!("serialize failed: {e}"))?,
+        }).map_err(|e| CoreError::Serialization { message: e.to_string() })?,
     )
-    .map_err(|e| format!("emit workflow progress failed: {e}"))?;
+    .map_err(|e| CoreError::SystemError { message: format!("emit workflow progress failed: {e}") })?;
 
     let _mode_hint = if resolved.supports_headless {
         "headless"
@@ -258,9 +258,9 @@ async fn execute_workflow_step(
             status: "running".to_string(),
             message: format!("starting step {} with {}", step_index + 1, step.engine),
             token_estimate: None,
-        }).map_err(|e| format!("serialize failed: {e}"))?,
+        }).map_err(|e| CoreError::Serialization { message: e.to_string() })?,
     )
-    .map_err(|e| format!("emit workflow progress failed: {e}"))?;
+    .map_err(|e| CoreError::SystemError { message: format!("emit workflow progress failed: {e}") })?;
 
     let result = if resolved.supports_headless {
         let mut args = if resolved.headless_args.is_empty() {
@@ -325,7 +325,7 @@ async fn execute_workflow_step(
                 let output = child
                     .wait_with_output()
                     .await
-                    .map_err(|e| format!("wait child failed: {e}"))?;
+                    .map_err(|e| CoreError::ExecutionFailed { id: step.engine.clone(), reason: format!("wait child failed: {e}") })?;
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
@@ -428,7 +428,7 @@ async fn execute_workflow_step(
             120,
             36,
             on_data,
-        )?;
+        ).map_err(CoreError::from)?;
 
         if let Some(ready_signal) = resolved.ready_signal.as_deref() {
             let ready_deadline =
@@ -445,7 +445,7 @@ async fn execute_workflow_step(
             }
         }
 
-        pty_state.write_to_session(&spawn.session_id, &format!("{}\n", step.prompt))?;
+        pty_state.write_to_session(&spawn.session_id, &format!("{}\n", step.prompt)).map_err(CoreError::from)?;
 
         let timeout = step.timeout_ms.unwrap_or(30_000).max(500);
         let deadline = Instant::now() + Duration::from_millis(timeout);
@@ -516,9 +516,9 @@ async fn execute_workflow_step(
                 "step failed".to_string()
             },
             token_estimate: Some(token_estimate),
-        }).map_err(|e| format!("serialize failed: {e}"))?,
+        }).map_err(|e| CoreError::Serialization { message: e.to_string() })?,
     )
-    .map_err(|e| format!("emit workflow progress failed: {e}"))?;
+    .map_err(|e| CoreError::SystemError { message: format!("emit workflow progress failed: {e}") })?;
 
     Ok((result, resolved.profile_id.unwrap_or_else(|| "default".to_string())))
 }
@@ -528,7 +528,7 @@ pub async fn workflow_run_step(
     app: AppHandle,
     request: StepRunRequest,
     core_state: State<'_, MaestroCore>,
-) -> Result<StepRunResult, String> {
+) -> Result<StepRunResult, CoreError> {
     core_state
         .workflow_run_step(Some(app.clone()), Arc::new(app.clone()), request)
         .await
@@ -539,7 +539,7 @@ pub async fn workflow_run_step_core(
     request: StepRunRequest,
     cfg: &crate::config::AppConfig,
     pty_state: &PtyManagerState,
-) -> Result<StepRunResult, String> {
+) -> Result<StepRunResult, CoreError> {
     let total_steps = request.total_steps.max(1);
     let step_index = request.step_index.min(total_steps.saturating_sub(1));
     let (result, profile_id): (WorkflowStepResult, String) = execute_workflow_step(
@@ -598,7 +598,7 @@ pub async fn workflow_run(
     app: AppHandle,
     request: WorkflowRunRequest,
     core_state: State<'_, MaestroCore>,
-) -> Result<WorkflowRunResult, String> {
+) -> Result<WorkflowRunResult, CoreError> {
     core_state
         .workflow_run(Some(app.clone()), Arc::new(app.clone()), request)
         .await
@@ -610,11 +610,11 @@ pub async fn workflow_run_core(
     request: WorkflowRunRequest,
     cfg: &crate::config::AppConfig,
     pty_state: &PtyManagerState,
-) -> Result<WorkflowRunResult, String> {
+) -> Result<WorkflowRunResult, CoreError> {
     let workflow_name = request.name.clone();
     let total = request.steps.len();
     if total == 0 {
-        return Err("workflow has no steps".to_string());
+        return Err(CoreError::ValidationError { field: "steps".to_string(), message: "workflow has no steps".to_string() });
     }
 
     let now_ms = current_time_ms().unwrap_or_default();
@@ -623,9 +623,7 @@ pub async fn workflow_run_core(
     // When task_id exists and app is available, ensure execution binding before run
     if let (Some(ref app_handle), Some(ref task_id)) = (app.as_ref(), request.task_id.as_ref()) {
         if !task_id.is_empty() {
-            prepare_execution_binding(app_handle, &execution_id, task_id, cfg).map_err(|e| {
-                format!("prepare execution binding failed: {:?}", e)
-            })?;
+            prepare_execution_binding(app_handle, &execution_id, task_id, cfg)?;
         }
     }
 
@@ -709,7 +707,7 @@ pub async fn workflow_run_core(
     };
     run_result.verification = merge_verification_summary(&run_result.step_results);
 
-    run_result.archive_path = save_archive(&request, &run_result)?;
+    run_result.archive_path = save_archive(&request, &run_result).map_err(CoreError::from)?;
 
     // Finalize execution (single source of truth created at start)
     let output_preview: String = run_result

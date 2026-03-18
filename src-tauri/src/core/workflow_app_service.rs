@@ -16,7 +16,7 @@ impl MaestroCore {
         app: Option<AppHandle>,
         emitter: Arc<dyn EventStream>,
         request: WorkflowRunRequest,
-    ) -> Result<crate::workflow::types::WorkflowRunResult, String> {
+    ) -> Result<crate::workflow::types::WorkflowRunResult, error::CoreError> {
         workflow_run_core(
             app,
             emitter,
@@ -33,7 +33,7 @@ impl MaestroCore {
         _app: Option<AppHandle>,
         emitter: Arc<dyn EventStream>,
         request: StepRunRequest,
-    ) -> Result<crate::workflow::types::StepRunResult, String> {
+    ) -> Result<crate::workflow::types::StepRunResult, error::CoreError> {
         workflow_run_step_core(
             emitter,
             request,
