@@ -1,7 +1,9 @@
 mod agent_state;
 mod api_provider;
+mod constants;
 mod task_repository;
 mod task_commands;
+mod task_migration;
 mod task_lifecycle;
 mod task_state;
 mod task_runtime;
@@ -68,7 +70,14 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             let config = load_or_create_config(app.handle().clone())?;
-            app.manage(MaestroCore::new(config));
+            app.manage(MaestroCore::new(config.clone()));
+            if let Ok(db_path) = crate::task_state::bmad_db_path(app.handle()) {
+                if let Ok(n) = crate::task_migration::migrate_backfill_task_profile_id(&db_path, &config) {
+                    if n > 0 {
+                        tracing::info!(count = n, "migration: backfilled profile_id for tasks");
+                    }
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

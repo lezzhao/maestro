@@ -19,12 +19,12 @@ This document defines **executable removal criteria** for migration fallback cod
 
 ## Removal Checklist
 
-- [ ] Run migration script to backfill task `profile_id`
+- [x] Run migration script to backfill task `profile_id` (runs at app startup in `task_migration::migrate_backfill_task_profile_id`)
 - [ ] Verify telemetry: fallback hit rate below threshold
-- [ ] Update contract tests to disallow fallback
-- [ ] Remove `engine.active_profile_id` fallback from `task_runtime::resolve_task_runtime_context_inner`
-- [ ] Remove `engine.active_profile_id` fallback from `task_runtime_service::resolve_profile_id_for_update`
-- [ ] Remove `engine.active_profile_id` fallback from `task_app_service::task_create`
+- [x] Update contract tests to disallow fallback
+- [x] Remove `engine.active_profile_id` fallback from `task_runtime::resolve_task_runtime_context_inner`
+- [x] Remove `engine.active_profile_id` fallback from `task_runtime_service::resolve_profile_id_for_update`
+- [x] Remove `engine.active_profile_id` fallback from `task_app_service::task_create`
 - [ ] Remove `active_profile_id` auto-set from `config::migrate_engine_profiles` and `engine::config`
 - [ ] Remove `engine.active_profile_id` field from `EngineConfig` (breaking change; require migration)
 
