@@ -529,7 +529,7 @@ export type TaskViewModel = TaskViewState & TaskRuntimeBinding;
  * - resolved runtime context (ResolvedRuntimeContext): executable context projection from backend
  *
  * Components should prefer selectors/hooks over consuming a fat AppTask. Use
- * updateTask / updateTaskRuntimeBinding / setTaskResolvedRuntimeContext per layer.
+ * updateTaskRecord / updateTaskRuntimeBinding / setTaskResolvedRuntimeContext per layer.
  */
 export type AppTask = TaskViewModel & {
   resolvedRuntimeContext?: ResolvedRuntimeContext | null;

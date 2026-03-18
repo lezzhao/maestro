@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 
+import { DEFAULT_ENGINE_ID, DEFAULT_PROFILE_ID } from "../constants";
 import type {
   EngineConfig,
   EnginePreflightResult,
@@ -45,9 +46,6 @@ type AppStore = {
   setActiveTaskId: (id: string | null) => void;
   /** Updates task record fields only (id, name, status, gitChanges, stats, created_at, updated_at). */
   updateTaskRecord: (id: string, patch: Partial<TaskViewState>) => void;
-  /** @deprecated Use updateTaskRecord + updateTaskRuntimeBinding per layer. Delegates by splitting patch. */
-  updateTask: (id: string, patch: Partial<AppTask>) => void;
-  updateActiveTask: (patch: Partial<AppTask>) => void;
   setTaskResolvedRuntimeContext: (id: string, ctx: import("../types").ResolvedRuntimeContext | null) => void;
   updateTaskRuntimeBinding: (id: string, patch: Partial<import("../types").TaskRuntimeBinding>) => void;
 };
@@ -107,16 +105,16 @@ export const useAppStore = create<AppStore>()(
     addTask: async (name) => {
       const title = name || `Task ${get().tasks.length + 1}`;
       try {
-        // Deterministic default engine: first by sorted key order, fallback to "cursor".
+        // Deterministic default engine: first by sorted key order, fallback to constant.
         const engines = get().engines;
-        const defaultEngine = Object.keys(engines).sort()[0] || "cursor";
+        const defaultEngine = Object.keys(engines).sort()[0] || DEFAULT_ENGINE_ID;
         const engine = engines[defaultEngine];
         const defaultProfile =
           engine?.active_profile_id && engine?.profiles?.[engine.active_profile_id]
             ? engine.active_profile_id
             : engine?.profiles
               ? Object.keys(engine.profiles)[0]
-              : "default";
+              : DEFAULT_PROFILE_ID;
 
         await invoke("task_create", {
           request: {
@@ -149,16 +147,6 @@ export const useAppStore = create<AppStore>()(
           t.id === id ? { ...t, ...patch, updated_at: Date.now() } : t
         ),
       })),
-    updateTask: (id, patch) =>
-      set((state) => ({
-        tasks: state.tasks.map((t) =>
-          t.id === id ? { ...t, ...patch, updated_at: Date.now() } : t
-        ),
-      })),
-    updateActiveTask: (patch) => {
-      const id = get().activeTaskId;
-      if (id) get().updateTask(id, patch);
-    },
     setTaskResolvedRuntimeContext: (id, ctx) =>
       set((state) => ({
         tasks: state.tasks.map((t) =>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { DEFAULT_PROFILE_ID } from "../constants";
 import { useAppStore } from "../stores/appStore";
 import { useActiveTask } from "./useActiveTask";
 import type {
@@ -32,11 +33,11 @@ export function useEngine() {
   const getActiveProfileId = useCallback(
     (engineId: string) => {
       const engine = engines[engineId];
-      if (!engine?.profiles) return "default";
+      if (!engine?.profiles) return DEFAULT_PROFILE_ID;
       return (
         (engine.active_profile_id && engine.profiles[engine.active_profile_id]
           ? engine.active_profile_id
-          : Object.keys(engine.profiles)[0]) || "default"
+          : Object.keys(engine.profiles)[0]) || DEFAULT_PROFILE_ID
       );
     },
     [engines],
