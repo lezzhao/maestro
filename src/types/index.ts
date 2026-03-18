@@ -1,3 +1,24 @@
+/** Workspace: a top-level container grouping tasks and binding a working directory. */
+export type Workspace = {
+  id: string;
+  name: string;
+  /** If empty/undefined, workspace operates in Pure Chat mode. */
+  workingDirectory?: string | null;
+  icon?: string | null;
+  color?: string | null;
+  // Workspace-level config overrides
+  preferredEngineId?: string | null;
+  preferredProfileId?: string | null;
+  specProvider?: "none" | "bmad" | "custom" | null;
+  specMode?: string | null;
+  specTargetIde?: string | null;
+  settings?: string | null;
+  /** Unix timestamp ms */
+  createdAt: number;
+  /** Unix timestamp ms */
+  updatedAt: number;
+};
+
 /** Required fields for all engine profiles. */
 export type EngineProfileBase = {
   id: string;
@@ -523,6 +544,8 @@ export interface TaskViewState {
   engineId: string;
   /** @backend authoritative - task-bound profile, created-time snapshot */
   profileId?: string | null;
+  workspaceId?: string | null;
+  settings?: string | null;
   /** @backend authoritative - derived from current_state */
   status: "idle" | "running" | "error" | "completed" | "needs_review" | "verified";
   /** @ui-derived - computed from git diff */
@@ -562,6 +585,9 @@ export interface TaskRecord {
   current_state: string;
   workspace_boundary: string;
   profile_id?: string | null;
+  workspace_id?: string | null;
+  runtime_snapshot_id?: string | null;
+  settings?: string | null;
   /** Unix timestamp in milliseconds. */
   created_at: number;
   /** Unix timestamp in milliseconds. */

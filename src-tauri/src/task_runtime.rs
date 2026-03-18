@@ -7,7 +7,7 @@
 
 use crate::config::{AppConfig, EngineProfile};
 use crate::core::error::CoreError;
-use crate::task_state::{self, bmad_db_path};
+use crate::task_state::{self, bmad_db_path, TaskRuntimeBinding};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tauri::AppHandle;
@@ -48,6 +48,7 @@ pub struct ResolvedExecutionConfig {
     pub ready_signal: Option<String>,
     pub exit_command: Option<String>,
     pub exit_timeout_ms: Option<u64>,
+    pub settings: Option<String>,
 }
 
 /// Layer 2: Tracking metadata. Not part of execution input; used for audit and binding.
@@ -84,6 +85,7 @@ pub struct ResolvedRuntimeContext {
     pub exit_command: Option<String>,
     pub exit_timeout_ms: Option<u64>,
     pub resolved_from: RuntimeResolvedFrom,
+    pub settings: Option<String>,
 }
 
 impl ResolvedRuntimeContext {
@@ -108,6 +110,7 @@ impl ResolvedRuntimeContext {
             exit_command: execution.exit_command,
             exit_timeout_ms: execution.exit_timeout_ms,
             resolved_from: metadata.resolved_from,
+            settings: execution.settings,
         }
     }
 
@@ -127,6 +130,7 @@ impl ResolvedRuntimeContext {
             ready_signal: self.ready_signal.clone(),
             exit_command: self.exit_command.clone(),
             exit_timeout_ms: self.exit_timeout_ms,
+            settings: self.settings.clone(),
         }
     }
 
@@ -247,15 +251,61 @@ fn resolve_task_runtime_context_inner(
     task_id: &str,
     cfg: &AppConfig,
 ) -> Result<ResolvedRuntimeContext, CoreError> {
-    let binding = task_state::get_task_runtime_binding(db_path, task_id)?
+    let task = crate::task_repository::get_task_record(db_path, task_id)?
         .ok_or_else(|| CoreError::NotFound {
             resource: "task".to_string(),
             id: task_id.to_string(),
         })?;
 
+    let mut merged_settings: serde_json::Value = serde_json::json!({});
+
+    // 1. Global Settings (from AppConfig)
+    // Assuming AppConfig has some global settings we want to cascade. 
+    // For now, let's look for a 'settings' field in AppConfig or AppSection if it exists.
+    // Maestro doesn't have a dedicated global 'settings' object yet in AppConfig, 
+    // but we can add one if needed. Let's assume it's empty for now or comes from elsewhere.
+
+    // 2. Workspace Settings
+    if let Some(ref ws_id) = task.workspace_id {
+        if let Ok(ws) = crate::workspace_commands::get_workspace_by_id(db_path, ws_id) {
+            if let Some(ws_settings_str) = ws.settings {
+                if let Ok(ws_json) = serde_json::from_str::<serde_json::Value>(&ws_settings_str) {
+                    if let Some(obj) = ws_json.as_object() {
+                        for (k, v) in obj {
+                            merged_settings[k] = v.clone();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Task Settings
+    if let Some(task_settings_str) = task.settings {
+        if let Ok(task_json) = serde_json::from_str::<serde_json::Value>(&task_settings_str) {
+            if let Some(obj) = task_json.as_object() {
+                for (k, v) in obj {
+                    merged_settings[k] = v.clone();
+                }
+            }
+        }
+    }
+
+    let final_settings_str = if merged_settings.is_object() && !merged_settings.as_object().unwrap().is_empty() {
+        Some(merged_settings.to_string())
+    } else {
+        None
+    };
+
+    let binding = TaskRuntimeBinding {
+        engine_id: task.engine_id.clone(),
+        profile_id: task.profile_id.clone(),
+        runtime_snapshot_id: task.runtime_snapshot_id.clone(),
+    };
+
     // Prefer snapshot when available (reproducibility)
     if let Some(ref snapshot_id) = binding.runtime_snapshot_id {
-        if !snapshot_id.is_empty() {
+        if !snapshot_id.trim().is_empty() {
             if let Ok(Some(payload)) = crate::snapshot_repository::get_runtime_snapshot_payload(db_path, snapshot_id) {
                 return Ok(ResolvedRuntimeContext {
                     task_id: task_id.to_string(),
@@ -278,6 +328,7 @@ fn resolve_task_runtime_context_inner(
                     exit_command: payload.exit_command,
                     exit_timeout_ms: payload.exit_timeout_ms,
                     resolved_from: RuntimeResolvedFrom::Snapshot,
+                    settings: final_settings_str.clone(),
                 });
             }
         }
@@ -296,7 +347,7 @@ fn resolve_task_runtime_context_inner(
     let profile_id = binding
         .profile_id
         .clone()
-        .filter(|s| !s.is_empty())
+        .filter(|s: &String| !s.is_empty())
         .or_else(|| engine.profiles.keys().next().cloned())
         .ok_or_else(|| CoreError::NotFound {
             resource: "profile".to_string(),
@@ -333,6 +384,7 @@ fn resolve_task_runtime_context_inner(
         exit_command: profile.exit_command.clone(),
         exit_timeout_ms: profile.exit_timeout_ms,
         resolved_from,
+        settings: final_settings_str,
     })
 }
 

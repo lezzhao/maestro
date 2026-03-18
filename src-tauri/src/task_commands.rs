@@ -124,10 +124,19 @@ pub async fn task_list(app: tauri::AppHandle) -> Result<Vec<crate::agent_state::
 }
 
 #[tauri::command]
+pub async fn task_update(
+    app: tauri::AppHandle,
+    request: crate::task_state::TaskUpdateRequest,
+) -> Result<(), CoreError> {
+    let core = app.state::<crate::core::MaestroCore>();
+    core.task_update(&app, request)
+}
+
+#[tauri::command]
 pub async fn task_get_state(
     app: tauri::AppHandle,
     request: task_state::TaskGetStateRequest,
 ) -> Result<Option<String>, CoreError> {
     let core = app.state::<crate::core::MaestroCore>();
-    core.task_get_state(&app, request)
+    core.get_task_state(&app, request)
 }

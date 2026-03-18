@@ -8,6 +8,7 @@
 //! Frontend consumption priority: resolved context > binding > other. Runtime display
 //! should prefer authoritative resolved context from backend, not self-assemble from binding.
 
+use crate::workspace_commands::Workspace;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
@@ -62,6 +63,19 @@ pub enum AgentStateUpdate {
         run_id: String,
         chunk: String,
     },
+    WorkspaceCreated {
+        workspace: Workspace,
+    },
+    WorkspaceUpdated {
+        workspace: Workspace,
+    },
+    WorkspaceDeleted {
+        workspace_id: String,
+    },
+    EnginePreflightComplete {
+        engine_id: String,
+        result: crate::engine::EnginePreflightResult,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,6 +88,12 @@ pub struct TaskRecordPayload {
     pub workspace_boundary: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_snapshot_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub settings: Option<String>,
     /// Unix timestamp in milliseconds.
     pub created_at: i64,
     /// Unix timestamp in milliseconds.

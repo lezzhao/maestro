@@ -191,6 +191,7 @@ pub(crate) fn resolve_execution_from_config(
         exit_command: p.exit_command.clone(),
         exit_timeout_ms: p.exit_timeout_ms,
         resolved_from: crate::task_runtime::RuntimeResolvedFrom::ConfigFallback,
+        settings: None,
     })
 }
 
