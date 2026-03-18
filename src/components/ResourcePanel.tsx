@@ -1,13 +1,14 @@
 import { useMemo } from "react";
 import { Panel } from "react-resizable-panels";
-import { Button } from "./ui/button";
 import { CliSessionPanel } from "./CliSessionPanel";
 import { GitChangesPanel } from "./GitChangesPanel";
+import { CascadingConfigPanel } from "./CascadingConfigPanel";
+import { useAppStore } from "../stores/appStore";
 import { cn } from "../lib/utils";
 import type { ChatMessage, VerificationSummary } from "../types";
 import type { TaskRun } from "../types";
 
-export type RightPanelTab = "runs" | "verification" | "changes" | "conclusion";
+export type RightPanelTab = "runs" | "verification" | "changes" | "conclusion" | "config";
 
 interface ResourcePanelProps {
   activeTaskId: string;
@@ -83,39 +84,26 @@ export function ResourcePanel({
 
   return (
     <Panel id="resource-panel" defaultSize={320} minSize={200} className="flex flex-col bg-bg-surface border-l border-border-muted z-10">
-      <div className="flex items-center gap-1 border-b border-border-muted px-2 py-1.5 shrink-0 bg-bg-surface">
-        <Button
-          size="sm"
-          variant={rightPanelTab === "runs" ? "default" : "outline"}
-          className="h-7 px-2 text-[10px] font-semibold"
-          onClick={() => setRightPanelTab("runs")}
-        >
-          运行
-        </Button>
-        <Button
-          size="sm"
-          variant={rightPanelTab === "verification" ? "default" : "outline"}
-          className="h-7 px-2 text-[10px] font-semibold"
-          onClick={() => setRightPanelTab("verification")}
-        >
-          验证
-        </Button>
-        <Button
-          size="sm"
-          variant={rightPanelTab === "changes" ? "default" : "outline"}
-          className="h-7 px-2 text-[10px] font-semibold"
-          onClick={() => setRightPanelTab("changes")}
-        >
-          变更
-        </Button>
-        <Button
-          size="sm"
-          variant={rightPanelTab === "conclusion" ? "default" : "outline"}
-          className="h-7 px-2 text-[10px] font-semibold"
-          onClick={() => setRightPanelTab("conclusion")}
-        >
-          结论
-        </Button>
+      <div className="flex items-center gap-1 p-2 shrink-0 bg-bg-base/30 backdrop-blur-sm border-b border-border-muted/5">
+        <div className="flex bg-bg-base/80 p-1 rounded-xl w-full">
+          {(["runs", "verification", "changes", "conclusion", "config"] as RightPanelTab[]).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setRightPanelTab(tab)}
+              className={cn(
+                "flex-1 h-8 rounded-lg text-[10px] font-bold transition-all",
+                rightPanelTab === tab 
+                  ? "bg-bg-surface text-primary-500 shadow-sm shadow-black/5" 
+                  : "text-text-muted hover:text-text-main"
+              )}
+            >
+              {tab === "runs" ? "运行" : 
+               tab === "verification" ? "验证" :
+               tab === "changes" ? "变更" : 
+               tab === "conclusion" ? "结论" : "配置"}
+            </button>
+          ))}
+        </div>
       </div>
       
       {rightPanelTab === "runs" ? (
@@ -129,35 +117,29 @@ export function ResourcePanel({
             <div className="text-xs text-text-muted">本轮暂无结构化验证数据。</div>
           ) : (
             <div className="space-y-2 text-xs">
-              <div className="rounded-md border border-border-muted/20 px-2 py-1.5">
-                <div className="text-text-muted">框架</div>
-                <div className="text-text-main font-semibold uppercase">
+              <div className="rounded-xl border border-border-muted/10 bg-bg-base/40 px-3 py-2.5 shadow-sm">
+                <div className="text-[10px] font-bold text-text-muted/60 uppercase tracking-tighter mb-1">测试框架</div>
+                <div className="text-sm font-black text-text-main uppercase">
                   {latestVerification.test_run.framework}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-md border border-border-muted/20 px-2 py-1.5">
-                  <div className="text-text-muted">用例通过</div>
-                  <div className="text-emerald-500 font-semibold">
-                    {latestVerification.test_run.passed_cases} / {latestVerification.test_run.total_cases}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-border-muted/10 bg-emerald-500/5 px-3 py-2.5 shadow-sm">
+                  <div className="text-[10px] font-bold text-emerald-600/60 uppercase tracking-tighter mb-1">通过用例</div>
+                  <div className="text-base font-black text-emerald-500">
+                    {latestVerification.test_run.passed_cases}
                   </div>
                 </div>
-                <div className="rounded-md border border-border-muted/20 px-2 py-1.5">
-                  <div className="text-text-muted">用例失败</div>
-                  <div className="text-rose-500 font-semibold">
+                <div className="rounded-xl border border-border-muted/10 bg-rose-500/5 px-3 py-2.5 shadow-sm">
+                  <div className="text-[10px] font-bold text-rose-600/60 uppercase tracking-tighter mb-1">失败用例</div>
+                  <div className="text-base font-black text-rose-500">
                     {latestVerification.test_run.failed_cases}
                   </div>
                 </div>
               </div>
-              <div className="rounded-md border border-border-muted/20 px-2 py-1.5">
-                <div className="text-text-muted">套件</div>
-                <div className="text-text-main">
-                  {latestVerification.test_run.passed_suites} 通过 / {latestVerification.test_run.failed_suites} 失败
-                </div>
-              </div>
-              <div className="rounded-md border border-border-muted/20 px-2 py-1.5">
-                <div className="text-text-muted">数据来源</div>
-                <div className="text-text-main">{latestVerification.source || "unknown"}</div>
+              <div className="rounded-xl border border-border-muted/10 bg-bg-base/40 px-3 py-2.5 shadow-sm">
+                <div className="text-[10px] font-bold text-text-muted/60 uppercase tracking-tighter mb-1">数据源</div>
+                <div className="text-xs font-bold text-text-main">{latestVerification.source || "unknown"}</div>
               </div>
               {latestVerification.test_run.raw_summary ? (
                 <div className="rounded-md border border-border-muted/20 px-2 py-1.5">
@@ -195,7 +177,7 @@ export function ResourcePanel({
             onRefresh={onRefreshGit}
           />
         </div>
-      ) : (
+      ) : rightPanelTab === "conclusion" ? (
         <div className="flex-1 min-h-0 p-3 overflow-y-auto custom-scrollbar">
           <div className="text-[11px] font-semibold mb-2">结论</div>
           <div className="space-y-3 text-xs">
@@ -211,7 +193,7 @@ export function ResourcePanel({
                 <div className="text-emerald-500">未检测到高风险信号</div>
               ) : (
                 <div className="space-y-1">
-                  {conclusionSummary.risks.map((risk) => (
+                  {conclusionSummary.risks.map((risk: any) => (
                     <div key={risk} className="text-rose-400">{risk}</div>
                   ))}
                 </div>
@@ -223,7 +205,7 @@ export function ResourcePanel({
                 <div className="text-text-main">无</div>
               ) : (
                 <div className="space-y-1">
-                  {conclusionSummary.pending.map((item) => (
+                  {conclusionSummary.pending.map((item: any) => (
                     <div key={item} className="text-amber-400">{item}</div>
                   ))}
                 </div>
@@ -240,6 +222,13 @@ export function ResourcePanel({
               </pre>
             </div>
           </div>
+        </div>
+      ) : (
+        <div className="flex-1 min-h-0 p-3 overflow-y-auto custom-scrollbar shadow-inner bg-slate-900/5">
+          <CascadingConfigPanel 
+             taskId={activeTaskId || null} 
+             workspaceId={useAppStore.getState().activeWorkspaceId} 
+          />
         </div>
       )}
     </Panel>

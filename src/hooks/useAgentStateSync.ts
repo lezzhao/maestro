@@ -47,6 +47,10 @@ export function useAgentStateSync() {
         updateTaskRuntimeBinding: useAppStore.getState().updateTaskRuntimeBinding,
         getAppState: () => useAppStore.getState(),
         setAppState: (next) => useAppStore.setState(next),
+        setEnginePreflight: useAppStore.getState().setEnginePreflight,
+        addWorkspace: useAppStore.getState().addWorkspace,
+        updateWorkspace: (workspace) => useAppStore.getState().updateWorkspace(workspace.id, workspace),
+        removeWorkspace: useAppStore.getState().removeWorkspace,
       });
     };
 
@@ -63,9 +67,13 @@ export function useAgentStateSync() {
           applyUpdate(payload);
         });
 
-        // Load initial task list from backend (authoritative source)
-        const tasks = await invoke<TaskRecord[]>("task_list");
+        // Load initial state from backend (authoritative source)
+        const [tasks, workspaces] = await Promise.all([
+          invoke<TaskRecord[]>("task_list"),
+          invoke<import("../types").Workspace[]>("workspace_list"),
+        ]);
         setTasks(tasks.map(toTaskViewModel));
+        useAppStore.getState().setWorkspaces(workspaces);
         bootstrapping = false;
 
         if (bufferedUpdates.length > 0) {
@@ -83,13 +91,6 @@ export function useAgentStateSync() {
     return () => {
       unlisten?.();
     };
-  }, [
-    createRun,
-    finishRun,
-    appendTranscriptChunk,
-    flushTranscript,
-    setMessages,
-    setTasks,
-    updateTaskRecord,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 }
