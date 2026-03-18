@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { applyAgentStateUpdate, toTaskViewModel, type AgentStateUpdate } from "./agentStateReducer";
-import type { AppTask, ChatMessage, TaskRun, TaskViewModel } from "../types";
+import type { ChatMessage, TaskRun, TaskViewModel } from "../types";
 
 function mockTaskRecord(id: string, overrides?: Partial<{ profile_id: string | null }>) {
   return {

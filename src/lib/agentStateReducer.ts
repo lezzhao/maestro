@@ -11,7 +11,7 @@
  * Runtime display should prefer authoritative resolved context from backend, not self-assemble from binding.
  * DEPRECATED: task_engine_changed is never emitted; use task_runtime_binding_changed.
  */
-import type { AppTask, ChatMessage, TaskRecord, TaskRun, TaskViewModel } from "../types";
+import type { ChatMessage, TaskRecord, TaskRun, TaskViewModel } from "../types";
 import {
   mapTaskStateToStatus,
   toMessages,
