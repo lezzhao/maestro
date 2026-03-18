@@ -5,7 +5,7 @@ import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Card, CardContent } from "../ui/card";
 import { useAppStore } from "../../stores/appStore";
-import { useTranslation } from "../../i18n";
+
 import type { CliPruneResult, CliSessionListItem } from "../../types";
 
 interface SystemDiagnosticsProps {
@@ -17,7 +17,6 @@ export function SystemDiagnostics({
   activeEngineId,
   engineCount,
 }: SystemDiagnosticsProps) {
-  const { t } = useTranslation();
   const projectPath = useAppStore((s) => s.projectPath);
   const [sessions, setSessions] = useState<CliSessionListItem[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState("");
@@ -104,17 +103,8 @@ export function SystemDiagnostics({
   }, [selectedSessionId]);
 
   return (
-    <section className="space-y-6 pt-4">
-      <div className="flex items-center gap-3 px-2">
-        <div className="flex flex-col">
-          <h2 className="text-xl font-bold tracking-tight">
-            {t("system_diagnostics") || "System Diagnostics"}
-          </h2>
-          <p className="text-sm text-text-muted mt-1">
-            Troubleshooting & Logs
-          </p>
-        </div>
-      </div>
+    <section className="space-y-6 px-4">
+
 
       <Card className="rounded-xl border border-border-muted bg-bg-surface overflow-hidden">
         <CardContent className="p-8 space-y-6 bg-bg-surface border-none">
@@ -286,7 +276,7 @@ export function SystemDiagnostics({
             {cliMessage && (
               <p className="text-xs text-amber-500 break-all">{cliMessage}</p>
             )}
-            <pre className="min-h-[120px] max-h-[220px] overflow-auto custom-scrollbar rounded-md border border-border-subtle bg-bg-code p-2 text-xs whitespace-pre-wrap break-words">
+            <pre className="min-h-[120px] max-h-[220px] overflow-auto custom-scrollbar rounded-md border border-border-subtle bg-bg-code p-2 text-xs whitespace-pre-wrap wrap-break-word">
               {sessionLogs || "暂无日志"}
             </pre>
           </div>

@@ -7,9 +7,8 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { Button } from "../ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Card, CardContent, CardHeader } from "../ui/card";
 import { Input } from "../ui/input";
-import { Badge } from "../ui/badge";
 import { Select } from "../ui/select";
 import { cn } from "../../lib/utils";
 import { useTranslation } from "../../i18n";
@@ -224,38 +223,37 @@ export function EngineCard({
           <div className="flex items-center gap-4">
             <div
               className={cn(
-                "w-10 h-10 rounded-lg flex items-center justify-center",
+                "w-10 h-10 rounded-xl flex items-center justify-center transition-colors",
                 ok
                   ? "bg-bg-elevated text-text-main"
-                  : "bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-500",
+                  : "bg-amber-500/10 text-amber-500",
               )}
             >
               <Cpu size={20} />
             </div>
-            <div>
-              <CardTitle className="text-base font-bold tracking-tight flex items-center gap-2">
-                {engine.display_name}
-                <Badge
-                  variant="outline"
-                  className="font-medium bg-transparent"
-                >
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-2">
+                <span className="text-base font-semibold tracking-tight text-text-main">
+                  {engine.display_name}
+                </span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-bg-elevated text-text-muted border border-border-muted/50">
                   V1.0
-                </Badge>
-              </CardTitle>
-              <div className="flex items-center gap-2 mt-1">
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
                 <div
                   className={cn(
-                    "w-2 h-2 rounded-full",
+                    "w-1.5 h-1.5 rounded-full shadow-[0_0_4px_rgba(0,0,0,0.1)]",
                     ok ? "bg-emerald-500" : "bg-amber-500",
                   )}
                 />
                 <span
                   className={cn(
-                    "text-xs font-medium",
-                    ok ? "text-text-muted" : "text-amber-600 dark:text-amber-500",
+                    "text-[11px] font-medium",
+                    ok ? "text-text-muted" : "text-amber-500",
                   )}
                 >
-                  {ok ? "Ready" : "Setup Required"}
+                  {ok ? "Environment Ready" : "Setup Required"}
                 </span>
               </div>
             </div>
@@ -267,50 +265,51 @@ export function EngineCard({
         {!editing ? (
           <>
             <div className="space-y-4">
-              <div className="bg-bg-code rounded-lg p-3 border border-border text-sm font-mono text-text-muted relative overflow-x-auto">
-                <div className="flex items-start gap-2">
-                  <span className="text-primary-500 font-bold opacity-80">
+              <div className="bg-bg-code rounded-xl p-4 border border-border-muted/50 text-sm font-mono text-text-muted relative overflow-hidden group/code hover:border-border-muted transition-colors">
+                <div className="flex items-start gap-2.5">
+                  <span className="text-primary-500/60 font-bold select-none">
                     $
                   </span>
-                  <span className="break-all text-text-main">
+                  <code className="break-all text-text-main text-[13px] leading-relaxed">
                     {activeProfile?.command ?? ""}{" "}
                     {(activeProfile?.args ?? []).join(" ")}
-                  </span>
+                  </code>
                 </div>
-                {activeProfile?.model && (
-                  <div className="mt-2 flex items-center gap-2 text-text-muted">
-                    <span className="text-xs opacity-60">
-                      Model:
+                
+                <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 pt-3 border-t border-border-muted/30">
+                  {activeProfile?.model && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] uppercase tracking-wider opacity-40 font-bold">Model</span>
+                      <span className="text-[11px] font-semibold text-text-main">{activeProfile.model}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] uppercase tracking-wider opacity-40 font-bold">Mode</span>
+                    <span className="text-[11px] font-semibold text-text-main">
+                      {(activeProfile?.execution_mode || "cli").toUpperCase()}
                     </span>
-                    <span className="font-semibold text-text-main">{activeProfile.model}</span>
                   </div>
-                )}
-                <div className="mt-1 flex items-center gap-2 text-xs">
-                  <span className="opacity-60">Mode:</span>
-                  <span className="font-semibold text-text-main">
-                    {(activeProfile?.execution_mode || "cli").toUpperCase()}
-                  </span>
                 </div>
               </div>
 
               <div
                 className={cn(
-                  "px-4 py-3 rounded-md border flex items-start gap-3",
+                  "px-4 py-3 rounded-xl border flex items-start gap-3 transition-all",
                   tone === "ok"
-                    ? "bg-bg-elevated border-border text-text-main"
+                    ? "bg-bg-elevated border-border-muted text-text-main"
                     : tone === "danger"
-                      ? "bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-500/10 dark:border-rose-500/20 dark:text-rose-400"
-                      : "bg-bg-base border-border text-text-muted",
+                      ? "bg-rose-500/5 border-rose-500/20 text-rose-500"
+                      : "bg-bg-base border-border-muted/50 text-text-muted",
                 )}
               >
-                <div className="mt-0.5 text-text-muted">
-                  <ShieldCheck size={16} />
+                <div className="mt-0.5 opacity-60">
+                  <ShieldCheck size={14} />
                 </div>
                 <div className="flex-1">
-                  <span className="text-xs font-semibold block mb-0.5 opacity-70">
+                  <span className="text-[10px] font-bold uppercase tracking-wider block mb-1 opacity-40">
                     {t("engine_status")}
                   </span>
-                  <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+                  <p className="whitespace-pre-wrap wrap-break-word text-[11px] leading-relaxed font-medium">
                     {preflight?.notes || t("not_checked_yet")}
                   </p>
                 </div>
@@ -378,8 +377,8 @@ export function EngineCard({
                   variant={isActive ? "default" : "outline"}
                   loading={switching}
                   className={cn(
-                    "flex-1 rounded-md text-xs",
-                    isActive ? "bg-primary-500 hover:bg-primary-600 text-white" : "",
+                    "flex-1 rounded-lg h-9 text-[11px] font-semibold transition-all shadow-none",
+                    isActive ? "bg-primary-500 hover:bg-primary-600 text-white" : "border-border-muted hover:bg-bg-elevated text-text-muted hover:text-text-main",
                   )}
                   onClick={async () => {
                     setSwitching(true);
@@ -397,7 +396,7 @@ export function EngineCard({
                   size="sm"
                   variant="outline"
                   loading={preflighting}
-                  className="flex-1 rounded-md text-xs"
+                  className="flex-1 rounded-lg h-9 text-[11px] font-semibold border-border-muted hover:bg-bg-elevated text-text-muted hover:text-text-main transition-colors shadow-none"
                   onClick={async () => {
                     setPreflighting(true);
                     try {
@@ -412,10 +411,10 @@ export function EngineCard({
                 <Button
                   size="sm"
                   variant="secondary"
-                  className="w-10 h-10 p-0 rounded-md border border-border-muted hover:bg-bg-elevated transition-all"
+                  className="w-9 h-9 p-0 rounded-lg border border-border-muted/50 bg-bg-surface hover:bg-bg-elevated transition-colors shadow-none text-text-muted hover:text-text-main"
                   onClick={() => startEdit(activeProfileId)}
                 >
-                  <Edit3 size={16} />
+                  <Edit3 size={15} />
                 </Button>
               </div>
             </div>

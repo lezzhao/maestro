@@ -69,19 +69,19 @@ export function SetupPanel({
 
       {/* 引擎列表 */}
       <section className="space-y-6">
-        <div className="flex items-center justify-between px-2">
-          <div className="flex flex-col">
-            <h2 className="text-xl font-bold tracking-tight">
-              {t("core_engines")}
+        <div className="flex items-center justify-between px-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-xl font-semibold tracking-tight">
+              {t("core_engines") || "Core Engines"}
             </h2>
-            <p className="text-sm text-text-muted mt-1">
-              Configure and manage your AI execution engines
+            <p className="text-sm text-text-muted">
+              {t("engine_desc")}
             </p>
           </div>
           <Button
-            size="lg"
-            variant="default"
-            className="rounded-xl h-11 px-6 shadow-sm active:scale-95 transition-all bg-primary-500 hover:bg-primary-600 text-white"
+            size="sm"
+            variant="outline"
+            className="rounded-lg h-9 px-4 border-border-muted hover:bg-bg-elevated text-text-muted hover:text-text-main transition-colors"
             loading={preflightingAll}
             success={finishedAll}
             onClick={async () => {
@@ -96,14 +96,14 @@ export function SetupPanel({
             }}
           >
             {finishedAll ? (
-              <CheckCircle2 size={18} className="mr-2" />
+              <CheckCircle2 size={16} className="mr-1.5" />
             ) : (
               <RefreshCcw
-                size={18}
-                className={cn("mr-2", preflightingAll && "animate-spin")}
+                size={16}
+                className={cn("mr-1.5", preflightingAll && "animate-spin")}
               />
             )}
-            <span className="font-semibold">
+            <span className="font-medium">
               {finishedAll ? t("check_done") : t("check_all")}
             </span>
           </Button>

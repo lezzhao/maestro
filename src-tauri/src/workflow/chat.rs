@@ -611,7 +611,7 @@ pub fn chat_send(
         .pty_write(request.session_id.clone(), payload)
         .map_err(|e| CoreError::ExecutionFailed {
             id: request.session_id.clone(),
-            reason: e,
+            reason: e.to_string(),
         })
 }
 
@@ -625,6 +625,6 @@ pub fn chat_stop(
         .pty_kill(request.session_id.clone())
         .map_err(|e| CoreError::ExecutionFailed {
             id: request.session_id.clone(),
-            reason: e,
+            reason: e.to_string(),
         })
 }

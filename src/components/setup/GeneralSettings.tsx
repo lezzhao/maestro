@@ -1,5 +1,5 @@
 import { Languages, Palette } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+
 import { cn } from "../../lib/utils";
 import { useTranslation } from "../../i18n";
 
@@ -19,93 +19,71 @@ export function GeneralSettings({
   const { t } = useTranslation();
 
   return (
-    <section className="space-y-6">
-      <div className="flex items-center gap-3 px-2">
-        <div className="flex flex-col">
-          <h2 className="text-xl font-bold tracking-tight">
-            {t("general_settings") || "General Settings"}
-          </h2>
-          <p className="text-sm text-text-muted mt-1">
-            Customization & Locale
-          </p>
+    <section className="space-y-6 px-4">
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 px-2">
+        <div className="p-6 rounded-xl border border-border-muted bg-bg-surface flex flex-col gap-4">
+          <div className="flex items-center gap-2 text-text-muted opacity-80">
+            <Palette size={16} />
+            <span className="text-sm font-medium">{t("theme_label") || "Theme"}</span>
+          </div>
+          <div className="flex bg-bg-elevated p-1 rounded-lg w-full">
+            <button
+              className={cn(
+                "flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-all",
+                theme === "light" ? "bg-bg-surface text-text-main shadow-sm" : "text-text-muted hover:text-text-main"
+              )}
+              onClick={() => onThemeChange("light")}
+            >
+              Light
+            </button>
+            <button
+              className={cn(
+                "flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-all",
+                theme === "dark" ? "bg-bg-surface text-text-main shadow-sm" : "text-text-muted hover:text-text-main"
+              )}
+              onClick={() => onThemeChange("dark")}
+            >
+              Dark
+            </button>
+            <button
+              className={cn(
+                "flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-all",
+                theme === "system" ? "bg-bg-surface text-text-main shadow-sm" : "text-text-muted hover:text-text-main"
+              )}
+              onClick={() => onThemeChange("system")}
+            >
+              System
+            </button>
+          </div>
         </div>
-      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card className="rounded-xl border border-border-muted bg-bg-surface overflow-hidden">
-          <CardHeader className="pb-2">
-            <div className="flex items-center gap-2">
-              <Palette size={16} className="text-text-muted" />
-              <CardTitle className="text-sm font-semibold">
-                {t("theme_label") || "Theme"}
-              </CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-4 px-6 pb-6">
-            <div className="flex gap-2 w-full max-w-sm">
-              <button
-                className={cn(
-                  "flex-1 rounded-lg px-3 py-2 text-sm font-medium border transition-colors",
-                  theme === "light" ? "bg-bg-elevated border-border text-text-main shadow-sm" : "bg-transparent border-transparent text-text-muted hover:bg-bg-subtle"
-                )}
-                onClick={() => onThemeChange("light")}
-              >
-                Light
-              </button>
-              <button
-                className={cn(
-                  "flex-1 rounded-lg px-3 py-2 text-sm font-medium border transition-colors",
-                  theme === "dark" ? "bg-bg-elevated border-border text-text-main shadow-sm" : "bg-transparent border-transparent text-text-muted hover:bg-bg-subtle"
-                )}
-                onClick={() => onThemeChange("dark")}
-              >
-                Dark
-              </button>
-              <button
-                className={cn(
-                  "flex-1 rounded-lg px-3 py-2 text-sm font-medium border transition-colors",
-                  theme === "system" ? "bg-bg-elevated border-border text-text-main shadow-sm" : "bg-transparent border-transparent text-text-muted hover:bg-bg-subtle"
-                )}
-                onClick={() => onThemeChange("system")}
-              >
-                System
-              </button>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-xl border border-border-muted bg-bg-surface overflow-hidden">
-          <CardHeader className="pb-2">
-            <div className="flex items-center gap-2">
-              <Languages size={16} className="text-text-muted" />
-              <CardTitle className="text-sm font-semibold">
-                {t("language_label") || "Language"}
-              </CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-4 px-6 pb-6">
-            <div className="flex gap-2 w-full max-w-xs">
-              <button
-                className={cn(
-                  "flex-1 rounded-lg px-3 py-2 text-sm font-medium border transition-colors",
-                  lang === "zh" ? "bg-bg-elevated border-border text-text-main shadow-sm" : "bg-transparent border-transparent text-text-muted hover:bg-bg-subtle"
-                )}
-                onClick={() => onLangChange("zh")}
-              >
-                中文
-              </button>
-              <button
-                className={cn(
-                  "flex-1 rounded-lg px-3 py-2 text-sm font-medium border transition-colors",
-                  lang === "en" ? "bg-bg-elevated border-border text-text-main shadow-sm" : "bg-transparent border-transparent text-text-muted hover:bg-bg-subtle"
-                )}
-                onClick={() => onLangChange("en")}
-              >
-                English
-              </button>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="p-6 rounded-xl border border-border-muted bg-bg-surface flex flex-col gap-4">
+          <div className="flex items-center gap-2 text-text-muted opacity-80">
+            <Languages size={16} />
+            <span className="text-sm font-medium">{t("language_label") || "Language"}</span>
+          </div>
+          <div className="flex bg-bg-elevated p-1 rounded-lg w-full max-w-xs">
+            <button
+              className={cn(
+                "flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-all",
+                lang === "zh" ? "bg-bg-surface text-text-main shadow-sm" : "text-text-muted hover:text-text-main"
+              )}
+              onClick={() => onLangChange("zh")}
+            >
+              中文
+            </button>
+            <button
+              className={cn(
+                "flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-all",
+                lang === "en" ? "bg-bg-surface text-text-main shadow-sm" : "text-text-muted hover:text-text-main"
+              )}
+              onClick={() => onLangChange("en")}
+            >
+              English
+            </button>
+          </div>
+        </div>
       </div>
     </section>
   );

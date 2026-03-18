@@ -37,10 +37,12 @@ export const translations = {
     system_diagnostics: "系统诊断",
 
     // Setup Panel
-    core_engines: "核心引擎 (Core Engines)",
-    check_all: "检查连接状态",
+    core_engines: "引擎管理",
+    check_all: "检测环境",
     checking_all: "检测中...",
     check_done: "检测完成",
+    setup_desc: "管理您的引擎配置与应用设置",
+    engine_desc: "配置并管理您的 AI 执行引擎",
     new_profile: "新建",
     edit_profile: "编辑",
     check: "检测",
@@ -262,6 +264,7 @@ export const translations = {
 
     // Command Palette
     cmd_import_project: "导入项目",
+    create_workspace: "新建 Workspace",
     cmd_import_project_sub: "选择本地目录并加载",
     cmd_open_settings: "打开设置",
     cmd_open_settings_sub: "CLI 配置与模型管理",
@@ -350,6 +353,8 @@ export const translations = {
     check_all: "Check Connection",
     checking_all: "Checking...",
     check_done: "Check Done",
+    setup_desc: "Manage engine configs and app preferences",
+    engine_desc: "Configure and manage your AI execution engines",
     new_profile: "New",
     edit_profile: "Edit",
     check: "Check",
@@ -571,6 +576,7 @@ export const translations = {
 
     // Command Palette
     cmd_import_project: "Import Project",
+    create_workspace: "Create Workspace",
     cmd_import_project_sub: "Select and load a local directory",
     cmd_open_settings: "Open Settings",
     cmd_open_settings_sub: "CLI configs and model management",

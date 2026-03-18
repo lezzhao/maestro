@@ -99,11 +99,29 @@ export function GitChangesPanel({ gitChanges, activeFile, activeDiff, onFileSele
         <div className="text-[10px] font-semibold text-text-muted mb-1.5">Diff 预览</div>
         <div className="h-[calc(100%-18px)] overflow-auto custom-scrollbar rounded border border-border-muted/20 bg-bg-surface/20 p-2">
           {activeFile && activeDiff ? (
-            <pre className="whitespace-pre-wrap break-all text-[10px] text-text-main leading-relaxed font-mono">
-              {activeDiff}
-            </pre>
+            <div className="font-mono text-[10px] leading-relaxed select-text">
+              {activeDiff.split('\n').map((line, idx) => {
+                const isAdded = line.startsWith('+') && !line.startsWith('+++');
+                const isRemoved = line.startsWith('-') && !line.startsWith('---');
+                const isHeader = line.startsWith('@@') || line.startsWith('diff') || line.startsWith('---') || line.startsWith('+++');
+                
+                return (
+                  <div 
+                    key={idx} 
+                    className={cn(
+                      "whitespace-pre",
+                      isAdded ? "text-emerald-500 bg-emerald-500/5" :
+                      isRemoved ? "text-rose-500 bg-rose-500/5" :
+                      isHeader ? "text-blue-500 opacity-60" : "text-text-main opacity-80"
+                    )}
+                  >
+                    {line}
+                  </div>
+                );
+              })}
+            </div>
           ) : (
-            <div className="text-[10px] text-text-muted">
+            <div className="text-[10px] text-text-muted italic flex items-center justify-center h-full">
               请选择文件查看 diff 预览。
             </div>
           )}

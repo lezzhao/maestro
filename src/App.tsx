@@ -10,7 +10,7 @@ import { useAgentStateSync } from "./hooks/useAgentStateSync";
 import { AppProviders } from "./components/providers/AppProviders";
 import { WorkspaceLayout } from "./components/layout/WorkspaceLayout";
 import { CommandPalette } from "./components/CommandPalette";
-import { ErrorBanner } from "./components/ErrorBanner";
+import { Toaster, toast } from "sonner";
 
 function App() {
   const { t } = useTranslation();
@@ -18,34 +18,56 @@ function App() {
 
   const {
     showSettings, setShowSettings,
-    errorMessage: errorMessageStore, setErrorMessage: setErrorMessageStore,
+    theme
   } = useAppStore(useShallow((s) => ({
     showSettings: s.showSettings,
     setShowSettings: s.setShowSettings,
-    errorMessage: s.errorMessage,
-    setErrorMessage: s.setErrorMessage,
+    theme: s.theme,
   })));
 
   const [commandOpen, setCommandOpen] = useState(false);
 
+  const { projectPath } = useAppStore(useShallow((s) => ({
+    projectPath: s.projectPath,
+  })));
+
   useEffect(() => {
     invoke("cli_reconcile_active_sessions").catch(console.error);
     invoke("pty_cleanup_dead_sessions").catch(console.error);
-  }, []);
+    
+    // Auto-sync backend project state if we have a persisted projectPath
+    if (projectPath) {
+      invoke("project_set_current", { projectPath }).catch(err => {
+        console.error("Failed to sync project path:", err);
+      });
+    }
+  }, [projectPath]);
 
   const handleImport = useCallback(
     async (path: string) => {
       try {
         const result = await detectAndRecommend(path);
         setShowSettings(false);
-        setErrorMessageStore(null);
+        toast.success("Project imported successfully");
         return result;
       } catch (e) {
-        setErrorMessageStore(`${t("import_fail")}: ${String(e)}`);
+        const msg = String(e);
+        if (msg.includes("Workspace Trust Required")) {
+          toast.warning("Workspace Trust Required", {
+            description: "Cursor Agent requires directory trust. Please run 'cursor agent' in your terminal once.",
+            duration: 6000,
+            action: {
+              label: "How to fix",
+              onClick: () => window.open("https://docs.cursor.com/agent/trust", "_blank")
+            }
+          });
+        } else {
+          toast.error(`${t("import_fail")}: ${msg}`);
+        }
         throw e;
       }
     },
-    [detectAndRecommend, setErrorMessageStore, setShowSettings, t],
+    [detectAndRecommend, setShowSettings, t],
   );
 
   const handleOpenProjectPicker = useCallback(async () => {
@@ -62,10 +84,10 @@ function App() {
     } catch (e) {
       const msg = String(e);
       if (!/user cancelled|canceled|aborted/i.test(msg)) {
-        setErrorMessageStore(`${t("picker_error")}: ${msg}`);
+        toast.error(`${t("picker_error")}: ${msg}`);
       }
     }
-  }, [handleImport, setErrorMessageStore, t]);
+  }, [handleImport, t]);
 
   useAppDragDrop({ onDropProject: handleImport });
   useAppShortcuts(commandOpen, setCommandOpen, showSettings, setShowSettings);
@@ -100,15 +122,28 @@ function App() {
 
   return (
     <AppProviders>
-      <div className="main-layout flex flex-col w-screen h-screen bg-bg-base overflow-hidden text-text-main">
+      <div className="main-layout flex flex-col w-screen h-screen bg-bg-base overflow-hidden text-text-main font-sans antialiased">
+        <Toaster 
+          position="top-center" 
+          theme={theme === "system" ? "light" : theme}
+          toastOptions={{
+            style: {
+              borderRadius: 'var(--radius-lg)',
+              background: 'var(--glass-bg)',
+              backdropFilter: 'blur(16px)',
+              border: '1px solid var(--glass-border)',
+              boxShadow: 'var(--shadow-lg)',
+              color: 'var(--text-main)',
+            },
+          }}
+        />
+        
         <Suspense fallback={null}>
           {commandOpen && (
             <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} actions={commandActions} />
           )}
         </Suspense>
         
-        <ErrorBanner message={errorMessageStore} onClose={() => setErrorMessageStore(null)} />
-
         <WorkspaceLayout />
       </div>
     </AppProviders>

@@ -188,6 +188,11 @@ function ChatMessageItemBase({ message, minimalMode, labels, isRunning, onRetry,
                   <span className="w-1.5 h-1.5 rounded-full bg-primary-500 animate-pulse delay-150" />
                 </div>
               </div>
+            ) : isAssistant && message.status === "error" && !message.content.trim() ? (
+              <div className="flex items-center gap-2 py-3 px-4 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-500 text-sm font-medium">
+                <AlertTriangle size={16} />
+                <span>执行过程中遇到错误，请查看执行记录。</span>
+              </div>
             ) : isAssistant ? (
               <>
                 {extractedThought.thought && (

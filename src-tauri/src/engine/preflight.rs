@@ -2,9 +2,9 @@
 
 use crate::config::AppConfig;
 use crate::engine::utils::{cursor_status_check, run_status_check_shell, StatusCheckResult};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnginePreflightResult {
     pub engine_id: String,
     pub profile_id: String,

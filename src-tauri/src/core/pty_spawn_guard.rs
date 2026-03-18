@@ -70,7 +70,11 @@ pub fn validate_pty_spawn(
         });
     }
 
-    let command_str = shlex::join(std::iter::once(file).chain(args.iter().map(String::as_str)));
+    let command_str = shlex::try_join(std::iter::once(file).chain(args.iter().map(String::as_str)))
+        .map_err(|_| CoreError::ValidationError {
+            field: "args".to_string(),
+            message: "command contains invalid characters".to_string(),
+        })?;
     ActionGuard::unwrap_default()
         .check_command(&command_str)
         .map_err(|e| CoreError::PermissionDenied { reason: e })?;
