@@ -1,31 +1,10 @@
 import { useEffect, useRef } from "react";
 import { useEngine } from "./useEngine";
 
-function runWhenIdle(task: () => void, timeout = 1200) {
-  const win = window as any;
-  if (typeof win.requestIdleCallback === "function") {
-    const id = win.requestIdleCallback(task, { timeout });
-    return () => win.cancelIdleCallback?.(id);
-  }
-  const timer = window.setTimeout(task, 180);
-  return () => window.clearTimeout(timer);
-}
-
 export function useAppLifecycle(activeExecutionMode: "api" | "cli", activeEngineId: string) {
-  const { engines, enginePreflight, preflightAll, switchEngine } = useEngine();
-  const bootPreflightStartedRef = useRef(false);
+  const { engines, enginePreflight, switchEngine } = useEngine();
   const autoSelectDoneRef = useRef(false);
   const autoSelectingRef = useRef(false);
-
-  useEffect(() => {
-    if (bootPreflightStartedRef.current) return;
-    if (Object.keys(engines).length === 0) return;
-    bootPreflightStartedRef.current = true;
-    const cancel = runWhenIdle(() => {
-      void preflightAll();
-    });
-    return cancel;
-  }, [engines, preflightAll]);
 
   useEffect(() => {
     if (autoSelectDoneRef.current || Object.keys(engines).length === 0) return;

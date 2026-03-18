@@ -33,7 +33,11 @@ export type AgentStateUpdate =
   | { type: "task_runtime_context_resolved"; task_id: string; context: import("../types").ResolvedRuntimeContext }
   | { type: "execution_started"; task_id: string; run_id: string; mode: string }
   | { type: "execution_cancelled"; task_id: string; run_id: string }
-  | { type: "execution_output_chunk"; task_id: string; run_id: string; chunk: string };
+  | { type: "execution_output_chunk"; task_id: string; run_id: string; chunk: string }
+  | { type: "engine_preflight_complete"; engine_id: string; result: import("../types").EnginePreflightResult }
+  | { type: "workspace_created"; workspace: import("../types").Workspace }
+  | { type: "workspace_updated"; workspace: import("../types").Workspace }
+  | { type: "workspace_deleted"; workspace_id: string };
 
 type AgentReducerDeps = {
   createRun: (run: TaskRun) => void;
@@ -46,6 +50,10 @@ type AgentReducerDeps = {
   setTaskResolvedRuntimeContext: (taskId: string, context: import("../types").ResolvedRuntimeContext) => void;
   getAppState: () => { tasks: TaskViewModel[]; activeTaskId: string | null };
   setAppState: (next: { tasks: TaskViewModel[]; activeTaskId: string | null }) => void;
+  setEnginePreflight: (engineId: string, result: import("../types").EnginePreflightResult) => void;
+  addWorkspace: (workspace: import("../types").Workspace) => void;
+  updateWorkspace: (workspace: import("../types").Workspace) => void;
+  removeWorkspace: (id: string) => void;
 };
 
 export function applyAgentStateUpdate(payload: AgentStateUpdate, deps: AgentReducerDeps) {
@@ -103,6 +111,18 @@ export function applyAgentStateUpdate(payload: AgentStateUpdate, deps: AgentRedu
       break;
     case "execution_started":
     default:
+      break;
+    case "engine_preflight_complete":
+      deps.setEnginePreflight(payload.engine_id, payload.result);
+      break;
+    case "workspace_created":
+      deps.addWorkspace(payload.workspace);
+      break;
+    case "workspace_updated":
+      deps.updateWorkspace(payload.workspace);
+      break;
+    case "workspace_deleted":
+      deps.removeWorkspace(payload.workspace_id);
       break;
   }
 }

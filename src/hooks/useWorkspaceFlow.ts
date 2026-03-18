@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from "react";
 import { useTranslation } from "../i18n";
+import { toast } from "sonner";
 
 type WorkspaceFlowParams = {
   projectPath: string;
@@ -7,7 +8,6 @@ type WorkspaceFlowParams = {
   detectAndRecommend: (path: string) => Promise<unknown>;
   setShowSettings: (show: boolean) => void;
   setCurrentStep: (step: "setup" | "project" | "compose" | "review") => void;
-  setErrorMessage: (message: string | null) => void;
 };
 
 export function useWorkspaceFlow({
@@ -16,7 +16,6 @@ export function useWorkspaceFlow({
   detectAndRecommend,
   setShowSettings,
   setCurrentStep,
-  setErrorMessage,
 }: WorkspaceFlowParams) {
   const { t } = useTranslation();
 
@@ -25,14 +24,26 @@ export function useWorkspaceFlow({
       try {
         const result = await detectAndRecommend(path);
         setShowSettings(false);
-        setErrorMessage(null);
+        toast.success("Project imported successfully");
         return result;
       } catch (e) {
-        setErrorMessage(`${t("import_fail")}: ${String(e)}`);
+        const msg = String(e);
+        if (msg.includes("Workspace Trust Required")) {
+          toast.warning("Workspace Trust Required", {
+            description: "Cursor Agent requires directory trust. Please run 'cursor agent' in your terminal once.",
+            duration: 6000,
+            action: {
+              label: "How to fix",
+              onClick: () => window.open("https://docs.cursor.com/agent/trust", "_blank")
+            }
+          });
+        } else {
+          toast.error(`${t("import_fail")}: ${msg}`);
+        }
         throw e;
       }
     },
-    [detectAndRecommend, setErrorMessage, setShowSettings, t],
+    [detectAndRecommend, setShowSettings, t],
   );
 
   const handleOpenProjectPicker = useCallback(async () => {
@@ -49,10 +60,10 @@ export function useWorkspaceFlow({
     } catch (e) {
       const msg = String(e);
       if (!/user cancelled|canceled|aborted/i.test(msg)) {
-        setErrorMessage(`${t("picker_error")}: ${msg}`);
+        toast.error(`${t("picker_error")}: ${msg}`);
       }
     }
-  }, [handleImport, setErrorMessage, t]);
+  }, [handleImport, t]);
 
   useEffect(() => {
     if (showSettings) {

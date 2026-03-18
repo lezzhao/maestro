@@ -12,6 +12,8 @@ import { useBatchedTranscript } from "./useBatchedTranscript";
 import type { ExecutionEvent } from "../services/ExecutionClient";
 import type { ChatApiMessage, EngineProfile, RunEvent } from "../types";
 
+import { toast } from "sonner";
+
 export interface UseChatSessionParams {
   activeTaskId: string | null;
   activeEngineId: string;
@@ -30,7 +32,6 @@ export function useChatSession({
   const { t } = useTranslation();
   const updateTaskRecord = useAppStore((s) => s.updateTaskRecord);
   const updateTaskRuntimeBinding = useAppStore((s) => s.updateTaskRuntimeBinding);
-  const setErrorMessage = useAppStore((s) => s.setErrorMessage);
 
   const isRunning = useChatStore((s) => s.getTaskRunning(activeTaskId));
   const pendingAttachments = useChatStore((s) => s.getTaskPendingAttachments(activeTaskId));
@@ -154,7 +155,18 @@ export function useChatSession({
     (errText: string) => {
       if (!activeTaskId) return;
       setExecutionPhase("error");
-      setErrorMessage(`${t("execution_error")}: ${errText}`);
+      if (errText.includes("Workspace Trust Required")) {
+        toast.warning("Workspace Trust Required", {
+          description: "Cursor Agent requires directory trust. Please run 'cursor agent' in your terminal once.",
+          duration: 6000,
+          action: {
+            label: "How to fix",
+            onClick: () => window.open("https://docs.cursor.com/agent/trust", "_blank")
+          }
+        });
+      } else {
+        toast.error(`${t("execution_error")}: ${errText}`);
+      }
       updateTaskRecord(activeTaskId, { status: "error" });
 
       const assistantId = activeAssistantIdRef.current;
@@ -202,15 +214,12 @@ export function useChatSession({
       executionMode,
       finishRun,
       popQueue,
-      setErrorMessage,
       updateTaskRecord,
       updateTaskRuntimeBinding,
       setRunning,
       setTaskRunning,
       t,
       updateMessage,
-      updateTaskRecord,
-      updateTaskRuntimeBinding,
     ],
   );
 
@@ -449,7 +458,7 @@ export function useChatSession({
       (!activeProfile?.api_key || !activeProfile?.api_base_url || !activeProfile?.model)
     ) {
       setExecutionPhase("error");
-      setErrorMessage(
+      toast.error(
         `${t("execution_error")}: ${t("api_key")} / ${t("api_base_url")} / ${t("model_required")}`,
       );
       return;
@@ -458,7 +467,7 @@ export function useChatSession({
     const preflight = useAppStore.getState().enginePreflight[activeEngineId];
     if (executionMode === "cli") {
       if (!preflight) {
-        setErrorMessage(
+        toast.error(
           `${t("execution_error")}: \u5f53\u524d\u5f15\u64ce ${activeEngineId} \u5c1a\u672a\u5b8c\u6210\u68c0\u6d4b\uff0c\u8bf7\u7a0d\u540e\u518d\u8bd5\u3002`,
         );
         return;
@@ -477,11 +486,11 @@ export function useChatSession({
               sessionId: activeTask?.sessionId ?? null,
             },
           });
-          setErrorMessage(
+          toast.error(
             `${t("execution_error")}: \u5f53\u524d\u5f15\u64ce ${activeEngineId} \u4e0d\u53ef\u7528\uff08\u547d\u4ee4\u6216auth\u5931\u8d25\uff09\uff0c\u5df2\u5207\u6362\u5230 ${fallbackEngineId}\u3002\u8bf7\u91cd\u65b0\u53d1\u9001\u3002`,
           );
         } else {
-          setErrorMessage(
+          toast.error(
             `${t("execution_error")}: \u5f53\u524d\u5f15\u64ce ${activeEngineId} \u4e0d\u53ef\u7528\u3002\u8bf7\u5728\u8bbe\u7f6e\u4e2d\u5b8c\u6210 CLI \u914d\u7f6e\u3002`,
           );
         }

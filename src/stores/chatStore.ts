@@ -362,6 +362,10 @@ export const useChatStore = create<ChatStore>()(
       name: "bmad-chat-storage",
       partialize: (state) => ({
         orchestrationMode: state.orchestrationMode,
+        messages: state.messages,
+        runsById: state.runsById,
+        runOrderByTask: state.runOrderByTask,
+        verificationsByRun: state.verificationsByRun,
       }),
     }
   )

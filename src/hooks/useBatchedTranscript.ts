@@ -2,7 +2,7 @@
  * Batches transcript chunks to reduce store updates during high-frequency streaming.
  * Flushes every FLUSH_INTERVAL_MS or when buffer exceeds FLUSH_THRESHOLD_BYTES.
  */
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useMemo } from "react";
 
 const FLUSH_INTERVAL_MS = 50;
 const FLUSH_THRESHOLD_BYTES = 16384;
@@ -55,5 +55,5 @@ export function useBatchedTranscript(
     flush();
   }, [flush]);
 
-  return { appendChunk, flushNow };
+  return useMemo(() => ({ appendChunk, flushNow }), [appendChunk, flushNow]);
 }

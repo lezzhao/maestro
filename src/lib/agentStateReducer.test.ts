@@ -57,6 +57,10 @@ function makeDeps(seedTasks: TaskViewModel[] = [], activeTaskId: string | null =
         state.tasks = next.tasks;
         state.activeTaskId = next.activeTaskId;
       }),
+      setEnginePreflight: vi.fn(),
+      addWorkspace: vi.fn(),
+      updateWorkspace: vi.fn(),
+      removeWorkspace: vi.fn(),
     },
   };
 }

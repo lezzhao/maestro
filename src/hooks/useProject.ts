@@ -24,11 +24,13 @@ export function useProject() {
       await invoke<ProjectSetResult>("project_set_current", {
         projectPath: path,
       });
+      // Set path immediately after setting the current project in backend
+      setProjectPath(path);
+      
       const recommendation = await invoke<EngineRecommendation>(
         "project_recommend_engine",
         { projectPath: path },
       );
-      setProjectPath(path);
       return { stack, recommendation };
     },
     [setProjectPath],
