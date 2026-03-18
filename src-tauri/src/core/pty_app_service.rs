@@ -17,6 +17,7 @@ impl MaestroCore {
         rows: u16,
         on_data: Channel<String>,
     ) -> Result<PtySessionInfo, error::CoreError> {
+        super::pty_spawn_guard::validate_pty_spawn(&self.config.get(), &file, &args)?;
         self.pty_state
             .spawn_session(session_id, task_id, file, args, cwd, env, cols, rows, on_data)
             .map_err(error::CoreError::from)
