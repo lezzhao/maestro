@@ -1,18 +1,25 @@
-export type EngineProfile = {
+/** Required fields for all engine profiles. */
+export type EngineProfileBase = {
   id: string;
   display_name: string;
   command: string;
-  model?: string;
   args: string[];
   env: Record<string, string>;
   supports_headless: boolean;
   headless_args: string[];
+};
+
+/** Optional fields: CLI-specific (ready_signal) or API-specific (model, api_*). */
+export type EngineProfileOptional = {
+  model?: string | null;
   ready_signal?: string | null;
   execution_mode?: "cli" | "api";
   api_provider?: "openai-compatible" | "anthropic" | null;
   api_base_url?: string | null;
   api_key?: string | null;
 };
+
+export type EngineProfile = EngineProfileBase & Partial<EngineProfileOptional>;
 
 /** Engine-level config. Profile-level fields (command, args, env, etc.) live in profiles[profileId]. */
 export type EngineConfig = {
@@ -448,31 +455,39 @@ export type RuntimeResolvedFrom =
   | "fallback_profile"
   | "config_fallback";
 
+/** Required fields for resolved execution context. Backend authoritative. */
+export type ResolvedRuntimeContextBase = {
+  taskId: string;
+  engineId: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  executionMode: "cli" | "api";
+  supportsHeadless: boolean;
+  headlessArgs: string[];
+  resolvedFrom: RuntimeResolvedFrom;
+};
+
+/** Optional fields: binding/snapshot ids, CLI exit config, or API config. */
+export type ResolvedRuntimeContextOptional = {
+  profileId?: string | null;
+  snapshotId?: string | null;
+  model?: string | null;
+  apiProvider?: string | null;
+  apiBaseUrl?: string | null;
+  apiKey?: string | null;
+  readySignal?: string | null;
+  exitCommand?: string | null;
+  exitTimeoutMs?: number | null;
+};
+
 /**
  * Resolved execution projection. Backend authoritative.
  * The exact parameters a task will execute with (command, args, env, model, etc.).
  * Do not mix with TaskRecord or TaskRuntimeBinding in business logic.
  */
-export type ResolvedRuntimeContext = {
-  taskId: string;
-  engineId: string;
-  profileId?: string | null;
-  snapshotId?: string | null;
-  command: string;
-  args: string[];
-  env: Record<string, string>;
-  executionMode: "cli" | "api";
-  model?: string | null;
-  apiProvider?: string | null;
-  apiBaseUrl?: string | null;
-  apiKey?: string | null;
-  supportsHeadless: boolean;
-  headlessArgs: string[];
-  readySignal?: string | null;
-  exitCommand?: string | null;
-  exitTimeoutMs?: number | null;
-  resolvedFrom: RuntimeResolvedFrom;
-};
+export type ResolvedRuntimeContext = ResolvedRuntimeContextBase &
+  Partial<ResolvedRuntimeContextOptional>;
 
 /**
  * Runtime binding projection. Backend authoritative when from events.
