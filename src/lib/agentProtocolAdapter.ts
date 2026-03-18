@@ -47,8 +47,8 @@ export function toTaskRun(p: TaskRunPayload): TaskRun {
 }
 
 export function toTaskViewModel(p: TaskRecord): TaskViewModel {
-  const created = p.created_at ? new Date(p.created_at).getTime() : Date.now();
-  const updated = p.updated_at ? new Date(p.updated_at).getTime() : Date.now();
+  const created = p.created_at ?? Date.now();
+  const updated = p.updated_at ?? Date.now();
   return {
     id: p.id,
     name: p.title,

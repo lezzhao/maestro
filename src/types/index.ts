@@ -556,9 +556,11 @@ export interface TaskRecord {
   current_state: string;
   workspace_boundary: string;
   profile_id?: string | null;
-  created_at: string;
-  updated_at: string;
-};
+  /** Unix timestamp in milliseconds. */
+  created_at: number;
+  /** Unix timestamp in milliseconds. */
+  updated_at: number;
+}
 
 /** Frontend UI projection that enriches TaskRecord with runtime-only fields. */
 

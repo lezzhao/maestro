@@ -11,8 +11,8 @@ function mockTaskRecord(id: string, overrides?: Partial<{ profile_id: string | n
     current_state: "BACKLOG",
     workspace_boundary: "{}",
     profile_id: overrides?.profile_id,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: Date.now(),
+    updated_at: Date.now(),
   };
 }
 

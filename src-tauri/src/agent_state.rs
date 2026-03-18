@@ -74,8 +74,10 @@ pub struct TaskRecordPayload {
     pub workspace_boundary: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile_id: Option<String>,
-    pub created_at: String,
-    pub updated_at: String,
+    /// Unix timestamp in milliseconds.
+    pub created_at: i64,
+    /// Unix timestamp in milliseconds.
+    pub updated_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
