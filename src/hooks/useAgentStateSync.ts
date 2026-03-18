@@ -1,6 +1,7 @@
 /**
  * Subscribes to agent://state-update events from Rust backend.
  * Keeps chatStore and appStore in sync with backend state (event-driven architecture).
+ * Batches execution_output_chunk to reduce store updates during streaming.
  */
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -13,11 +14,14 @@ import {
   type AgentStateUpdate,
   toTaskViewModel,
 } from "../lib/agentStateReducer";
+import { useBatchedTranscript } from "./useBatchedTranscript";
 
 export function useAgentStateSync() {
   const createRun = useChatStore((s) => s.createRun);
   const finishRun = useChatStore((s) => s.finishRun);
   const appendRunTranscript = useChatStore((s) => s.appendRunTranscript);
+  const { appendChunk: appendTranscriptChunk, flushNow: flushTranscript } =
+    useBatchedTranscript(appendRunTranscript);
   const setMessages = useChatStore((s) => s.setMessages);
   const setTasks = useAppStore((s) => s.setTasks);
   const updateTaskRecord = useAppStore((s) => s.updateTaskRecord);
@@ -29,10 +33,13 @@ export function useAgentStateSync() {
 
     const applyUpdate = (payload: AgentStateUpdate) => {
       if (!payload || typeof payload !== "object") return;
+      if (payload.type === "run_finished" || payload.type === "execution_cancelled") {
+        flushTranscript();
+      }
       applyAgentStateUpdate(payload, {
         createRun,
         finishRun,
-        appendRunTranscript,
+        appendRunTranscript: appendTranscriptChunk,
         setMessages,
         setTasks,
         updateTaskRecord,
@@ -76,5 +83,13 @@ export function useAgentStateSync() {
     return () => {
       unlisten?.();
     };
-  }, [createRun, finishRun, appendRunTranscript, setMessages, setTasks, updateTaskRecord]);
+  }, [
+    createRun,
+    finishRun,
+    appendTranscriptChunk,
+    flushTranscript,
+    setMessages,
+    setTasks,
+    updateTaskRecord,
+  ]);
 }

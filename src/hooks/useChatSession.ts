@@ -8,6 +8,7 @@ import { createMessage } from "../components/chat/createMessage";
 import { useExecutionQueue } from "./useExecutionQueue";
 import { useChatInputHistory } from "./useChatInputHistory";
 import { useAgentExecutor } from "./useAgentExecutor";
+import { useBatchedTranscript } from "./useBatchedTranscript";
 import type { ExecutionEvent } from "../services/ExecutionClient";
 import type { ChatApiMessage, EngineProfile, RunEvent } from "../types";
 
@@ -43,6 +44,8 @@ export function useChatSession({
   const updateRun = useChatStore((s) => s.updateRun);
   const addRunEvent = useChatStore((s) => s.addRunEvent);
   const appendRunTranscript = useChatStore((s) => s.appendRunTranscript);
+  const { appendChunk: appendTranscriptChunk, flushNow: flushTranscript } =
+    useBatchedTranscript(appendRunTranscript);
   const addRunArtifact = useChatStore((s) => s.addRunArtifact);
   const setRunVerification = useChatStore((s) => s.setRunVerification);
   const clearPendingAttachmentsByTask = useChatStore((s) => s.clearPendingAttachments);
@@ -220,6 +223,7 @@ export function useChatSession({
           currentRunIdRef.current = event.runId;
           break;
         case "done":
+          flushTranscript();
           if (event.exitCode !== undefined && event.exitCode !== 0 && event.exitCode !== null) {
             failRound(`命令执行失败（退出码：${event.exitCode}）`);
           } else {
@@ -227,6 +231,7 @@ export function useChatSession({
           }
           break;
         case "error":
+          flushTranscript();
           failRound(event.message);
           break;
         case "verification":
@@ -238,7 +243,7 @@ export function useChatSession({
           setExecutionPhase("streaming");
           appendToMessage(activeTaskId, activeAssistantIdRef.current, event.text);
           if (currentRunIdRef.current) {
-            appendRunTranscript(currentRunIdRef.current, event.text);
+            appendTranscriptChunk(currentRunIdRef.current, event.text);
             if (executionMode !== "api") {
               addRunArtifact(currentRunIdRef.current, {
                 id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -257,11 +262,12 @@ export function useChatSession({
     [
       activeTaskId,
       addRunArtifact,
-      appendRunTranscript,
+      appendTranscriptChunk,
       appendToMessage,
       executionMode,
       failRound,
       finalizeRound,
+      flushTranscript,
       setRunVerification,
     ],
   );
