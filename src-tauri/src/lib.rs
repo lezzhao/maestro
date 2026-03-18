@@ -1,6 +1,7 @@
 mod agent_state;
 mod api_provider;
 mod constants;
+mod redact;
 mod task_repository;
 mod task_commands;
 mod task_migration;

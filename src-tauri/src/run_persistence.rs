@@ -1,10 +1,23 @@
 use crate::core::execution::Execution;
+use crate::redact;
 use crate::workspace_io::WorkspaceIo;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::sync::Mutex;
 
 static RUN_RECORDS_LOCK: Mutex<()> = Mutex::new(());
+
+fn redact_execution(record: &Execution) -> Execution {
+    let mut r = record.clone();
+    r.output_preview = redact::redact_sensitive(&r.output_preview);
+    if let Some(ref e) = r.error {
+        r.error = Some(redact::redact_sensitive(e));
+    }
+    if let Some(ref res) = r.result {
+        r.result = Some(redact::redact_sensitive(res));
+    }
+    r
+}
 
 pub fn current_time_ms() -> Result<i64, String> {
     Ok(std::time::SystemTime::now()
@@ -26,8 +39,9 @@ pub fn append_run_record(workspace_io: &WorkspaceIo, record: &Execution) -> Resu
         .append(true)
         .open(&path)
         .map_err(|e| format!("open run record file failed: {e}"))?;
+    let redacted = redact_execution(record);
     let text =
-        serde_json::to_string(record).map_err(|e| format!("serialize run record failed: {e}"))?;
+        serde_json::to_string(&redacted).map_err(|e| format!("serialize run record failed: {e}"))?;
     file.write_all(format!("{text}\n").as_bytes())
         .map_err(|e| format!("write run record failed: {e}"))?;
     Ok(())
@@ -75,7 +89,7 @@ pub fn rewrite_run_records(workspace_io: &WorkspaceIo, records: &[Execution]) ->
     }
     let content = records
         .iter()
-        .map(|item| serde_json::to_string(item).unwrap_or_default())
+        .map(|item| serde_json::to_string(&redact_execution(item)).unwrap_or_default())
         .filter(|line| !line.is_empty())
         .collect::<Vec<_>>()
         .join("\n");
