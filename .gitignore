@@ -33,3 +33,4 @@ src-tauri/target/
 *.sln
 *.sw?
 .pnpm-store
+target

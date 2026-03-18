@@ -297,7 +297,7 @@ impl EngineConfig {
             args: override_args,
             env: BTreeMap::new(),
             exit_command: Some(exit_command.to_string()),
-            exit_timeout_ms: Some(3000),
+            exit_timeout_ms: Some(crate::constants::DEFAULT_EXIT_TIMEOUT_MS),
             supports_headless,
             headless_args,
             ready_signal: Some(ready_signal.to_string()),
@@ -334,7 +334,9 @@ impl EngineConfig {
     }
 
     pub fn exit_timeout_ms(&self) -> u64 {
-        self.active_profile().exit_timeout_ms.unwrap_or(3000)
+        self.active_profile()
+            .exit_timeout_ms
+            .unwrap_or(crate::constants::DEFAULT_EXIT_TIMEOUT_MS)
     }
 }
 
