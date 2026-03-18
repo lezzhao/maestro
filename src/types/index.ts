@@ -14,24 +14,15 @@ export type EngineProfile = {
   api_key?: string | null;
 };
 
+/** Engine-level config. Profile-level fields (command, args, env, etc.) live in profiles[profileId]. */
 export type EngineConfig = {
   id: string;
   plugin_type: string;
   display_name: string;
   profiles?: Record<string, EngineProfile>;
   active_profile_id?: string;
-  command: string;
-  args: string[];
-  env: Record<string, string>;
-  exit_command: string;
-  exit_timeout_ms: number;
-  supports_headless: boolean;
-  headless_args: string[];
-  ready_signal?: string | null;
-  execution_mode?: "cli" | "api";
-  api_provider?: "openai-compatible" | "anthropic" | null;
-  api_base_url?: string | null;
-  api_key?: string | null;
+  exit_command?: string;
+  exit_timeout_ms?: number;
   icon: string;
 };
 

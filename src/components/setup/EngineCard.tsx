@@ -273,8 +273,8 @@ export function EngineCard({
                     $
                   </span>
                   <span className="break-all text-text-main">
-                    {activeProfile?.command || engine.command}{" "}
-                    {(activeProfile?.args || engine.args).join(" ")}
+                    {activeProfile?.command ?? ""}{" "}
+                    {(activeProfile?.args ?? []).join(" ")}
                   </span>
                 </div>
                 {activeProfile?.model && (
@@ -338,20 +338,23 @@ export function EngineCard({
                     setCreatingProfile(true);
                     try {
                       const nextId = `profile-${profileIds.length + 1}`;
-                      const base = activeProfile || {
+                      const firstProfile = profileIds.length > 0 && engine.profiles
+                        ? engine.profiles[profileIds[0]]
+                        : null;
+                      const base = activeProfile ?? firstProfile ?? {
                         id: "default",
                         display_name: "Default",
-                        command: engine.command,
+                        command: "",
                         model: "",
-                        args: engine.args,
-                        env: engine.env,
-                        supports_headless: engine.supports_headless,
-                        headless_args: engine.headless_args,
-                        ready_signal: engine.ready_signal ?? null,
-                        execution_mode: engine.execution_mode || "cli",
-                        api_provider: engine.api_provider ?? null,
-                        api_base_url: engine.api_base_url ?? null,
-                        api_key: engine.api_key ?? null,
+                        args: [],
+                        env: {},
+                        supports_headless: false,
+                        headless_args: [],
+                        ready_signal: null,
+                        execution_mode: "cli",
+                        api_provider: null,
+                        api_base_url: null,
+                        api_key: null,
                       };
                       await onUpsertProfile(id, nextId, {
                         ...base,

@@ -30,13 +30,6 @@ function mockEngine(overrides?: Partial<EngineConfig>): EngineConfig {
       },
     },
     active_profile_id: "default",
-    command: "cursor",
-    args: [],
-    env: {},
-    exit_command: "ctrl-c",
-    exit_timeout_ms: 3000,
-    supports_headless: true,
-    headless_args: [],
     icon: "",
     ...overrides,
   };
