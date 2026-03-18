@@ -9,7 +9,6 @@
  *
  * Event consumption priority: resolved context > binding > other.
  * Runtime display should prefer authoritative resolved context from backend, not self-assemble from binding.
- * DEPRECATED: task_engine_changed is never emitted; use task_runtime_binding_changed.
  */
 import type { ChatMessage, TaskRecord, TaskRun, TaskViewModel } from "../types";
 import {
