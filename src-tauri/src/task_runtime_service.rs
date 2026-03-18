@@ -19,7 +19,8 @@ pub struct UpdateTaskRuntimeContextResult {
 }
 
 /// Resolve profile_id for a task runtime context update.
-/// Uses request profile_id if provided; else first profile in engine.
+/// Business policy: uses request profile_id if provided; else first profile in engine.
+/// (task_create requires explicit profile_id; this fallback applies only to switch/update.)
 pub fn resolve_profile_id_for_update(
     config: &AppConfig,
     engine_id: &str,

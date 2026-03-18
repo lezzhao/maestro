@@ -5,8 +5,7 @@ use crate::task_runtime_service;
 
 impl MaestroCore {
     /// Use-Case: Create task and broadcast state event.
-    /// New tasks must explicitly write binding fields (engine_id, profile_id).
-    /// engine.active_profile_id fallback is migration-only; prefer explicit profile_id in request.
+    /// Requires explicit profile_id in request (no migration fallback).
     pub fn task_create(
         &self,
         app: &AppHandle,
@@ -25,13 +24,9 @@ impl MaestroCore {
             request.workspace_boundary.clone()
         };
 
-        // Use request profile_id or first profile in engine.
-        let profile_id = request.profile_id.or_else(|| {
-            config
-                .engines
-                .get(&request.engine_id)
-                .and_then(|e| e.profiles.keys().next().cloned())
-        });
+        let profile_id = request.profile_id.ok_or_else(|| {
+            "profile_id is required for task_create".to_string()
+        })?;
 
         let created = crate::task_state::create_task(
             &db_path,
@@ -137,22 +132,14 @@ impl MaestroCore {
     }
 
     /// Use-Case: Switch task's engine atomically.
-    /// Performs: session cleanup (if session_id provided) -> DB update -> event broadcast.
-    /// Note: Session cleanup is irreversible; if DB update fails afterward, the session is already killed.
+    /// Performs: DB update -> event broadcast -> session cleanup (if session_id provided).
+    /// Order ensures: if DB fails, session is untouched and user can retry; if cleanup fails after DB success, binding is already updated and orphan session can be recovered later.
     pub fn task_switch_runtime_binding(
         &self,
         app: &AppHandle,
         request: crate::task_state::TaskSwitchRuntimeBindingRequest,
     ) -> Result<(), String> {
         let config = self.config.get();
-        if let Some(ref session_id) = request.session_id {
-            crate::engine::cleanup_session_for_task_engine_switch(
-                request.engine_id.clone(),
-                Some(session_id.clone()),
-                config.clone(),
-                &self.pty_state,
-            )?;
-        }
         let result = task_runtime_service::update_task_runtime_context(
             app,
             &request.task_id,
@@ -174,6 +161,14 @@ impl MaestroCore {
                     task_id: request.task_id,
                     context: ctx,
                 },
+            );
+        }
+        if let Some(ref session_id) = request.session_id {
+            let _ = crate::engine::cleanup_session_for_task_engine_switch(
+                request.engine_id.clone(),
+                Some(session_id.clone()),
+                config.clone(),
+                &self.pty_state,
             );
         }
         Ok(())

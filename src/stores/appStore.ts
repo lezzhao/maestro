@@ -110,6 +110,13 @@ export const useAppStore = create<AppStore>()(
         // Deterministic default engine: first by sorted key order, fallback to "cursor".
         const engines = get().engines;
         const defaultEngine = Object.keys(engines).sort()[0] || "cursor";
+        const engine = engines[defaultEngine];
+        const defaultProfile =
+          engine?.active_profile_id && engine?.profiles?.[engine.active_profile_id]
+            ? engine.active_profile_id
+            : engine?.profiles
+              ? Object.keys(engine.profiles)[0]
+              : "default";
 
         await invoke("task_create", {
           request: {
@@ -117,6 +124,7 @@ export const useAppStore = create<AppStore>()(
             description: "",
             engineId: defaultEngine,
             workspaceBoundary: "",
+            profileId: defaultProfile,
           },
         });
         
