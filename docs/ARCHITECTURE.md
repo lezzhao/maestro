@@ -80,6 +80,15 @@ flowchart LR
     H --> I[ResolvedRuntimeContext]
 ```
 
+## 状态管理边界
+
+| 方案 | 职责 | 使用场景 |
+|------|------|----------|
+| **Zustand** | 应用全局状态 | engines、tasks、activeTaskId、UI 状态（theme、sidebar 等） |
+| **XState** | 任务生命周期状态机 | BACKLOG -> PLANNING -> IN_PROGRESS -> CODE_REVIEW -> DONE，见 `src/lib/stateMachine.ts` |
+
+**关系**：stateMachine 通过 invoke 调用后端 `task_transition`；Zustand 通过 `useAgentStateSync` 接收后端 `agent://state-update` 事件更新。
+
 ## 关键模块
 
 - **task_repository**: 任务 CRUD、DB schema
