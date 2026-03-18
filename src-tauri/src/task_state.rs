@@ -21,6 +21,10 @@ pub struct TaskCreateRequest {
     pub workspace_boundary: String,
     #[serde(default)]
     pub profile_id: Option<String>,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
+    pub settings: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -33,6 +37,8 @@ pub struct TaskCreateResult {
     pub current_state: String,
     pub workspace_boundary: String,
     pub profile_id: Option<String>,
+    pub workspace_id: Option<String>,
+    pub settings: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -75,6 +81,24 @@ pub struct TaskUpdateRuntimeBindingRequest {
     pub profile_id: Option<String>,
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskUpdateRequest {
+    pub id: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub engine_id: Option<String>,
+    #[serde(default)]
+    pub profile_id: Option<String>,
+    #[serde(default)]
+    pub settings: Option<String>,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+}
+
 /// Update a task's engine_id and profile_id in the database.
 /// Clears runtime_snapshot_id so task uses fresh config until next execution.
 pub fn update_task_engine(
@@ -99,6 +123,8 @@ pub fn create_task(
     engine_id: &str,
     workspace_boundary: &str,
     profile_id: Option<&str>,
+    workspace_id: Option<&str>,
+    settings: Option<&str>,
 ) -> Result<CreateTaskResult, CoreError> {
     let initial_state = TaskState::Backlog.as_str();
     crate::task_repository::create_task(
@@ -109,24 +135,40 @@ pub fn create_task(
         initial_state,
         workspace_boundary,
         profile_id,
+        workspace_id,
+        settings,
     )
+}
+
+/// List all tasks in the database.
+pub fn list_tasks(db_path: &Path) -> Result<Vec<TaskRecordPayload>, CoreError> {
+    crate::task_repository::list_tasks(db_path)
+}
+
+/// Get a task's current state from the database.
+pub fn get_task_state(db_path: &Path, task_id: &str) -> Result<Option<String>, CoreError> {
+    crate::task_repository::get_task_state(db_path, task_id)
+}
+
+/// Update a task in the database.
+pub fn update_task(db_path: &Path, req: &TaskUpdateRequest) -> Result<(), CoreError> {
+    crate::task_repository::update_task(db_path, req)
 }
 
 /// Resolve bmad_state.db path.
 pub(crate) fn bmad_db_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, CoreError> {
     let path_resolver = app.path();
-    if let Ok(dir) = path_resolver.app_data_dir() {
-        return Ok(dir.join("bmad_state.db"));
+    let dir = path_resolver.app_data_dir().or_else(|_| path_resolver.app_config_dir()).map_err(|e| CoreError::Io {
+        message: format!("app dir: {e}"),
+    })?;
+    
+    if !dir.exists() {
+        std::fs::create_dir_all(&dir).map_err(|e| CoreError::Io {
+            message: format!("create app dir: {e}"),
+        })?;
     }
-    if let Ok(dir) = path_resolver.app_config_dir() {
-        return Ok(dir.join("bmad_state.db"));
-    }
-    path_resolver
-        .app_data_dir()
-        .map(|d| d.join("bmad_state.db"))
-        .map_err(|e| CoreError::Io {
-            message: format!("app dir: {e}"),
-        })
+    
+    Ok(dir.join("bmad_state.db"))
 }
 
 /// Get task's runtime binding (engine_id, profile_id, runtime_snapshot_id).
@@ -152,16 +194,6 @@ pub fn get_task_by_id(db_path: &Path, task_id: &str) -> Result<Option<TaskRecord
     crate::task_repository::get_task_by_id(db_path, task_id)
 }
 
-/// List all tasks from DB.
-pub fn list_tasks(db_path: &Path) -> Result<Vec<TaskRecordPayload>, CoreError> {
-    crate::task_repository::list_tasks(db_path)
-}
-
-/// Get current task state from DB.
-pub fn get_task_state(db_path: &Path, task_id: &str) -> Result<Option<String>, CoreError> {
-    crate::task_repository::get_task_state(db_path, task_id)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,7 +209,7 @@ mod tests {
     #[test]
     fn test_task_create_persists_engine_id() {
         let (_dir, db_path) = temp_db_path();
-        let created = create_task(&db_path, "Test Task", "", "cursor", "{}", None).expect("create_task");
+        let created = create_task(&db_path, "Test Task", "", "cursor", "{}", None, None, None).expect("create_task");
         let id = created.id;
         let tasks = list_tasks(&db_path).expect("list_tasks");
         assert_eq!(tasks.len(), 1);
@@ -188,7 +220,7 @@ mod tests {
     #[test]
     fn test_task_update_runtime_binding_persists() {
         let (_dir, db_path) = temp_db_path();
-        let created = create_task(&db_path, "Task", "", "cursor", "{}", None).expect("create_task");
+        let created = create_task(&db_path, "Task", "", "cursor", "{}", None, None, None).expect("create_task");
         let id = created.id;
         update_task_engine(&db_path, &id, "claude", Some("haiku")).expect("update_task_engine");
         let tasks = list_tasks(&db_path).expect("list_tasks");
@@ -200,8 +232,8 @@ mod tests {
     #[test]
     fn test_task_list_returns_engine_id() {
         let (_dir, db_path) = temp_db_path();
-        create_task(&db_path, "A", "", "engine_x", "{}", None).expect("create");
-        create_task(&db_path, "B", "", "engine_y", "{}", None).expect("create");
+        create_task(&db_path, "A", "", "engine_x", "{}", None, None, None).expect("create");
+        create_task(&db_path, "B", "", "engine_y", "{}", None, None, None).expect("create");
         let tasks = list_tasks(&db_path).expect("list_tasks");
         assert_eq!(tasks.len(), 2);
         let engine_ids: Vec<&str> = tasks.iter().map(|t| t.engine_id.as_str()).collect();
@@ -222,7 +254,7 @@ mod tests {
     #[test]
     fn test_task_create_persists_profile_id() {
         let (_dir, db_path) = temp_db_path();
-        let _created = create_task(&db_path, "Task", "", "cursor", "{}", Some("default"))
+        let _created = create_task(&db_path, "Task", "", "cursor", "{}", Some("default"), None, None)
             .expect("create_task");
         let tasks = list_tasks(&db_path).expect("list_tasks");
         assert_eq!(tasks.len(), 1);
@@ -232,7 +264,7 @@ mod tests {
     #[test]
     fn test_update_task_engine_clears_runtime_snapshot_id() {
         let (_dir, db_path) = temp_db_path();
-        let created = create_task(&db_path, "Task", "", "cursor", "{}", None).expect("create_task");
+        let created = create_task(&db_path, "Task", "", "cursor", "{}", None, None, None).expect("create_task");
         let id = created.id;
         update_task_runtime_snapshot(&db_path, &id, Some("snap-123")).expect("set snapshot");
         let binding = get_task_runtime_binding(&db_path, &id).expect("get binding");

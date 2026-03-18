@@ -38,7 +38,9 @@ impl MaestroCore {
             &request.description,
             &request.engine_id,
             &workspace_boundary,
-            profile_id.as_deref(),
+            Some(profile_id.as_str()),
+            request.workspace_id.as_deref(),
+            request.settings.as_deref(),
         )?;
         let id = created.id.clone();
         let current_state = crate::task_state::TaskState::Backlog.as_str().to_string();
@@ -49,7 +51,9 @@ impl MaestroCore {
             engine_id: request.engine_id.clone(),
             current_state: current_state.clone(),
             workspace_boundary: workspace_boundary.clone(),
-            profile_id: profile_id.clone(),
+            profile_id: Some(profile_id.clone()),
+            workspace_id: request.workspace_id.clone(),
+            settings: request.settings.clone(),
         };
 
         emit_state_update(
@@ -62,7 +66,10 @@ impl MaestroCore {
                     engine_id: request.engine_id,
                     current_state,
                     workspace_boundary,
-                    profile_id: profile_id,
+                    profile_id: Some(profile_id),
+                    workspace_id: request.workspace_id,
+                    settings: request.settings,
+                    runtime_snapshot_id: None,
                     created_at: created.created_at_ms,
                     updated_at: created.updated_at_ms,
                 },
@@ -129,13 +136,33 @@ impl MaestroCore {
         crate::task_state::list_tasks(&db_path)
     }
 
-    pub fn task_get_state(
+    pub fn get_task_state(
         &self,
         app: &AppHandle,
         request: crate::task_state::TaskGetStateRequest,
     ) -> Result<Option<String>, error::CoreError> {
         let db_path = crate::task_state::bmad_db_path(app)?;
         crate::task_state::get_task_state(&db_path, &request.task_id)
+    }
+
+    pub fn task_update(
+        &self,
+        app: &AppHandle,
+        request: crate::task_state::TaskUpdateRequest,
+    ) -> Result<(), error::CoreError> {
+        let db_path = crate::task_state::bmad_db_path(app)?;
+        crate::task_state::update_task(&db_path, &request)?;
+        
+        // Re-fetch and emit update
+        if let Some(task) = crate::task_repository::get_task_record(&db_path, &request.id)? {
+            emit_state_update(
+                Some(app),
+                AgentStateUpdate::TaskCreated { // Using TaskCreated as a "upsert" replacement or update
+                    task,
+                },
+            );
+        }
+        Ok(())
     }
 
     /// Use-Case: Switch task's engine atomically.

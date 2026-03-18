@@ -26,6 +26,7 @@ mod pty;
 mod run_persistence;
 mod scoped_fs;
 mod spec;
+mod workspace_commands;
 mod workspace_io;
 pub mod workflow;
 
@@ -51,7 +52,7 @@ use tauri::Manager;
 use task_commands::{
     task_create, task_delete, task_get_runtime_binding, task_get_runtime_context, task_get_state,
     task_list, task_refresh_runtime_snapshot, task_switch_runtime_binding, task_transition,
-    task_update_runtime_binding,
+    task_update, task_update_runtime_binding,
 };
 use workflow::{
     chat_execute_api, chat_execute_api_stop, chat_execute_cli, chat_execute_cli_stop,
@@ -60,6 +61,12 @@ use workflow::{
     workflow_get_full_archive, workflow_list_archives, workflow_list_engine_history,
     workflow_run, workflow_run_step,
 };
+use workspace_commands::{
+    workspace_create, workspace_delete, workspace_list, workspace_update,
+};
+
+mod file_watcher;
+use file_watcher::{file_watcher_start, file_watcher_stop, FileWatcherState};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -68,6 +75,8 @@ pub fn run() {
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
+            app.manage(FileWatcherState::new());
+            
             let config = load_or_create_config(app.handle().clone())?;
             app.manage(MaestroCore::new(config.clone()));
             if let Ok(db_path) = crate::task_state::bmad_db_path(app.handle()) {
@@ -77,6 +86,29 @@ pub fn run() {
                     }
                 }
             }
+
+            // Spawn background preflight for all configured engines
+            let handle_clone = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                // Short delay to let frontend initialize
+                tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                if let Some(core) = handle_clone.try_state::<MaestroCore>() {
+                    let config = core.config.get();
+                    let engine_ids: Vec<String> = config.engines.keys().cloned().collect();
+                    for engine_id in engine_ids {
+                        if let Ok(result) = crate::engine::engine_preflight_core(engine_id.clone(), config.clone()).await {
+                            crate::agent_state::emit_state_update(
+                                Some(&handle_clone),
+                                crate::agent_state::AgentStateUpdate::EnginePreflightComplete {
+                                    engine_id,
+                                    result,
+                                }
+                            );
+                        }
+                    }
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -136,6 +168,7 @@ pub fn run() {
             task_create,
             task_delete,
             task_list,
+            task_update,
             task_transition,
             task_get_state,
             task_get_runtime_context,
@@ -143,6 +176,12 @@ pub fn run() {
             task_refresh_runtime_snapshot,
             task_switch_runtime_binding,
             task_update_runtime_binding,
+            workspace_create,
+            workspace_list,
+            workspace_update,
+            workspace_delete,
+            file_watcher_start,
+            file_watcher_stop,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri app")

@@ -63,8 +63,27 @@ fn ensure_runtime_snapshot_id_column(conn: &rusqlite::Connection) -> Result<(), 
     Ok(())
 }
 
+/// Ensure settings column exists (for cascading custom config).
+fn ensure_settings_column(conn: &rusqlite::Connection) -> Result<(), CoreError> {
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name='settings'",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(db_err)?;
+    if count == 0 {
+        conn.execute("ALTER TABLE tasks ADD COLUMN settings TEXT", [])
+            .map_err(db_err)?;
+    }
+    Ok(())
+}
+
 /// Ensure tasks and state_transitions tables exist.
 pub fn ensure_tables(conn: &rusqlite::Connection) -> Result<(), CoreError> {
+    ensure_profile_id_column(conn)?;
+    ensure_runtime_snapshot_id_column(conn)?;
+    ensure_settings_column(conn)?;
     conn.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS tasks (
@@ -166,6 +185,8 @@ pub struct CreateTaskResult {
     pub id: String,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
+    pub settings: Option<String>,
+    pub workspace_id: Option<String>,
 }
 
 /// Create a new task in the database. Returns the created task id and timestamps.
@@ -177,6 +198,8 @@ pub fn create_task(
     current_state: &str,
     workspace_boundary: &str,
     profile_id: Option<&str>,
+    workspace_id: Option<&str>,
+    settings: Option<&str>,
 ) -> Result<CreateTaskResult, CoreError> {
     let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
     ensure_tables(&conn)?;
@@ -186,8 +209,8 @@ pub fn create_task(
     let now_ms = now.timestamp_millis();
     let now_str = now.format("%Y-%m-%d %H:%M:%S").to_string();
     conn.execute(
-        "INSERT INTO tasks (id, title, description, engine_id, current_state, workspace_boundary, profile_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-        rusqlite::params![id, title, description, engine_id, current_state, workspace_boundary, profile_id, now_str, now_str],
+        "INSERT INTO tasks (id, title, description, engine_id, current_state, workspace_boundary, profile_id, workspace_id, settings, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        rusqlite::params![id, title, description, engine_id, current_state, workspace_boundary, profile_id, workspace_id, settings, now_str, now_str],
     )
     .map_err(db_err)?;
 
@@ -195,6 +218,8 @@ pub fn create_task(
         id: id.clone(),
         created_at_ms: now_ms,
         updated_at_ms: now_ms,
+        workspace_id: workspace_id.map(String::from),
+        settings: settings.map(String::from),
     })
 }
 
@@ -295,7 +320,7 @@ pub fn get_task_by_id(db_path: &Path, task_id: &str) -> Result<Option<TaskRecord
     ensure_tables(&conn)?;
     let mut stmt = conn
         .prepare(
-            "SELECT id, title, description, engine_id, current_state, workspace_boundary, profile_id, created_at, updated_at FROM tasks WHERE id = ?1",
+            "SELECT id, title, description, engine_id, current_state, workspace_boundary, profile_id, created_at, updated_at, runtime_snapshot_id, settings, workspace_id FROM tasks WHERE id = ?1",
         )
         .map_err(db_err)?;
     let mut rows = stmt
@@ -314,6 +339,9 @@ pub fn get_task_by_id(db_path: &Path, task_id: &str) -> Result<Option<TaskRecord
             profile_id: row.get::<_, Option<String>>(6).ok().flatten(),
             created_at: sqlite_datetime_to_ms(&created_at_str),
             updated_at: sqlite_datetime_to_ms(&updated_at_str),
+            runtime_snapshot_id: row.get::<_, Option<String>>(9).ok().flatten(),
+            settings: row.get::<_, Option<String>>(10).ok().flatten(),
+            workspace_id: row.get::<_, Option<String>>(11).ok().flatten(),
         };
         Ok(Some(payload))
     } else {
@@ -327,13 +355,13 @@ pub fn list_tasks(db_path: &Path) -> Result<Vec<TaskRecordPayload>, CoreError> {
     ensure_tables(&conn)?;
     let mut stmt = conn
         .prepare(
-            "SELECT id, title, description, engine_id, current_state, workspace_boundary, profile_id, created_at, updated_at FROM tasks ORDER BY updated_at DESC",
+            "SELECT id, title, description, engine_id, current_state, workspace_boundary, profile_id, workspace_id, settings, runtime_snapshot_id, created_at, updated_at FROM tasks ORDER BY updated_at DESC",
         )
         .map_err(db_err)?;
     let rows = stmt
         .query_map([], |row| {
-            let created_at_str: String = row.get(7).unwrap_or_default();
-            let updated_at_str: String = row.get(8).unwrap_or_default();
+            let created_at_str: String = row.get(10).unwrap_or_default();
+            let updated_at_str: String = row.get(11).unwrap_or_default();
             Ok(TaskRecordPayload {
                 id: row.get(0)?,
                 title: row.get(1)?,
@@ -342,6 +370,9 @@ pub fn list_tasks(db_path: &Path) -> Result<Vec<TaskRecordPayload>, CoreError> {
                 current_state: row.get(4)?,
                 workspace_boundary: row.get(5)?,
                 profile_id: row.get::<_, Option<String>>(6).ok().flatten(),
+                workspace_id: row.get::<_, Option<String>>(7).ok().flatten(),
+                settings: row.get::<_, Option<String>>(8).ok().flatten(),
+                runtime_snapshot_id: row.get::<_, Option<String>>(9).ok().flatten(),
                 created_at: sqlite_datetime_to_ms(&created_at_str),
                 updated_at: sqlite_datetime_to_ms(&updated_at_str),
             })
@@ -371,3 +402,94 @@ pub fn get_task_state(db_path: &Path, task_id: &str) -> Result<Option<String>, C
         Ok(None)
     }
 }
+
+pub fn get_task_record(
+    db_path: &Path,
+    task_id: &str,
+) -> Result<Option<TaskRecordPayload>, CoreError> {
+    let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
+    ensure_tables(&conn)?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, title, description, engine_id, current_state, workspace_boundary, profile_id, workspace_id, settings, runtime_snapshot_id, created_at, updated_at
+             FROM tasks WHERE id = ?1",
+        )
+        .map_err(db_err)?;
+
+    let row = stmt
+        .query_row(rusqlite::params![task_id], |row| {
+            let created_at_str: String = row.get(10).unwrap_or_default();
+            let updated_at_str: String = row.get(11).unwrap_or_default();
+            Ok(TaskRecordPayload {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                description: row.get(2)?,
+                engine_id: row.get(3)?,
+                current_state: row.get(4)?,
+                workspace_boundary: row.get(5)?,
+                profile_id: row.get(6)?,
+                workspace_id: row.get(7)?,
+                settings: row.get(8)?,
+                runtime_snapshot_id: row.get(9)?,
+                created_at: sqlite_datetime_to_ms(&created_at_str),
+                updated_at: sqlite_datetime_to_ms(&updated_at_str),
+            })
+        });
+
+    match row {
+        Ok(t) => Ok(Some(t)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(db_err(e)),
+    }
+}
+
+pub fn update_task(
+    db_path: &Path,
+    req: &crate::task_state::TaskUpdateRequest,
+) -> Result<(), CoreError> {
+    let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
+    ensure_tables(&conn)?;
+
+    let mut sets = Vec::new();
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+    if let Some(ref title) = req.title {
+        sets.push("title = ?");
+        params.push(Box::new(title.clone()));
+    }
+    if let Some(ref description) = req.description {
+        sets.push("description = ?");
+        params.push(Box::new(description.clone()));
+    }
+    if let Some(ref engine_id) = req.engine_id {
+        sets.push("engine_id = ?");
+        params.push(Box::new(engine_id.clone()));
+    }
+    if let Some(ref profile_id) = req.profile_id {
+        sets.push("profile_id = ?");
+        params.push(Box::new(profile_id.clone()));
+    }
+    if let Some(ref settings) = req.settings {
+        sets.push("settings = ?");
+        params.push(Box::new(settings.clone()));
+    }
+    if let Some(ref workspace_id) = req.workspace_id {
+        sets.push("workspace_id = ?");
+        params.push(Box::new(workspace_id.clone()));
+    }
+
+    if sets.is_empty() {
+        return Ok(());
+    }
+
+    sets.push("updated_at = CURRENT_TIMESTAMP");
+    params.push(Box::new(req.id.clone()));
+
+    let sql = format!("UPDATE tasks SET {} WHERE id = ?", sets.join(", "));
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+    conn.execute(&sql, params_refs.as_slice()).map_err(db_err)?;
+    Ok(())
+}
+

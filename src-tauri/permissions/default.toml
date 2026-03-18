@@ -59,11 +59,18 @@ commands.allow = [
   "task_create",
   "task_delete",
   "task_list",
+  "task_update",
   "task_transition",
   "task_get_state",
   "task_get_runtime_context",
   "task_get_runtime_binding",
   "task_refresh_runtime_snapshot",
   "task_switch_runtime_binding",
-  "task_update_runtime_binding"
+  "task_update_runtime_binding",
+  "workspace_create",
+  "workspace_list",
+  "workspace_update",
+  "workspace_delete",
+  "file_watcher_start",
+  "file_watcher_stop"
 ]
