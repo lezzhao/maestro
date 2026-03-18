@@ -85,9 +85,9 @@ flowchart LR
 | 方案 | 职责 | 使用场景 |
 |------|------|----------|
 | **Zustand** | 应用全局状态 | engines、tasks、activeTaskId、UI 状态（theme、sidebar 等） |
-| **XState** | 任务生命周期状态机 | BACKLOG -> PLANNING -> IN_PROGRESS -> CODE_REVIEW -> DONE，见 `src/lib/stateMachine.ts` |
+| **后端 task_transition** | 任务生命周期 | BACKLOG -> PLANNING -> IN_PROGRESS -> CODE_REVIEW -> DONE，由 invoke 调用 |
 
-**关系**：stateMachine 通过 invoke 调用后端 `task_transition`；Zustand 通过 `useAgentStateSync` 接收后端 `agent://state-update` 事件更新。
+**关系**：Zustand 通过 `useAgentStateSync` 接收后端 `agent://state-update` 事件更新；任务状态流转由后端 `task_transition` 驱动。
 
 ## 关键模块
 
@@ -96,6 +96,21 @@ flowchart LR
 - **execution_binding**: 执行准备、snapshot 创建
 - **agent_state**: 事件定义与发送
 - **task_migration**: 一次性迁移（如 profile_id 回填）
+
+## 路径管理：全局 vs 工作区
+
+| 用途 | 路径类型 | 路径示例 | 模块 |
+|------|----------|----------|------|
+| 任务 DB | 全局 | `{app_data_dir}/bmad_state.db` | task_state |
+| 配置文件 | 全局 | `~/.maestro/config.toml` | config |
+| 上次对话 | 全局 | `{app_config_dir}/last-conversation.json` | workflow/chat |
+| Run records | 工作区 | `{project_path}/.maestro-cli/run-records.jsonl` | run_persistence |
+| 会话日志 | 工作区 | `{project_path}/.maestro-cli/logs/{session_id}.log` | cli_state |
+| 执行 cwd | 工作区 | `config.project.path` | execution |
+
+**全局路径**：应用级数据，与具体项目无关，通常位于 `~/.maestro` 或 Tauri `app_data_dir`。
+
+**工作区路径**：项目级数据，基于 `config.project.path`，通过 `WorkspaceIo` 解析。多项目场景下互不干扰。
 
 ## 状态分层简化评估 (4.1)
 

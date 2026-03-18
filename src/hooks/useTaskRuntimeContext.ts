@@ -90,18 +90,30 @@ export function resolveTaskRuntimeContextFromState(
   };
 }
 
-export function useTaskRuntimeContext(): TaskRuntimeContext {
+/**
+ * Get runtime context for the active task (no args) or a specific task (taskId).
+ * Prefer this over directly consuming AppTask.
+ */
+export function useTaskRuntimeContext(taskId?: string | null): TaskRuntimeContext {
   const { activeTask } = useActiveTask();
+  const tasks = useAppStore((s) => s.tasks);
   const engines = useAppStore((s) => s.engines);
   const enginePreflight = useAppStore((s) => s.enginePreflight);
+
+  const targetTask = useMemo(() => {
+    if (taskId != null && taskId !== "") {
+      return tasks.find((t) => t.id === taskId) ?? null;
+    }
+    return activeTask ?? null;
+  }, [taskId, tasks, activeTask]);
 
   return useMemo(
     () =>
       resolveTaskRuntimeContextFromState(
-        activeTask ?? null,
+        targetTask,
         engines,
         enginePreflight ?? {},
       ),
-    [activeTask, engines, enginePreflight],
+    [targetTask, engines, enginePreflight],
   );
 }
