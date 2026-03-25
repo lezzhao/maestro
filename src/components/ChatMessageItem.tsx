@@ -2,10 +2,6 @@ import { memo, useMemo, useState } from "react";
 import {
   Copy,
   RotateCcw,
-  ThumbsUp,
-  ThumbsDown,
-  User,
-  Bot,
   Sparkles,
   Wrench,
   CircleCheck,
@@ -35,6 +31,7 @@ type Props = {
   isRunning?: boolean;
   onRetry?: (messageId: string) => void;
   onCopy?: (content: string) => void;
+  liveTranscript?: string;
 };
 
 type ThoughtExtractResult = {
@@ -42,45 +39,78 @@ type ThoughtExtractResult = {
   main: string;
 };
 
-function extractThoughtBlock(content: string): ThoughtExtractResult {
+function extractThoughtBlock(content: string, isStreaming: boolean): ThoughtExtractResult {
+  // Support for <think>...</think> tags
+  const thinkMatch = content.match(/<think>([\s\S]*?)(?:<\/think>|$)/i);
+  if (thinkMatch) {
+    const thought = thinkMatch[1].trim();
+    const main = content.replace(/<think>[\s\S]*?(?:<\/think>|$)/i, "").trim();
+    if (!thought) return { thought: null, main: content };
+    if (!main && !content.includes("</think>")) {
+      return { thought, main: "" };
+    }
+    return { thought, main: main || content };
+  }
+
+  // Fallback to heuristic line-based parsing
   const lines = content.split("\n");
   const thoughtLines: string[] = [];
   const mainLines: string[] = [];
   let inThought = false;
+  let hasFoundMain = false;
 
-  const thoughtStartRe = /^\s*(?:#{1,6}\s*)?(?:thinking|thought|analysis|plan|思考|推理|分析|计划)\s*[:：]?\s*$/i;
-  const answerStartRe = /^\s*(?:#{1,6}\s*)?(?:final|answer|result|结论|结果|回复)\s*[:：]?\s*$/i;
+  // Many agents just output "Thought: " or "Thinking:" or even markdown bullet points before the final answer
+  const thoughtStartRe = /^\s*(?:#{1,6}\s*)?(?:thinking|thought|analysis|plan|思考|推理|分析|计划|步骤)\s*[:：]?\s*$/i;
+  // DeepSeek often outputs "```thought" or similar
+  const thoughtBlockStartRe = /^\s*```(?:thought|thinking|思考)\s*$/i;
+  
+  const answerStartRe = /^\s*(?:#{1,6}\s*)?(?:final|answer|result|结论|结果|回复|回答)\s*[:：]?\s*$/i;
 
-  for (const line of lines) {
-    if (!inThought && thoughtStartRe.test(line)) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    
+    // If we haven't found a thought block yet, check if this line looks like the start of one
+    if (!inThought && !hasFoundMain && (thoughtStartRe.test(line) || thoughtBlockStartRe.test(line))) {
       inThought = true;
       continue;
     }
-    if (inThought && answerStartRe.test(line)) {
-      inThought = false;
-      continue;
-    }
+
     if (inThought) {
+      if (answerStartRe.test(line) || line.trim() === "```") {
+        inThought = false;
+        hasFoundMain = true; // Once we exit thought, everything else is main
+        continue;
+      }
       thoughtLines.push(line);
     } else {
       mainLines.push(line);
+      if (line.trim().length > 0) {
+         hasFoundMain = true; // If we see content outside a thought block, we've started the main content
+      }
     }
   }
 
   const thought = thoughtLines.join("\n").trim();
   const main = mainLines.join("\n").trim();
 
+  // If we couldn't confidently separate thought and main, or if the "thought" is just empty
   if (!thought) {
     return { thought: null, main: content };
   }
+  
   if (!main) {
-    // 避免误判导致正文完全丢失，保留原文本。
+    // If there's no main response at all, we don't treat everything as a thought unless it was streaming
+    // and explicitly used <think> tags. For heuristic matching, if there is no main, we just render normally.
+    if (isStreaming) {
+      return { thought, main: "" };
+    }
     return { thought: null, main: content };
   }
+  
   return { thought, main };
 }
 
-function ChatMessageItemBase({ message, minimalMode, labels, isRunning, onRetry, onCopy }: Props) {
+function ChatMessageItemBase({ message, minimalMode: _minimalMode, labels, isRunning, onRetry, onCopy, liveTranscript }: Props) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
   const isSystem = message.role === "system";
@@ -97,8 +127,8 @@ function ChatMessageItemBase({ message, minimalMode, labels, isRunning, onRetry,
   }, [cleanContent, expanded, isAssistant, isCollapsible]);
 
   const extractedThought = useMemo(
-    () => (isAssistant ? extractThoughtBlock(renderedAssistantContent) : { thought: null, main: renderedAssistantContent }),
-    [isAssistant, renderedAssistantContent],
+    () => (isAssistant ? extractThoughtBlock(renderedAssistantContent, message.status === "streaming") : { thought: null, main: renderedAssistantContent }),
+    [isAssistant, renderedAssistantContent, message.status],
   );
 
   if (isSystem) {
@@ -136,37 +166,30 @@ function ChatMessageItemBase({ message, minimalMode, labels, isRunning, onRetry,
   return (
     <div
       className={cn(
-        "group relative flex w-full gap-3 py-3 px-4 border-b border-border-muted/30 hover:bg-bg-subtle transition-colors",
-        isUser ? "bg-bg-base" : "bg-bg-surface"
+        "group relative flex w-full gap-2.5 py-1.5 px-4 transition-colors font-mono text-[13px] hover:bg-bg-subtle/30",
+        isUser ? "bg-transparent" : "bg-transparent"
       )}
     >
-      {/* Avatar */}
+      {/* Terminal Prompt Prefix */}
       <div className={cn(
-        "shrink-0 w-7 h-7 rounded-sm flex items-center justify-center select-none transition-colors border",
+        "shrink-0 mt-[2px] select-none font-bold",
         isUser 
-          ? "bg-bg-elevated text-primary-500 border-border-muted" 
-          : "bg-bg-elevated text-text-muted border-border-muted"
+          ? "text-emerald-500" 
+          : isAssistant ? "text-primary-500" : "text-amber-500"
       )}>
-        {isUser ? <User size={14} /> : isAssistant ? <Bot size={14} /> : <Sparkles size={14} />}
+        {isUser ? "❯" : "AGENT ❯"}
       </div>
 
       <div className={cn(
-        "flex flex-col gap-1.5 w-full min-w-0"
+        "flex flex-col w-full min-w-0 font-sans"
       )}>
-        {/* Role labels - only if not minimal */}
-        {!minimalMode && (
-          <span className="text-[10px] font-semibold text-text-muted/40 uppercase px-1">
-            {isUser ? labels.roleUser : labels.roleAssistant}
-          </span>
-        )}
-
         <div
           className={cn(
             "relative group/bubble p-0 transition-all duration-200 w-full text-text-main"
           )}
         >
           {message.attachments && message.attachments.length > 0 && (
-            <div className="mb-2 flex flex-wrap gap-1.5">
+            <div className="mb-1.5 flex flex-wrap gap-1.5">
               {message.attachments.map((attachment) => (
                 <div key={attachment.path} className={cn(
                   "flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-medium border",
@@ -179,47 +202,59 @@ function ChatMessageItemBase({ message, minimalMode, labels, isRunning, onRetry,
             </div>
           )}
 
-          <div className="text-[14px] leading-relaxed">
+          <div className="leading-[1.6]">
             {isAssistant && message.status === "streaming" && !message.content.trim() ? (
-              <div className="flex items-center py-2">
-                <div className="flex gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-primary-500 animate-pulse" />
-                  <span className="w-1.5 h-1.5 rounded-full bg-primary-500 animate-pulse delay-75" />
-                  <span className="w-1.5 h-1.5 rounded-full bg-primary-500 animate-pulse delay-150" />
-                </div>
+              <div className="leading-[1.4] whitespace-pre-wrap break-all text-text-muted tracking-tight min-h-[20px]">
+                {liveTranscript || ""}
+                <span className="inline-block w-2 h-3.5 ml-1 bg-text-muted animate-pulse align-text-bottom opacity-70" />
               </div>
             ) : isAssistant && message.status === "error" && !message.content.trim() ? (
-              <div className="flex items-center gap-2 py-3 px-4 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-500 text-sm font-medium">
+              <div className="flex items-center gap-2 py-2 px-3.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-500 text-sm font-medium">
                 <AlertTriangle size={16} />
                 <span>执行过程中遇到错误，请查看执行记录。</span>
               </div>
             ) : isAssistant ? (
               <>
                 {extractedThought.thought && (
-                  <div className="mb-2 rounded-md border border-border-muted bg-bg-base/70 px-3 py-2">
+                  <div className="mb-2 rounded-md border border-border-muted bg-bg-surface/50 pl-3 pr-4 py-1.5 opacity-80 backdrop-blur-sm">
                     <button
                       type="button"
-                      className="w-full flex items-center justify-between text-left text-[11px] font-semibold text-text-muted"
+                      className="flex items-center gap-2 w-full text-left text-[11px] font-bold tracking-widest uppercase text-text-muted hover:text-text-main transition-colors"
                       onClick={() => setShowThought((v) => !v)}
                     >
+                      <Sparkles size={12} className="text-primary-500" />
                       <span>{labels.thinking}</span>
-                      <span className="text-[10px]">{showThought ? "收起" : "展开"}</span>
+                      <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded bg-bg-elevated border border-border-muted/30">{showThought ? "收起" : "展开"}</span>
                     </button>
                     {showThought && (
-                      <div className="mt-2 text-[12px] leading-relaxed whitespace-pre-wrap wrap-break-word text-text-main/85">
+                      <div className="mt-2 text-[12px] leading-[1.6] whitespace-pre-wrap wrap-break-word text-text-muted opacity-80 border-l-2 border-primary-500/30 pl-3 py-0.5">
                         {extractedThought.thought}
                       </div>
                     )}
                   </div>
                 )}
-                <ChatMessageContent
-                  content={extractedThought.main || labels.noOutputYet}
-                  isStreaming={message.status === "streaming"}
-                />
+                {extractedThought.main && (
+                  <ChatMessageContent
+                    content={extractedThought.main}
+                    isStreaming={message.status === "streaming"}
+                  />
+                )}
+                {!extractedThought.main && extractedThought.thought && message.status === "streaming" && (
+                  <div className="text-[12px] text-text-muted italic flex items-center gap-2 mt-1.5">
+                    <span className="w-1 h-1 rounded-full bg-primary-500 animate-pulse" />
+                    思考中...
+                  </div>
+                )}
+                {!extractedThought.main && !extractedThought.thought && (
+                  <ChatMessageContent
+                    content={labels.noOutputYet}
+                    isStreaming={message.status === "streaming"}
+                  />
+                )}
                 {isCollapsible && (
                   <button
                     type="button"
-                    className="mt-2 text-[11px] text-primary-500 hover:text-primary-600 transition-colors"
+                    className="mt-1 text-[11px] text-primary-500 hover:text-primary-600 transition-colors"
                     onClick={() => setExpanded((v) => !v)}
                   >
                     {expanded ? labels.collapseResult : labels.expandResult}
@@ -227,7 +262,7 @@ function ChatMessageItemBase({ message, minimalMode, labels, isRunning, onRetry,
                 )}
               </>
             ) : (
-              <div className="whitespace-pre-wrap wrap-break-word text-[14px] leading-relaxed">{message.content}</div>
+              <div className="whitespace-pre-wrap wrap-break-word">{message.content}</div>
             )}
           </div>
 
@@ -251,17 +286,6 @@ function ChatMessageItemBase({ message, minimalMode, labels, isRunning, onRetry,
                 >
                   <RotateCcw size={12} />
                 </button>
-              )}
-              {isAssistant && (
-                <>
-                  <div className="w-px h-2.5 bg-border-muted mx-0.5" />
-                  <button className="p-1.5 rounded-md hover:bg-bg-elevated text-text-muted">
-                    <ThumbsUp size={12} />
-                  </button>
-                  <button className="p-1.5 rounded-md hover:bg-bg-elevated text-text-muted">
-                    <ThumbsDown size={12} />
-                  </button>
-                </>
               )}
             </div>
           </div>
@@ -290,5 +314,6 @@ export const ChatMessageItem = memo(
     prev.message === next.message &&
     prev.minimalMode === next.minimalMode &&
     prev.labels === next.labels &&
-    prev.isRunning === next.isRunning,
+    prev.isRunning === next.isRunning &&
+    prev.liveTranscript === next.liveTranscript,
 );
