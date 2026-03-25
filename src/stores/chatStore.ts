@@ -5,7 +5,6 @@ import type {
   ChatMessage,
   RunArtifact,
   RunEvent,
-  RunTranscriptChunk,
   TaskRun,
   TaskRunStatus,
   VerificationSummary,
@@ -19,7 +18,7 @@ type ChatStore = {
   runsById: Record<string, TaskRun>;
   runOrderByTask: Record<string, string[]>;
   eventsByRun: Record<string, RunEvent[]>;
-  transcriptByRun: Record<string, RunTranscriptChunk[]>;
+  transcriptByRun: Record<string, string>;
   artifactsByRun: Record<string, RunArtifact[]>;
   verificationsByRun: Record<string, VerificationSummary | null>;
   activeSessionId: string | null;
@@ -62,7 +61,7 @@ type ChatStore = {
   getLatestRun: (taskId: string | null) => TaskRun | null;
   getTaskRunEvents: (taskId: string | null) => RunEvent[];
   getRunEvents: (runId: string | null) => RunEvent[];
-  getRunTranscript: (runId: string | null) => RunTranscriptChunk[];
+  getRunTranscript: (runId: string | null) => string;
   getRunVerification: (runId: string | null) => VerificationSummary | null;
 };
 
@@ -70,11 +69,11 @@ const MAX_MESSAGES = 200;
 const EMPTY_MESSAGES: ChatMessage[] = [];
 const EMPTY_ATTACHMENTS: ChatAttachment[] = [];
 const MAX_RUN_EVENTS = 500;
-const MAX_TRANSCRIPT_CHUNKS = 1200;
+const MAX_TRANSCRIPT_LENGTH = 65536; // Keep 64KB text max per run
 const MAX_ARTIFACTS = 200;
 const EMPTY_RUNS: TaskRun[] = [];
 const EMPTY_RUN_EVENTS: RunEvent[] = [];
-const EMPTY_TRANSCRIPT: RunTranscriptChunk[] = [];
+const EMPTY_TRANSCRIPT = "";
 
 export const useChatStore = create<ChatStore>()(
   persist(
@@ -244,21 +243,12 @@ export const useChatStore = create<ChatStore>()(
         }),
       appendRunTranscript: (runId, content) =>
         set((state) => {
-          const list = state.transcriptByRun[runId] || [];
-          const chunk: RunTranscriptChunk = {
-            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            runId,
-            content,
-            createdAt: Date.now(),
-          };
-          const next = [...list, chunk];
+          const current = state.transcriptByRun[runId] || "";
+          const next = (current + content).slice(-MAX_TRANSCRIPT_LENGTH);
           return {
             transcriptByRun: {
               ...state.transcriptByRun,
-              [runId]:
-                next.length > MAX_TRANSCRIPT_CHUNKS
-                  ? next.slice(next.length - MAX_TRANSCRIPT_CHUNKS)
-                  : next,
+              [runId]: next,
             },
           };
         }),
@@ -336,22 +326,25 @@ export const useChatStore = create<ChatStore>()(
         const ids = state.runOrderByTask[taskId] || [];
         if (ids.length === 0) return EMPTY_RUNS;
         return ids
+          .slice()
+          .reverse()
           .map((id) => state.runsById[id])
-          .filter(Boolean)
-          .sort((a, b) => b.startedAt - a.startedAt);
+          .filter(Boolean);
       },
       getLatestRun: (taskId) => {
-        const runs = get().getTaskRuns(taskId);
-        return runs[0] || null;
+        if (!taskId) return null;
+        const state = get();
+        const ids = state.runOrderByTask[taskId] || [];
+        if (ids.length === 0) return null;
+        const lastId = ids[ids.length - 1];
+        return state.runsById[lastId] || null;
       },
       getTaskRunEvents: (taskId) => {
         if (!taskId) return EMPTY_RUN_EVENTS;
         const state = get();
         const runIds = state.runOrderByTask[taskId] || [];
         if (runIds.length === 0) return EMPTY_RUN_EVENTS;
-        return runIds
-          .flatMap((runId) => state.eventsByRun[runId] || [])
-          .sort((a, b) => a.createdAt - b.createdAt);
+        return runIds.flatMap((runId) => state.eventsByRun[runId] || []);
       },
       getRunEvents: (runId) => (runId ? get().eventsByRun[runId] ?? EMPTY_RUN_EVENTS : EMPTY_RUN_EVENTS),
       getRunTranscript: (runId) =>
