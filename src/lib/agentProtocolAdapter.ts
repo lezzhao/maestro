@@ -54,6 +54,7 @@ export function toTaskViewModel(p: TaskRecord): TaskViewModel {
     name: p.title,
     engineId: p.engine_id,
     profileId: p.profile_id ?? null,
+    workspaceId: p.workspace_id ?? null,
     sessionId: null,
     activeExecId: null,
     activeRunId: null,

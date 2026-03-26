@@ -10,11 +10,13 @@ import {
   CTRL_EXIT,
   CTRL_RUN_ID,
   CTRL_VERIFICATION,
+  CTRL_TOKEN_USAGE,
   isControlChunk,
   parseErrorChunk,
   parseExitCodeChunk,
   parseRunIdChunk,
   parseVerificationChunk,
+  parseTokenUsageChunk,
 } from "../lib/utils/controlChunks";
 import type { VerificationSummary } from "../types";
 
@@ -22,6 +24,7 @@ export type ExecutionEvent =
   | { type: "runId"; runId: string }
   | { type: "text"; text: string }
   | { type: "verification"; verification: VerificationSummary }
+  | { type: "tokenUsage"; usage: { approx_input_tokens: number; approx_output_tokens: number } }
   | { type: "done"; exitCode?: number | null }
   | { type: "error"; message: string };
 
@@ -34,7 +37,7 @@ export class ExecutionClient {
     private onEvent: (event: ExecutionEvent) => void
   ) {}
 
-  public async start(request: any): Promise<{ exec_id: string; run_id?: string }> {
+  public async start(request: Record<string, unknown>): Promise<{ exec_id: string; run_id?: string }> {
     this.isStopped = false;
     const onData = new Channel<string>();
     onData.onmessage = this.handleChunk.bind(this);
@@ -97,6 +100,13 @@ export class ExecutionClient {
         const verification = parseVerificationChunk<VerificationSummary>(chunk);
         if (verification) {
           this.onEvent({ type: "verification", verification });
+        }
+        return;
+      }
+      if (chunk.startsWith(CTRL_TOKEN_USAGE)) {
+        const usage = parseTokenUsageChunk<{ approx_input_tokens: number; approx_output_tokens: number }>(chunk);
+        if (usage) {
+          this.onEvent({ type: "tokenUsage", usage });
         }
         return;
       }

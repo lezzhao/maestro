@@ -136,6 +136,7 @@ export const useAppStore = create<AppStore>()(
               engineId: defaultEngine,
               workspaceBoundary: "",
               profileId: defaultProfile,
+              workspaceId: get().activeWorkspaceId,
             },
           });
           
@@ -147,9 +148,21 @@ export const useAppStore = create<AppStore>()(
       },
       setTasks: (tasks) => set({ tasks }),
       removeTask: (id) => {
-        void invoke("task_delete", { taskId: id }).catch(
-          (e) => console.error("Failed to remove task:", e)
-        );
+        const prevTasks = get().tasks;
+        const prevActive = get().activeTaskId;
+        
+        set({
+          tasks: prevTasks.filter((t) => t.id !== id),
+          activeTaskId: prevActive === id ? null : prevActive
+        });
+
+        void invoke("task_delete", { taskId: id }).catch((e) => {
+          console.error("Failed to remove task:", e);
+          set({
+            tasks: prevTasks,
+            activeTaskId: prevActive
+          });
+        });
       },
       setActiveTaskId: (activeTaskId) => set({ activeTaskId }),
       updateTaskRecord: (id, patch) =>

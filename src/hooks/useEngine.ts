@@ -248,9 +248,17 @@ export function useEngine() {
     [engines, upsertProfile],
   );
 
+  const enginesInitializedRef = useRef(false);
   useEffect(() => {
     void refreshEngines();
   }, [refreshEngines]);
+
+  useEffect(() => {
+    if (!enginesInitializedRef.current && Object.keys(engines).length > 0) {
+      enginesInitializedRef.current = true;
+      void preflightAll();
+    }
+  }, [engines, preflightAll]);
 
   return {
     engines,

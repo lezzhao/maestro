@@ -14,17 +14,12 @@ import {
   type AgentStateUpdate,
   toTaskViewModel,
 } from "../lib/agentStateReducer";
-import { useBatchedTranscript } from "./useBatchedTranscript";
+import { useBatchedAppender } from "./useBatchedAppender";
 
 export function useAgentStateSync() {
-  const createRun = useChatStore((s) => s.createRun);
-  const finishRun = useChatStore((s) => s.finishRun);
   const appendRunTranscript = useChatStore((s) => s.appendRunTranscript);
   const { appendChunk: appendTranscriptChunk, flushNow: flushTranscript } =
-    useBatchedTranscript(appendRunTranscript);
-  const setMessages = useChatStore((s) => s.setMessages);
-  const setTasks = useAppStore((s) => s.setTasks);
-  const updateTaskRecord = useAppStore((s) => s.updateTaskRecord);
+    useBatchedAppender<string, string>((_taskId, runId, content) => appendRunTranscript(runId, content));
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -36,21 +31,23 @@ export function useAgentStateSync() {
       if (payload.type === "run_finished" || payload.type === "execution_cancelled") {
         flushTranscript();
       }
+      const appState = useAppStore.getState();
+      const chatState = useChatStore.getState();
       applyAgentStateUpdate(payload, {
-        createRun,
-        finishRun,
-        appendRunTranscript: appendTranscriptChunk,
-        setMessages,
-        setTasks,
-        updateTaskRecord,
-        setTaskResolvedRuntimeContext: useAppStore.getState().setTaskResolvedRuntimeContext,
-        updateTaskRuntimeBinding: useAppStore.getState().updateTaskRuntimeBinding,
+        createRun: chatState.createRun,
+        finishRun: chatState.finishRun,
+        appendRunTranscript: (runId, content) => appendTranscriptChunk("", runId, content),
+        setMessages: chatState.setMessages,
+        setTasks: appState.setTasks,
+        updateTaskRecord: appState.updateTaskRecord,
+        setTaskResolvedRuntimeContext: appState.setTaskResolvedRuntimeContext,
+        updateTaskRuntimeBinding: appState.updateTaskRuntimeBinding,
         getAppState: () => useAppStore.getState(),
         setAppState: (next) => useAppStore.setState(next),
-        setEnginePreflight: useAppStore.getState().setEnginePreflight,
-        addWorkspace: useAppStore.getState().addWorkspace,
-        updateWorkspace: (workspace) => useAppStore.getState().updateWorkspace(workspace.id, workspace),
-        removeWorkspace: useAppStore.getState().removeWorkspace,
+        setEnginePreflight: appState.setEnginePreflight,
+        addWorkspace: appState.addWorkspace,
+        updateWorkspace: (workspace) => appState.updateWorkspace(workspace.id, workspace),
+        removeWorkspace: appState.removeWorkspace,
       });
     };
 
@@ -72,7 +69,25 @@ export function useAgentStateSync() {
           invoke<TaskRecord[]>("task_list"),
           invoke<import("../types").Workspace[]>("workspace_list"),
         ]);
-        setTasks(tasks.map(toTaskViewModel));
+        const chatMessages = useChatStore.getState().messages;
+        const taskModels = tasks.map((taskRecord) => {
+          const vm = toTaskViewModel(taskRecord);
+          let input = 0;
+          let output = 0;
+          const msgs = chatMessages[vm.id];
+          if (msgs) {
+            for (const m of msgs) {
+              if (m.tokenEstimate) {
+                input += m.tokenEstimate.approx_input_tokens || 0;
+                output += m.tokenEstimate.approx_output_tokens || 0;
+              }
+            }
+          }
+          vm.stats.approx_input_tokens = input;
+          vm.stats.approx_output_tokens = output;
+          return vm;
+        });
+        useAppStore.getState().setTasks(taskModels);
         useAppStore.getState().setWorkspaces(workspaces);
         bootstrapping = false;
 

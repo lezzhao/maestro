@@ -8,7 +8,7 @@ export function useAgentExecutor(
   const currentClientRef = useRef<ExecutionClient | null>(null);
 
   const startExecution = useCallback(
-    async (request: any) => {
+    async (request: Record<string, unknown>) => {
       if (currentClientRef.current) {
         await currentClientRef.current.stop();
       }

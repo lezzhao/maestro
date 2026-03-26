@@ -8,7 +8,7 @@ import { createMessage } from "../components/chat/createMessage";
 import { useExecutionQueue } from "./useExecutionQueue";
 import { useChatInputHistory } from "./useChatInputHistory";
 import { useAgentExecutor } from "./useAgentExecutor";
-import { useBatchedTranscript } from "./useBatchedTranscript";
+import { useBatchedAppender } from "./useBatchedAppender";
 import type { ExecutionEvent } from "../services/ExecutionClient";
 import type { ChatApiMessage, EngineProfile, RunEvent } from "../types";
 
@@ -45,15 +45,20 @@ export function useChatSession({
   const updateRun = useChatStore((s) => s.updateRun);
   const addRunEvent = useChatStore((s) => s.addRunEvent);
   const appendRunTranscript = useChatStore((s) => s.appendRunTranscript);
+  
   const { appendChunk: appendTranscriptChunk, flushNow: flushTranscript } =
-    useBatchedTranscript(appendRunTranscript);
+    useBatchedAppender<string, string>((_taskId, runId, content) => appendRunTranscript(runId, content));
+    
+  const { appendChunk: appendMessageChunk, flushNow: flushMessage } =
+    useBatchedAppender<string, string>((taskId, msgId, content) => appendToMessage(taskId, msgId, content));
+
   const addRunArtifact = useChatStore((s) => s.addRunArtifact);
   const setRunVerification = useChatStore((s) => s.setRunVerification);
   const clearPendingAttachmentsByTask = useChatStore((s) => s.clearPendingAttachments);
   const removePendingAttachmentByTask = useChatStore((s) => s.removePendingAttachment);
 
   const { stopSession, saveLastConversation } = useChatAgent();
-  const { pushQueue, popQueue, clearQueue } = useExecutionQueue();
+  const { queue, pushQueue, popQueue, clearQueue } = useExecutionQueue();
   const { handleRetry: baseHandleRetry, handleCopy } = useChatInputHistory(activeTaskId, isRunning);
 
   const [input, setInput] = useState("");
@@ -61,14 +66,22 @@ export function useChatSession({
     "idle" | "connecting" | "sending" | "streaming" | "completed" | "error"
   >("idle");
 
-  const handleRetry = useCallback((id: string) => {
-    baseHandleRetry(id, setInput);
-  }, [baseHandleRetry, setInput]);
+  const runExecutionRef = useRef<
+    ((content: string, mode: "api" | "cli") => Promise<void>) | null
+  >(null);
 
   const activeAssistantIdRef = useRef<string | null>(null);
   const currentRunIdRef = useRef<string | null>(null);
   const isExecutingRef = useRef(false);
   const cliContinuationRef = useRef(false);
+
+  // --- Orchestrator for Queue & Execution Phase Transitions ---
+  useEffect(() => {
+    if (executionPhase === "completed" || executionPhase === "error") {
+      const timer = setTimeout(() => setExecutionPhase("idle"), 600);
+      return () => clearTimeout(timer);
+    }
+  }, [executionPhase]);
 
   const emitRunEvent = useCallback(
     (patch: Omit<RunEvent, "id" | "taskId" | "createdAt" | "runId">) => {
@@ -87,9 +100,26 @@ export function useChatSession({
     [activeTaskId, addRunEvent],
   );
 
-  const runExecutionRef = useRef<
-    ((content: string, mode: "api" | "cli") => Promise<void>) | null
-  >(null);
+  useEffect(() => {
+    // Note: isRunning is derived from global chatStore.
+    // If we are strictly idle, we can pop the next item safely without races.
+    if (executionPhase === "idle" && !isRunning && !isExecutingRef.current && queue.length > 0) {
+      // Intentionally synchronously lock the execution guard to prevent double pulling 
+      // from the React queue array during rapid macrotask event loop cycles.
+      isExecutingRef.current = true;
+      const next = popQueue();
+      if (next) {
+        // Safe macrotask delay to ensure previous unmounts are fully flushed
+        setTimeout(() => {
+          void runExecutionRef.current?.(next.content, next.mode);
+        }, 50);
+      }
+    }
+  }, [executionPhase, isRunning, queue.length, popQueue]);
+
+  const handleRetry = useCallback((id: string) => {
+    baseHandleRetry(id, setInput);
+  }, [baseHandleRetry, setInput]);
 
   const finalizeRound = useCallback(() => {
     if (!activeTaskId) return;
@@ -129,21 +159,12 @@ export function useChatSession({
     }
     updateTaskRuntimeBinding(activeTaskId, { activeExecId: null, activeRunId: null, sessionId: null });
     cliContinuationRef.current = executionMode === "cli";
-    window.setTimeout(() => setExecutionPhase("idle"), 600);
-
-    const next = popQueue();
-    if (next) {
-      window.setTimeout(() => {
-        void runExecutionRef.current?.(next.content, next.mode);
-      }, 80);
-    }
   }, [
     activeEngineId,
     activeTaskId,
     emitRunEvent,
     executionMode,
     finishRun,
-    popQueue,
     setRunning,
     setTaskRunning,
     updateMessage,
@@ -192,20 +213,6 @@ export function useChatSession({
       }
       updateTaskRuntimeBinding(activeTaskId, { activeExecId: null, activeRunId: null, sessionId: null });
       cliContinuationRef.current = false;
-
-      const next = popQueue();
-      if (next) {
-        emitRunEvent({
-          kind: "notice",
-          status: "pending",
-          message: "上一条失败，继续执行下一条排队消息",
-          engineId: activeEngineId,
-          mode: next.mode,
-        });
-        window.setTimeout(() => {
-          void runExecutionRef.current?.(next.content, next.mode);
-        }, 80);
-      }
     },
     [
       activeEngineId,
@@ -213,7 +220,6 @@ export function useChatSession({
       emitRunEvent,
       executionMode,
       finishRun,
-      popQueue,
       updateTaskRecord,
       updateTaskRuntimeBinding,
       setRunning,
@@ -232,6 +238,7 @@ export function useChatSession({
           currentRunIdRef.current = event.runId;
           break;
         case "done":
+          flushMessage();
           flushTranscript();
           if (event.exitCode !== undefined && event.exitCode !== 0 && event.exitCode !== null) {
             failRound(`命令执行失败（退出码：${event.exitCode}）`);
@@ -240,6 +247,7 @@ export function useChatSession({
           }
           break;
         case "error":
+          flushMessage();
           flushTranscript();
           failRound(event.message);
           break;
@@ -248,11 +256,30 @@ export function useChatSession({
             setRunVerification(currentRunIdRef.current, event.verification);
           }
           break;
+        case "tokenUsage":
+          if (activeAssistantIdRef.current) {
+            updateMessage(activeTaskId, activeAssistantIdRef.current, { 
+              tokenEstimate: {
+                approx_input_tokens: event.usage.approx_input_tokens,
+                approx_output_tokens: event.usage.approx_output_tokens,
+                input_chars: 0,
+                output_chars: 0,
+              } 
+            });
+            const task = useAppStore.getState().tasks.find((t) => t.id === activeTaskId);
+            if (task) {
+              const stats = { ...task.stats };
+              stats.approx_input_tokens = (stats.approx_input_tokens || 0) + event.usage.approx_input_tokens;
+              stats.approx_output_tokens = (stats.approx_output_tokens || 0) + event.usage.approx_output_tokens;
+              useAppStore.getState().updateTaskRecord(activeTaskId, { stats });
+            }
+          }
+          break;
         case "text": {
           setExecutionPhase("streaming");
-          appendToMessage(activeTaskId, activeAssistantIdRef.current, event.text);
+          appendMessageChunk(activeTaskId, activeAssistantIdRef.current, event.text);
           if (currentRunIdRef.current) {
-            appendTranscriptChunk(currentRunIdRef.current, event.text);
+            appendTranscriptChunk(activeTaskId, currentRunIdRef.current, event.text);
             if (executionMode !== "api") {
               addRunArtifact(currentRunIdRef.current, {
                 id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -272,12 +299,14 @@ export function useChatSession({
       activeTaskId,
       addRunArtifact,
       appendTranscriptChunk,
-      appendToMessage,
+      appendMessageChunk,
       executionMode,
       failRound,
       finalizeRound,
       flushTranscript,
+      flushMessage,
       setRunVerification,
+      updateMessage,
     ],
   );
 
