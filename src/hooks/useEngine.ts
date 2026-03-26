@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { DEFAULT_PROFILE_ID } from "../constants";
 import { useAppStore } from "../stores/appStore";
@@ -260,8 +260,19 @@ export function useEngine() {
     }
   }, [engines, preflightAll]);
 
+  const availableEngines = useMemo(() => {
+    return Object.values(engines).filter((e) => {
+      // Always show active engine
+      if (e.id === activeTask?.engineId) return true;
+      // Filter out engines where command explicitly doesn't exist
+      const res = enginePreflight?.[e.id];
+      return res?.command_exists !== false;
+    });
+  }, [engines, enginePreflight, activeTask?.engineId]);
+
   return {
     engines,
+    availableEngines,
     enginePreflight,
     refreshEngines,
     preflightEngine,

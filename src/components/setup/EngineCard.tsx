@@ -138,32 +138,40 @@ export function EngineCard({
   return (
     <div className={cn(
       "bg-bg-surface border border-border-muted/10 rounded-sm mb-1 transition-all",
-      isActive ? "ring-1 ring-primary-500/30 border-primary-500/20 shadow-sm" : "hover:border-border-muted/30"
+      isActive ? "ring-1 ring-primary/30 border-primary/20 shadow-sm" : "hover:border-border-muted/30"
     )}>
       {/* List Header View */}
       <div className="px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-6 flex-1 min-w-0">
-          <div className={cn("p-2 rounded-sm", ok ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600")}>
+          <div className={cn("p-2 rounded-sm", ok ? "bg-emerald-500/10 text-emerald-500" : "bg-amber-500/10 text-amber-500")}>
             <Cpu size={14} />
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <h4 className="text-sm font-bold text-text-main truncate">{engine.display_name}</h4>
-              {isActive && <span className="text-[9px] font-black uppercase text-primary-500">Active</span>}
+              {isActive && <span className="text-[9px] font-black uppercase text-primary px-1.5 py-0.5 bg-primary/5 rounded-[2px] border border-primary/10">Primary</span>}
+              <span className={cn(
+                "text-[9px] font-black uppercase px-1.5 py-0.5 rounded-[2px] border",
+                activeProfile?.execution_mode === "api" 
+                  ? "text-sky-500 bg-sky-500/5 border-sky-500/10" 
+                  : "text-text-muted/60 bg-text-muted/5 border-text-muted/10"
+              )}>
+                {activeProfile?.execution_mode === "api" ? "Cloud API" : "Local CLI"}
+              </span>
             </div>
-            <div className="flex items-center gap-4 text-[10px] text-text-muted font-medium pt-0.5">
+            <div className="flex items-center gap-4 text-[10px] text-text-muted/60 font-mono tracking-tighter pt-0.5">
                <span className="flex items-center gap-1">
                  {ok ? <CheckCircle2 size={10} className="text-emerald-500" /> : <AlertCircle size={10} className="text-amber-500" />}
-                 {ok ? "Ready" : "Incomplete"}
+                 {ok ? "READY" : "INCOMPLETE"}
                </span>
                <span className="opacity-40">/</span>
-               <span className="truncate max-w-[200px]">{activeProfile?.command}</span>
+               <span className="truncate max-w-[200px] uppercase">{activeProfile?.execution_mode === "api" ? (activeProfile?.model || "AUTO") : activeProfile?.command}</span>
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2 pl-4">
-           {!draft && (
+           {!draft && profileIds.length > 1 && (
              <Select
               value={activeProfileId}
               options={profileIds.map(p => ({ value: p, label: p }))}
@@ -186,7 +194,7 @@ export function EngineCard({
             className="p-1.5 rounded-sm hover:bg-bg-elevated transition-all"
             title="Edit Configuration"
            >
-             <Edit3 size={12} className={cn("text-text-muted", draft && "text-primary-500 rotate-90")} />
+             <Edit3 size={12} className={cn("text-text-muted", draft && "text-primary rotate-90")} />
            </button>
            <Button
               onClick={async () => {
@@ -198,7 +206,7 @@ export function EngineCard({
               className={cn(
                 "h-7 rounded-sm px-4 text-[10px] font-black uppercase tracking-tight transition-all",
                 isActive 
-                  ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/10 cursor-default" 
+                  ? "bg-primary/10 text-primary border border-primary/10 cursor-default" 
                   : "bg-text-main text-bg-surface hover:opacity-90"
               )}
               loading={switching}
@@ -256,7 +264,7 @@ export function EngineCard({
               </div>
            </div>
            <div className="flex gap-2 mt-6">
-              <Button size="sm" className="h-8 rounded-sm bg-primary-500 text-white font-black text-[10px] px-6" onClick={commitEdit} loading={saving}>
+              <Button size="sm" className="h-8 rounded-sm bg-primary text-bg-base font-black text-[10px] px-6" onClick={commitEdit} loading={saving}>
                 <Save size={12} className="mr-2" /> Save Config
               </Button>
               <Button size="sm" variant="ghost" className="h-8 rounded-sm text-text-muted text-[10px]" onClick={stopEdit}>Cancel</Button>

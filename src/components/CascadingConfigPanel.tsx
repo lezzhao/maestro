@@ -69,10 +69,10 @@ export const CascadingConfigPanel: React.FC<CascadingConfigPanelProps> = ({
   };
 
   return (
-    <div className="flex flex-col gap-6 p-4 bg-slate-900/50 rounded-lg border border-slate-700/50">
-      <div className="flex items-center gap-2 text-slate-200 font-medium border-b border-slate-700/50 pb-2">
-        <Settings className="w-4 h-4 text-blue-400" />
-        <span>Cascading Config</span>
+    <div className="flex flex-col gap-6">
+      <div className="flex items-center gap-2 text-text-main font-black border-b border-border-muted/5 pb-2 uppercase text-[10px] tracking-widest bg-bg-base/20 px-2 py-1.5 rounded-sm">
+        <Settings className="w-3.5 h-3.5 text-primary shadow-glow" />
+        <span>Cascading Config / 配置级联</span>
       </div>
 
       {error && (
@@ -85,14 +85,14 @@ export const CascadingConfigPanel: React.FC<CascadingConfigPanelProps> = ({
       {/* Workspace Level */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <label className="text-xs text-slate-400 uppercase tracking-wider font-semibold">
+          <label className="text-[10px] text-text-muted/60 uppercase tracking-widest font-bold">
             Workspace Settings (JSON)
           </label>
           <Button
             variant="ghost"
             size="sm"
             onClick={handleSaveWorkspace}
-            className="h-6 px-2 text-[10px] text-blue-400 hover:text-blue-300"
+            className="h-6 px-2 text-[10px] text-primary hover:bg-primary/5"
           >
             <Save className="w-3 h-3 mr-1" />
             Save Ws
@@ -101,7 +101,7 @@ export const CascadingConfigPanel: React.FC<CascadingConfigPanelProps> = ({
         <textarea
           value={wsSettingsStr}
           onChange={(e) => setWsSettingsStr(e.target.value)}
-          className="w-full h-24 bg-slate-950 border border-slate-800 rounded p-2 text-xs font-mono text-slate-300 focus:outline-none focus:border-blue-500/50 transition-colors"
+          className="w-full h-24 bg-bg-base/40 border border-border-muted/10 rounded-sm p-2 text-xs font-mono text-text-main focus:outline-none focus:border-primary/30 transition-all focus:bg-bg-base/60"
           placeholder='{"BMAD-METHOD": "auto"}'
         />
       </div>
@@ -109,7 +109,7 @@ export const CascadingConfigPanel: React.FC<CascadingConfigPanelProps> = ({
       {/* Task Level */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <label className="text-xs text-slate-400 uppercase tracking-wider font-semibold">
+          <label className="text-[10px] text-text-muted/60 uppercase tracking-widest font-bold">
             Task Settings (JSON)
           </label>
           <Button
@@ -117,7 +117,7 @@ export const CascadingConfigPanel: React.FC<CascadingConfigPanelProps> = ({
             size="sm"
             onClick={handleSaveTask}
             disabled={!taskId}
-            className="h-6 px-2 text-[10px] text-blue-400 hover:text-blue-300 disabled:opacity-50"
+            className="h-6 px-2 text-[10px] text-primary hover:bg-primary/5 disabled:opacity-50"
           >
             <Save className="w-3 h-3 mr-1" />
             Save Task
@@ -127,12 +127,12 @@ export const CascadingConfigPanel: React.FC<CascadingConfigPanelProps> = ({
           value={taskSettingsStr}
           onChange={(e) => setTaskSettingsStr(e.target.value)}
           disabled={!taskId}
-          className="w-full h-24 bg-slate-950 border border-slate-800 rounded p-2 text-xs font-mono text-slate-300 focus:outline-none focus:border-blue-500/50 transition-colors disabled:opacity-50"
+          className="w-full h-24 bg-bg-base/40 border border-border-muted/10 rounded-sm p-2 text-xs font-mono text-text-main focus:outline-none focus:border-primary/30 transition-all focus:bg-bg-base/60 disabled:opacity-50"
           placeholder='{"BMAD-METHOD": "pure-chat"}'
         />
       </div>
 
-      <div className="text-[10px] text-slate-500 italic">
+      <div className="text-[10px] text-text-muted/40 italic">
         Priority: Task Settings &gt; Workspace Settings &gt; Global Config
       </div>
     </div>
