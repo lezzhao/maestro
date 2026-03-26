@@ -38,11 +38,16 @@ export function AppHeader({ showSettings, onToggleSettings }: AppHeaderProps) {
   } = useTaskRuntimeContext();
 
   const [models, setModels] = useState<string[]>([]);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
 
   useEffect(() => {
     if (activeEngineId) {
+      setIsLoadingModels(true);
       listModels(activeEngineId).then((res: EngineModelListState) => {
         setModels(res.models);
+        setIsLoadingModels(false);
+      }).catch(() => {
+        setIsLoadingModels(false);
       });
     }
   }, [activeEngineId, activeProfileId, listModels]);
@@ -85,12 +90,12 @@ export function AppHeader({ showSettings, onToggleSettings }: AppHeaderProps) {
     [models]
   );
   return (
-    <header className="h-[48px] border-b border-border-muted/20 bg-bg-surface/95 backdrop-blur-md flex items-center justify-between px-4 z-50 shrink-0 select-none">
+    <header className="h-[52px] border-b border-border-muted/20 bg-bg-surface/95 backdrop-blur-md flex items-center justify-between px-4 z-50 shrink-0 select-none">
       {/* breadcrumb core */}
-      <div className="flex items-center gap-1">
-        <div className="flex items-center group px-2 py-1.5 hover:bg-bg-elevated/40 rounded-lg transition-all cursor-default border border-transparent hover:border-border-muted/10">
+      <div className="flex items-center gap-1.5 h-full">
+        <div className="flex items-center group px-2 py-1 hover:bg-bg-elevated/40 rounded-lg transition-all cursor-default border border-transparent hover:border-border-muted/10">
           <div className={cn(
-            "h-1.5 w-1.5 rounded-full mr-2 transition-all duration-500", 
+            "h-1.5 w-1.5 rounded-full mr-2.5 transition-all duration-500", 
             isEngineReady 
               ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.3)]" 
               : "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.3)] animate-pulse"
@@ -100,14 +105,14 @@ export function AppHeader({ showSettings, onToggleSettings }: AppHeaderProps) {
             options={engineOptions}
             onChange={(id: string) => id !== activeEngineId && switchEngine(id)}
             className="w-auto"
-            buttonClassName="h-7 w-auto px-1 border-0 font-bold text-text-main/70 hover:bg-transparent"
+            buttonClassName="h-8 w-auto px-1 border-0 font-bold text-text-main/80 hover:bg-transparent"
             icon={Cpu}
           />
         </div>
 
         <ChevronRight size={12} className="text-text-muted/20 mx-0.5" />
 
-        <div className="flex items-center group px-2 py-1.5 hover:bg-bg-elevated/40 rounded-lg transition-all cursor-default border border-transparent hover:border-border-muted/10">
+        <div className="flex items-center group px-2 py-1 hover:bg-bg-elevated/40 rounded-lg transition-all cursor-default border border-transparent hover:border-border-muted/10">
           <Select
             value={activeProfileId || ""}
             options={profileOptions}
@@ -119,7 +124,7 @@ export function AppHeader({ showSettings, onToggleSettings }: AppHeaderProps) {
               }
             }}
             className="w-auto"
-            buttonClassName="h-7 w-auto px-1 border-0 font-medium text-text-muted/50 hover:bg-transparent"
+            buttonClassName="h-8 w-auto px-1 border-0 font-bold text-text-muted/60 hover:bg-transparent"
             icon={Settings2}
             placeholder="Cfg"
           />
@@ -127,15 +132,18 @@ export function AppHeader({ showSettings, onToggleSettings }: AppHeaderProps) {
 
         <ChevronRight size={12} className="text-text-muted/20 mx-0.5" />
 
-        <div className="flex items-center group px-2 py-1.5 bg-primary-500/5 hover:bg-primary-500/10 rounded-lg border border-primary-500/10 transition-all cursor-default">
+        <div className={cn(
+          "flex items-center group px-2.5 py-1 rounded-lg border transition-all cursor-default min-w-[100px]",
+          isLoadingModels ? "bg-bg-elevated/20 border-border-muted/5 animate-pulse" : "bg-primary-500/5 hover:bg-primary-500/10 border-primary-500/10"
+        )}>
           <Select
             value={activeProfile?.model || ""}
             options={modelOptions}
             onChange={(model: string) => activeEngineId && activeProfileId && updateProfileModel(activeEngineId, activeProfileId, model)}
-            className="w-auto"
-            buttonClassName="h-7 w-auto px-1 border-0 font-black text-primary-500 transition-colors uppercase tracking-tight hover:bg-transparent"
+            className="flex-1"
+            buttonClassName="h-8 w-full px-1 border-0 font-bold text-primary-500 transition-colors tracking-tight hover:bg-transparent"
             icon={BrainCircuit}
-            placeholder="Model"
+            placeholder={isLoadingModels ? "Sync..." : "Select Model"}
           />
         </div>
       </div>

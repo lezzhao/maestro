@@ -76,6 +76,12 @@ pub enum AgentStateUpdate {
         engine_id: String,
         result: crate::engine::EnginePreflightResult,
     },
+    ExecutionTokenUsage {
+        task_id: String,
+        run_id: String,
+        input_tokens: u64,
+        output_tokens: u64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

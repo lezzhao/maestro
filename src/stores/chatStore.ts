@@ -22,9 +22,16 @@ type ChatStore = {
   artifactsByRun: Record<string, RunArtifact[]>;
   verificationsByRun: Record<string, VerificationSummary | null>;
   activeSessionId: string | null;
+  taskActiveRunId: Record<string, string | null>;
+  taskActiveAssistantMsgId: Record<string, string | null>;
+  taskExecutionPhase: Record<string, "idle" | "connecting" | "sending" | "streaming" | "completed" | "error">;
   orchestrationMode: "direct" | "auto";
   autoRetryCount: number;
   maxAutoRetries: number;
+
+  setActiveRunId: (taskId: string, runId: string | null) => void;
+  setActiveAssistantMsgId: (taskId: string, messageId: string | null) => void;
+  setExecutionPhase: (taskId: string, phase: "idle" | "connecting" | "sending" | "streaming" | "completed" | "error") => void;
 
   addMessage: (taskId: string, message: ChatMessage) => void;
   setMessages: (taskId: string, messages: ChatMessage[]) => void;
@@ -89,9 +96,25 @@ export const useChatStore = create<ChatStore>()(
       artifactsByRun: {},
       verificationsByRun: {},
       activeSessionId: null,
+      taskActiveRunId: {},
+      taskActiveAssistantMsgId: {},
+      taskExecutionPhase: {},
       orchestrationMode: "direct",
       autoRetryCount: 0,
       maxAutoRetries: 3,
+
+      setActiveRunId: (taskId, runId) =>
+        set((state) => ({
+          taskActiveRunId: { ...state.taskActiveRunId, [taskId]: runId },
+        })),
+      setActiveAssistantMsgId: (taskId, messageId) =>
+        set((state) => ({
+          taskActiveAssistantMsgId: { ...state.taskActiveAssistantMsgId, [taskId]: messageId },
+        })),
+      setExecutionPhase: (taskId, phase) =>
+        set((state) => ({
+          taskExecutionPhase: { ...state.taskExecutionPhase, [taskId]: phase },
+        })),
 
       addMessage: (taskId, message) =>
         set((state) => {

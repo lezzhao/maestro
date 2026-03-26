@@ -18,20 +18,18 @@ function WorkspaceIcon({ workspace, isActive }: { workspace: Workspace; isActive
   return (
     <div
       className={cn(
-        "relative w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm cursor-pointer transition-all group",
+        "relative w-10 h-10 rounded-xl flex items-center justify-center text-white/90 font-bold text-sm cursor-pointer transition-all group overflow-hidden shadow-sm",
         isActive
-          ? "rounded-lg shadow-md scale-105"
-          : "hover:rounded-lg opacity-70 hover:opacity-100"
+          ? "opacity-100 ring-2 ring-primary/40 shadow-glow scale-105"
+          : "opacity-60 hover:opacity-100 hover:scale-[1.05]"
       )}
       style={{ backgroundColor: bgColor }}
-      title={workspace.name}
     >
-      {workspace.icon || initial}
+      <span className="select-none tracking-tighter">{workspace.icon || initial}</span>
+      
       {/* Pure Chat badge */}
       {!workspace.workingDirectory && (
-        <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-bg-surface flex items-center justify-center">
-          <div className="w-2 h-2 rounded-full bg-amber-400" title="Pure Chat" />
-        </div>
+        <div className="absolute top-1 left-1 w-1.5 h-1.5 rounded-full bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.6)]" />
       )}
     </div>
   );
@@ -43,29 +41,45 @@ export function ActivityBar({
   onCreateWorkspace,
 }: ActivityBarProps) {
   const { t } = useTranslation();
-  const { workspaces, activeWorkspaceId, setActiveWorkspaceId, setShowSettings } = useAppStore(
+  const { workspaces, activeWorkspaceId, setActiveWorkspaceId, setShowSettings, removeWorkspace } = useAppStore(
     useShallow((s) => ({
       workspaces: s.workspaces,
       activeWorkspaceId: s.activeWorkspaceId,
       setActiveWorkspaceId: s.setActiveWorkspaceId,
       setShowSettings: s.setShowSettings,
+      removeWorkspace: s.removeWorkspace,
     }))
   );
 
   return (
-    <div className="w-[60px] h-full flex flex-col items-center py-3 bg-transparent z-30 shrink-0 relative transition-all gap-2">
-      {/* Workspace List */}
-      <div className="flex flex-col items-center gap-2 flex-1 overflow-y-auto custom-scrollbar w-full px-2.5">
+    <div className="w-[64px] h-full flex flex-col items-center py-4 bg-bg-surface/80 backdrop-blur-2xl border-r border-border-muted/10 z-30 shrink-0 relative transition-all shadow-sm">
+      {/* Workspace List Area - Scrolls if items exceed height */}
+      <div className="flex flex-col items-center gap-4 flex-1 overflow-y-auto no-scrollbar w-full px-2">
         {workspaces.map((ws) => {
           const isActive = ws.id === activeWorkspaceId && !isSettingsOpen;
           return (
-            <div key={ws.id} className="relative" onClick={() => {
-              setActiveWorkspaceId(ws.id);
-              setShowSettings(false);
-            }}>
-              <WorkspaceIcon workspace={ws} isActive={isActive} />
+            <div 
+              key={ws.id} 
+              className="relative flex items-center justify-center w-full group/ws" 
+              onContextMenu={(e) => {
+                e.preventDefault();
+                if (confirm(`确定要彻底删除 Workspace "${ws.name}" 吗？`)) {
+                  removeWorkspace(ws.id);
+                }
+              }}
+            >
+              <div 
+                className="cursor-pointer"
+                onClick={() => {
+                  setActiveWorkspaceId(ws.id);
+                  setShowSettings(false);
+                }}
+              >
+                <WorkspaceIcon workspace={ws} isActive={isActive} />
+              </div>
+              
               {isActive && (
-                <div className="absolute -left-2.5 top-1/2 -translate-y-1/2 w-1 h-5 bg-white rounded-r-full shadow-sm" />
+                <div className="absolute left-[-10px] top-1/2 -translate-y-1/2 w-1 h-6 bg-primary rounded-r-full transition-all shadow-[0_0_8px_rgba(var(--primary-rgb),0.5)]" />
               )}
             </div>
           );
@@ -74,31 +88,28 @@ export function ActivityBar({
         {/* Add Workspace Button */}
         <button
           onClick={onCreateWorkspace}
-          className="w-10 h-10 rounded-xl border-2 border-dashed border-border-muted/40 flex items-center justify-center text-text-muted/40 hover:text-text-muted hover:border-border-muted/60 transition-all hover:bg-bg-elevated/30 active:scale-95"
+          className="w-10 h-10 rounded-xl border-2 border-dashed border-border-muted/20 flex items-center justify-center text-text-muted/30 hover:text-primary hover:border-primary/40 hover:bg-primary/5 hover:scale-105 transition-all group"
           title={t("create_workspace") || "New Workspace"}
         >
-          <Plus size={18} strokeWidth={2} />
+          <Plus size={20} strokeWidth={2.5} className="group-hover:rotate-90 transition-transform duration-300" />
         </button>
       </div>
 
-      {/* Separator */}
-      <div className="w-8 h-px bg-border-muted/20 my-1" />
-
-      {/* Bottom Actions */}
-      <div className="flex flex-col gap-2 w-full px-2.5">
+      {/* Bottom Pinned Actions */}
+      <div className="w-full flex flex-col gap-2 px-2 pt-4 border-t border-border-muted/5 mt-2">
         <button
           onClick={onOpenSettings}
           className={cn(
-            "w-10 h-10 mx-auto flex items-center justify-center rounded-xl transition-all relative group",
+            "w-12 h-12 mx-auto flex items-center justify-center rounded-xl transition-all relative group",
             isSettingsOpen
-              ? "text-primary-500 bg-primary-500/10 shadow-glow"
-              : "text-text-muted hover:text-text-main hover:bg-bg-elevated/60"
+              ? "text-primary bg-primary/10"
+              : "text-text-muted/40 hover:text-text-main hover:bg-bg-elevated/80 hover:scale-105 hover:shadow-lg"
           )}
           title={t("nav_setup")}
         >
-          <Settings2 size={19} className="stroke-[1.5px] group-hover:rotate-45 transition-transform" />
+          <Settings2 size={22} className={cn("transition-all duration-700", isSettingsOpen ? "rotate-180 scale-110" : "group-hover:rotate-45")} />
           {isSettingsOpen && (
-            <div className="absolute -left-2.5 top-1/2 -translate-y-1/2 w-1 h-5 bg-primary-500 rounded-r-full" />
+            <div className="absolute left-[-10px] top-1/2 -translate-y-1/2 w-1 h-6 bg-primary rounded-r-full shadow-[0_0_8px_rgba(var(--primary-rgb),0.5)]" />
           )}
         </button>
       </div>

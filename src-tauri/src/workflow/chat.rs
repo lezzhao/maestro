@@ -205,7 +205,16 @@ pub async fn chat_execute_api_core(
     let io_opt = WorkspaceIo::new(&root_path).ok();
     let _ = on_data.send_string(format!("\u{0}RUN_ID:{run_id_for_return}"));
 
-    // Emit run_created for event-driven frontend sync
+    // Emit events for event-driven frontend sync (authored by backend)
+    crate::agent_state::emit_state_update(
+        app.as_ref(),
+        crate::agent_state::AgentStateUpdate::ExecutionStarted {
+            task_id: task_id.clone(),
+            run_id: run_id_for_return.clone(),
+            mode: "api".to_string(),
+        },
+    );
+
     let run_payload = crate::agent_state::task_run_from_execution(
         &run_id_for_return,
         &task_id,
@@ -220,6 +229,13 @@ pub async fn chat_execute_api_core(
             run: run_payload,
         },
     );
+
+    let on_data_with_state = Arc::new(crate::core::events::StateUpdateStream {
+        inner: on_data.clone(),
+        app: app.clone(),
+        task_id: task_id.clone(),
+        run_id: run_id_for_return.clone(),
+    });
 
     let exec_id_for_spawn = exec_id.clone();
     let headless_state_clone = headless_state.clone();
@@ -238,7 +254,7 @@ pub async fn chat_execute_api_core(
                     messages,
                 },
                 cancel_token,
-                on_data_clone.clone(),
+                on_data_with_state,
             )
             .await;
         if let Err(e) = match &run_result {
@@ -386,7 +402,16 @@ pub async fn chat_execute_cli_core(
     let io_opt = WorkspaceIo::new(&root_path).ok();
     let _ = on_data.send_string(format!("\u{0}RUN_ID:{run_id_for_return}"));
 
-    // Emit run_created for event-driven frontend sync
+    // Emit events for event-driven frontend sync (authored by backend)
+    crate::agent_state::emit_state_update(
+        app.as_ref(),
+        crate::agent_state::AgentStateUpdate::ExecutionStarted {
+            task_id: task_id.clone(),
+            run_id: run_id_for_return.clone(),
+            mode: "cli".to_string(),
+        },
+    );
+
     let run_payload = crate::agent_state::task_run_from_execution(
         &run_id_for_return,
         &task_id,
@@ -401,6 +426,13 @@ pub async fn chat_execute_cli_core(
             run: run_payload,
         },
     );
+
+    let on_data_with_state = Arc::new(crate::core::events::StateUpdateStream {
+        inner: on_data,
+        app: app.clone(),
+        task_id: task_id.clone(),
+        run_id: run_id_for_return.clone(),
+    });
 
     let exec_id_for_spawn = exec_id.clone();
     let headless_state_clone = headless_state.clone();
@@ -428,7 +460,7 @@ pub async fn chat_execute_cli_core(
                     env,
                 },
                 cancel_token,
-                on_data_clone.clone(),
+                on_data_with_state,
             )
             .await;
 

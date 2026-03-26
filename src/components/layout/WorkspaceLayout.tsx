@@ -40,11 +40,11 @@ export function WorkspaceLayout() {
     switchEngine,
     preflightEngine,
     preflightAll,
-    upsertEngine,
     setActiveProfile,
     updateTaskProfile,
     upsertProfile,
     listModels,
+    upsertEngine,
   } = useEngine();
   const { projectPath, detectAndRecommend, gitDiff } = useProject();
   const { activeTaskId, activeTask } = useActiveTask();
@@ -59,6 +59,7 @@ export function WorkspaceLayout() {
     setCurrentStep, setSidebarCollapsed,
     theme, setTheme,
     lang, setLang,
+    activeWorkspaceId,
   } = useAppStore(useShallow((s) => ({
     showSettings: s.showSettings,
     setShowSettings: s.setShowSettings,
@@ -68,6 +69,7 @@ export function WorkspaceLayout() {
     setTheme: s.setTheme,
     lang: s.lang,
     setLang: s.setLang,
+    activeWorkspaceId: s.activeWorkspaceId,
   })));
 
   const [activeFile, setActiveFile] = useState("");
@@ -197,16 +199,42 @@ export function WorkspaceLayout() {
               onSwitch={handleSwitchEngine}
               onPreflight={preflightEngine}
               onPreflightAll={preflightAll}
-              onSaveEngine={upsertEngine}
               onSetActiveProfile={handleSetActiveProfile}
               onUpsertProfile={upsertProfile}
               onFetchModels={listModels}
+              onUpsertEngine={upsertEngine}
               theme={theme}
               onThemeChange={setTheme}
               lang={lang}
               onLangChange={setLang}
             />
           </Suspense>
+        ) : !activeWorkspaceId ? (
+          <div className="h-full flex flex-col items-center justify-center p-8 bg-bg-base/30 animate-in fade-in duration-500">
+            <div className="w-[450px] space-y-8 flex flex-col items-center text-center">
+              <div className="relative group">
+                <div className="absolute inset-0 bg-primary blur-[40px] opacity-20 rounded-full group-hover:opacity-30 transition-opacity" />
+                <div className="relative w-24 h-24 rounded-2xl bg-bg-surface border border-border-muted flex items-center justify-center text-primary shadow-xl">
+                  <Plus size={40} strokeWidth={2.5} />
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <h2 className="text-2xl font-black text-text-main tracking-tight uppercase">Ready to Start?</h2>
+                <p className="text-sm text-text-muted/60 max-w-[320px] leading-relaxed mx-auto">
+                  Create your first Workspace to begin coding with AI. Group your tasks and files into logical project environments.
+                </p>
+              </div>
+
+              <Button 
+                onClick={() => setShowCreateWorkspace(true)}
+                size="lg"
+                className="h-12 px-10 rounded-xl bg-primary hover:bg-primary/90 text-white font-black uppercase tracking-widest text-xs shadow-xl shadow-primary/20 hover:scale-105 transition-all"
+              >
+                Create New Workspace
+              </Button>
+            </div>
+          </div>
         ) : (
           <Group 
             orientation="horizontal" 
@@ -226,31 +254,28 @@ export function WorkspaceLayout() {
               {!trimmedProjectPath ? (
                   <div className="h-full flex flex-col items-center justify-center space-y-6">
                     <div className="relative group">
-                      <div className="relative w-24 h-24 rounded-3xl bg-primary-500 flex items-center justify-center text-white shadow-lg">
-                        <Rocket size={48} />
+                      <div className="relative w-20 h-20 rounded-md bg-primary flex items-center justify-center text-bg-base shadow-sm">
+                        <Rocket size={40} />
                       </div>
                     </div>
-                    <div className="text-center space-y-2">
-                      <h2 className="text-2xl font-bold tracking-tight">{t("welcome_ready")}</h2>
-                      <p className="text-sm text-text-muted/80 max-w-sm leading-relaxed">
+                    <div className="text-center space-y-1">
+                      <h2 className="text-xl font-bold tracking-tight">{t("welcome_ready")}</h2>
+                      <p className="text-[13px] text-text-muted/80 max-w-sm leading-relaxed">
                         {t("welcome_desc")}
                       </p>
                     </div>
                     <Button 
                       size="lg" 
-                      className="rounded-sm px-8 h-12 text-sm font-semibold tracking-wide"
+                      className="rounded-sm px-10 h-11 text-[13px] font-bold tracking-wider uppercase"
                       onClick={() => void handleOpenProjectPicker()}
                     >
-                      <Plus size={18} className="mr-2" />
+                      <Plus size={16} className="mr-2" />
                       {t("cmd_import_project")}
                     </Button>
                 </div>
               ) : (
                 <div className="h-full flex flex-col min-h-0 relative">
-                  <AppHeader 
-                    showSettings={showSettings} 
-                    onToggleSettings={() => setShowSettings(!showSettings)} 
-                  />
+                  <AppHeader />
 
                   <div className="flex-1 min-h-0 bg-bg-base">
                     <Suspense fallback={<PanelFallback label="Workspace" />}>

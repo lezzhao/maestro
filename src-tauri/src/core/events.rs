@@ -81,3 +81,50 @@ impl StringStream for MpscStringStream {
         Ok(())
     }
 }
+use std::sync::Arc;
+pub struct StateUpdateStream {
+    pub inner: Arc<dyn StringStream>,
+    pub app: Option<tauri::AppHandle>,
+    pub task_id: String,
+    pub run_id: String,
+}
+
+impl StringStream for StateUpdateStream {
+    fn send_string(&self, data: String) -> Result<(), String> {
+        let res = self.inner.send_string(data.clone());
+        if !data.is_empty() {
+            if data.starts_with('\u{0}') {
+                // Parsing token usage from control chunk if present
+                if data.to_uppercase().contains("TOKEN_USAGE") {
+                     if let Some(json_start) = data.find('{') {
+                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&data[json_start..]) {
+                             let input = v.pointer("/approx_input_tokens").and_then(|i| i.as_u64()).unwrap_or(0);
+                             let output = v.pointer("/approx_output_tokens").and_then(|o| o.as_u64()).unwrap_or(0);
+                             if let Some(app) = &self.app {
+                                 crate::agent_state::emit_state_update(
+                                     Some(app),
+                                     crate::agent_state::AgentStateUpdate::ExecutionTokenUsage {
+                                         task_id: self.task_id.clone(),
+                                         run_id: self.run_id.clone(),
+                                         input_tokens: input,
+                                         output_tokens: output,
+                                     },
+                                 );
+                             }
+                         }
+                     }
+                }
+            } else if let Some(app) = &self.app {
+                crate::agent_state::emit_state_update(
+                    Some(app),
+                    crate::agent_state::AgentStateUpdate::ExecutionOutputChunk {
+                        task_id: self.task_id.clone(),
+                        run_id: self.run_id.clone(),
+                        chunk: data,
+                    },
+                );
+            }
+        }
+        res
+    }
+}

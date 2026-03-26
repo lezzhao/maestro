@@ -5,12 +5,13 @@ import { FolderOpen, X, MessageSquare, FolderTree } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
 import { Button } from "./ui/button";
 import { toast } from "sonner";
+import { cn } from "../lib/utils";
 import type { Workspace } from "../types";
 
 const WORKSPACE_COLORS = [
-  "#6366f1", "#8b5cf6", "#ec4899", "#ef4444",
-  "#f97316", "#eab308", "#22c55e", "#14b8a6",
-  "#06b6d4", "#3b82f6",
+  "#3b82f6", "#0ea5e9", "#10b981", "#6366f1", 
+  "#8b5cf6", "#d946ef", "#f43f5e", "#f59e0b", 
+  "#64748b", "#0f172a"
 ];
 
 interface WorkspaceCreateDialogProps {
@@ -20,6 +21,8 @@ interface WorkspaceCreateDialogProps {
 
 export function WorkspaceCreateDialog({ open, onClose }: WorkspaceCreateDialogProps) {
   const addWorkspace = useAppStore((s) => s.addWorkspace);
+  const setActiveWorkspaceId = useAppStore((s) => s.setActiveWorkspaceId);
+  const addTask = useAppStore((s) => s.addTask);
   const [name, setName] = useState("");
   const [workingDirectory, setWorkingDirectory] = useState("");
   const [color, setColor] = useState(WORKSPACE_COLORS[0]);
@@ -31,7 +34,7 @@ export function WorkspaceCreateDialog({ open, onClose }: WorkspaceCreateDialogPr
       if (selected && typeof selected === "string") {
         setWorkingDirectory(selected);
         if (!name) {
-          const parts = selected.split("/");
+          const parts = selected.split(/[\/\\]/);
           setName(parts[parts.length - 1] || "");
         }
       }
@@ -59,19 +62,19 @@ export function WorkspaceCreateDialog({ open, onClose }: WorkspaceCreateDialogPr
         },
       });
       addWorkspace(ws);
+      setActiveWorkspaceId(ws.id);
+      void addTask("Initial Task").catch(console.error);
       setName("");
       setWorkingDirectory("");
-      setColor(WORKSPACE_COLORS[Math.floor(Math.random() * WORKSPACE_COLORS.length)]);
       onClose();
     } catch (e) {
       console.error("Failed to create workspace:", e);
-      // @ts-expect-error - e is unknown, but we check for message
-      const errorMsg = e?.message || String(e);
-      toast.error("Failed to create workspace", { description: errorMsg });
+      // @ts-expect-error - e is unknown
+      toast.error("Failed to create workspace", { description: e?.message || String(e) });
     } finally {
       setCreating(false);
     }
-  }, [name, workingDirectory, color, addWorkspace, onClose]);
+  }, [name, workingDirectory, color, addWorkspace, setActiveWorkspaceId, addTask, onClose]);
 
   if (!open) return null;
 
@@ -79,113 +82,111 @@ export function WorkspaceCreateDialog({ open, onClose }: WorkspaceCreateDialogPr
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-[420px] bg-bg-surface border border-border-muted/40 rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-200">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 pt-5 pb-3">
-          <h2 className="text-base font-bold text-text-main">新建 Workspace</h2>
-          <button
-            onClick={onClose}
-            className="text-text-muted hover:text-text-main p-1 rounded-lg hover:bg-bg-elevated transition-colors"
-          >
-            <X size={16} />
+      <div className="w-[400px] bg-bg-surface border border-border-muted rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        {/* Simple Header */}
+        <div className="flex items-center justify-between px-6 pt-6 pb-2">
+          <h2 className="text-lg font-bold text-text-main tracking-tight">新建 Workspace</h2>
+          <button onClick={onClose} className="text-text-muted hover:text-text-main p-1.5 rounded-full hover:bg-bg-subtle transition-colors">
+            <X size={18} />
           </button>
         </div>
 
-        <div className="px-6 pb-6 space-y-5">
-          {/* Name */}
-          <div className="space-y-2">
-            <label className="text-[11px] font-semibold text-text-muted/70 uppercase">名称</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="My Project"
-              className="w-full h-9 px-3 text-sm rounded-lg border border-border-muted/50 bg-bg-base text-text-main placeholder:text-text-muted/30 focus:outline-none focus:border-primary-500/50 focus:ring-1 focus:ring-primary-500/20 transition-all"
-              autoFocus
-              onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-            />
-          </div>
-
-          {/* Working Directory */}
-          <div className="space-y-2">
-            <label className="text-[11px] font-semibold text-text-muted/70 uppercase">
-              工作目录 <span className="text-text-muted/40 normal-case font-normal">(可选)</span>
-            </label>
-            <div className="flex gap-2">
+        <div className="px-6 pb-6 space-y-6">
+          <div className="space-y-4 pt-2">
+            {/* Project Name */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-text-muted/60 uppercase tracking-wider">名称</label>
               <input
                 type="text"
-                value={workingDirectory}
-                onChange={(e) => setWorkingDirectory(e.target.value)}
-                placeholder="不配置则为纯对话模式"
-                className="flex-1 h-9 px-3 text-xs rounded-lg border border-border-muted/50 bg-bg-base text-text-main placeholder:text-text-muted/30 focus:outline-none focus:border-primary-500/50 transition-all font-mono truncate"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="My Project"
+                className="w-full h-10 px-3 text-sm rounded-lg border border-border-muted bg-bg-base/30 text-text-main placeholder:text-text-muted/30 focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all font-medium"
+                autoFocus
+                onKeyDown={(e) => e.key === "Enter" && handleCreate()}
               />
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9 px-3 rounded-lg border-border-muted/50 hover:bg-bg-elevated text-text-muted hover:text-text-main"
-                onClick={() => void handlePickDirectory()}
-              >
-                <FolderOpen size={14} />
-              </Button>
             </div>
-          </div>
 
-          {/* Color Picker */}
-          <div className="space-y-2">
-            <label className="text-[11px] font-semibold text-text-muted/70 uppercase">颜色</label>
-            <div className="flex gap-2">
-              {WORKSPACE_COLORS.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => setColor(c)}
-                  className="w-6 h-6 rounded-full transition-all hover:scale-110 active:scale-95"
-                  style={{
-                    backgroundColor: c,
-                    outline: color === c ? "2px solid white" : "none",
-                    outlineOffset: "2px",
-                    boxShadow: color === c ? `0 0 0 1px ${c}` : "none",
-                  }}
+            {/* Directory */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-text-muted/60 uppercase tracking-wider">
+                工作目录 <span className="text-[10px] opacity-40 lowercase italic font-normal">(可选)</span>
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={workingDirectory}
+                  onChange={(e) => setWorkingDirectory(e.target.value)}
+                  placeholder="留空为纯对话模式"
+                  className="flex-1 h-10 px-3 text-[12px] font-mono rounded-lg border border-border-muted bg-bg-base/30 text-text-main placeholder:text-text-muted/20 focus:outline-none focus:border-primary/50 transition-all truncate"
                 />
-              ))}
+                <button
+                  type="button"
+                  className="p-2 rounded-lg bg-bg-elevated border border-border-muted text-text-muted hover:text-primary transition-all shadow-sm"
+                  onClick={() => void handlePickDirectory()}
+                >
+                  <FolderOpen size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* Mode Select Indicator */}
+            <div className={cn(
+              "flex items-center gap-3 p-3 rounded-xl border transition-all",
+              isPureChat ? "bg-amber-500/5 border-amber-500/10" : "bg-emerald-500/5 border-emerald-500/10"
+            )}>
+              <div className={cn(
+                "p-2 rounded-lg",
+                isPureChat ? "bg-amber-500/10 text-amber-600" : "bg-emerald-500/10 text-emerald-600"
+              )}>
+                {isPureChat ? <MessageSquare size={16} /> : <FolderTree size={16} />}
+              </div>
+              <div className="space-y-0.5">
+                 <p className={cn("text-xs font-bold", isPureChat ? "text-amber-600" : "text-emerald-600")}>
+                   {isPureChat ? "纯 API 对话模式" : "工作区 Agent 模式"}
+                 </p>
+                 <p className="text-[10px] text-text-muted leading-tight opacity-60">
+                   {isPureChat ? "无本地文件权限，极速流式对话" : "Agent 拥有本地代码读写与执行权限"}
+                 </p>
+              </div>
+            </div>
+
+            {/* Accent Selection */}
+            <div className="space-y-2">
+              <label className="text-[11px] font-bold text-text-muted/60 uppercase tracking-wider pl-0.5">颜色标识</label>
+              <div className="flex flex-wrap gap-2.5">
+                {WORKSPACE_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setColor(c)}
+                    className="w-5 h-5 rounded-full transition-all group relative"
+                    style={{ backgroundColor: c }}
+                  >
+                    {color === c && (
+                      <div className="absolute inset-0 rounded-full ring-2 ring-primary ring-offset-2 ring-offset-bg-surface" />
+                    )}
+                    <div className="absolute inset-0 rounded-full opacity-0 group-hover:opacity-10 shadow-inner bg-white" />
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
-          {/* Mode Indicator */}
-          <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-bg-base border border-border-muted/30">
-            {isPureChat ? (
-              <>
-                <MessageSquare size={14} className="text-amber-500" />
-                <span className="text-xs text-text-muted">
-                  <span className="font-semibold text-amber-500">Pure Chat</span> — 纯 API 对话，无文件读写权限
-                </span>
-              </>
-            ) : (
-              <>
-                <FolderTree size={14} className="text-emerald-500" />
-                <span className="text-xs text-text-muted">
-                  <span className="font-semibold text-emerald-500">Workspace</span> — Agent 拥有文件读写权限
-                </span>
-              </>
-            )}
-          </div>
-
-          {/* Actions */}
-          <div className="flex justify-end gap-2 pt-1">
+          {/* Footer Actions */}
+          <div className="flex gap-2.5 pt-2">
             <Button
               variant="ghost"
-              size="sm"
               onClick={onClose}
-              className="text-text-muted hover:text-text-main"
+              className="flex-1 h-10 text-xs font-semibold text-text-muted hover:text-text-main"
             >
               取消
             </Button>
             <Button
-              size="sm"
               disabled={!name.trim() || creating}
               onClick={() => void handleCreate()}
-              className="bg-primary-500 hover:bg-primary-600 text-white font-semibold px-5"
+              className="flex-[2] h-10 bg-primary hover:opacity-90 text-white font-bold text-xs rounded-xl shadow-lg shadow-primary/20 transition-all opacity-100"
             >
-              {creating ? "创建中..." : "创建"}
+              {creating ? "正在初始化..." : "创建并开始"}
             </Button>
           </div>
         </div>

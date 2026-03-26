@@ -20,6 +20,9 @@ export function useAgentStateSync() {
   const appendRunTranscript = useChatStore((s) => s.appendRunTranscript);
   const { appendChunk: appendTranscriptChunk, flushNow: flushTranscript } =
     useBatchedAppender<string, string>((_taskId, runId, content) => appendRunTranscript(runId, content));
+  const appendToMessage = useChatStore((s) => s.appendToMessage);
+  const { appendChunk: appendMessageChunk, flushNow: flushMessage } =
+    useBatchedAppender<string, string>((taskId, msgId, content) => appendToMessage(taskId, msgId, content));
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -30,6 +33,7 @@ export function useAgentStateSync() {
       if (!payload || typeof payload !== "object") return;
       if (payload.type === "run_finished" || payload.type === "execution_cancelled") {
         flushTranscript();
+        flushMessage();
       }
       const appState = useAppStore.getState();
       const chatState = useChatStore.getState();
@@ -38,6 +42,8 @@ export function useAgentStateSync() {
         finishRun: chatState.finishRun,
         appendRunTranscript: (runId, content) => appendTranscriptChunk("", runId, content),
         setMessages: chatState.setMessages,
+        updateMessage: chatState.updateMessage,
+        appendToMessage: (taskId, msgId, chunk) => appendMessageChunk(taskId, msgId, chunk),
         setTasks: appState.setTasks,
         updateTaskRecord: appState.updateTaskRecord,
         setTaskResolvedRuntimeContext: appState.setTaskResolvedRuntimeContext,
@@ -48,6 +54,16 @@ export function useAgentStateSync() {
         addWorkspace: appState.addWorkspace,
         updateWorkspace: (workspace) => appState.updateWorkspace(workspace.id, workspace),
         removeWorkspace: appState.removeWorkspace,
+
+        setActiveRunId: chatState.setActiveRunId,
+        setActiveAssistantMsgId: chatState.setActiveAssistantMsgId,
+        getChatState: () => ({
+          taskActiveRunId: useChatStore.getState().taskActiveRunId,
+          taskActiveAssistantMsgId: useChatStore.getState().taskActiveAssistantMsgId,
+        }),
+        setTaskRunning: chatState.setTaskRunning,
+        setRunning: chatState.setRunning,
+        setExecutionPhase: chatState.setExecutionPhase,
       });
     };
 
@@ -105,6 +121,8 @@ export function useAgentStateSync() {
     setup();
     return () => {
       unlisten?.();
+      flushTranscript();
+      flushMessage();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

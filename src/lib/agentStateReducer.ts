@@ -37,13 +37,16 @@ export type AgentStateUpdate =
   | { type: "engine_preflight_complete"; engine_id: string; result: import("../types").EnginePreflightResult }
   | { type: "workspace_created"; workspace: import("../types").Workspace }
   | { type: "workspace_updated"; workspace: import("../types").Workspace }
-  | { type: "workspace_deleted"; workspace_id: string };
+  | { type: "workspace_deleted"; workspace_id: string }
+  | { type: "execution_token_usage"; task_id: string; run_id: string; input_tokens: number; output_tokens: number };
 
 type AgentReducerDeps = {
   createRun: (run: TaskRun) => void;
   finishRun: (runId: string, status: "done" | "error" | "stopped", error?: string | null) => void;
   appendRunTranscript: (runId: string, content: string) => void;
   setMessages: (taskId: string, messages: ChatMessage[]) => void;
+  updateMessage: (taskId: string, id: string, patch: Partial<ChatMessage>) => void;
+  appendToMessage: (taskId: string, id: string, chunk: string) => void;
   setTasks: (tasks: TaskViewModel[]) => void;
   updateTaskRecord: (id: string, patch: Partial<import("../types").TaskViewState>) => void;
   updateTaskRuntimeBinding: (taskId: string, binding: import("../types").TaskRuntimeBinding) => void;
@@ -54,16 +57,60 @@ type AgentReducerDeps = {
   addWorkspace: (workspace: import("../types").Workspace) => void;
   updateWorkspace: (workspace: import("../types").Workspace) => void;
   removeWorkspace: (id: string) => void;
+
+  // Active execution tracking
+  setActiveRunId: (taskId: string, runId: string | null) => void;
+  setActiveAssistantMsgId: (taskId: string, messageId: string | null) => void;
+  getChatState: () => {
+    taskActiveRunId: Record<string, string | null>;
+    taskActiveAssistantMsgId: Record<string, string | null>;
+  };
+  setTaskRunning: (taskId: string, running: boolean) => void;
+  setRunning: (running: boolean) => void;
+  setExecutionPhase: (taskId: string, phase: "idle" | "connecting" | "sending" | "streaming" | "completed" | "error") => void;
 };
 
 export function applyAgentStateUpdate(payload: AgentStateUpdate, deps: AgentReducerDeps) {
   switch (payload.type) {
+    case "execution_started":
+      deps.setRunning(true);
+      deps.setTaskRunning(payload.task_id, true);
+      deps.setActiveRunId(payload.task_id, payload.run_id);
+      deps.setExecutionPhase(payload.task_id, "streaming");
+      break;
     case "run_created":
       deps.createRun(toTaskRun(payload.run));
       break;
     case "run_finished":
-      deps.finishRun(payload.run_id, payload.status === "done" ? "done" : "error", payload.error ?? null);
+    case "execution_cancelled": {
+      const isCancelled = payload.type === "execution_cancelled";
+      const statusValue = isCancelled ? "stopped" : (payload.status === "done" ? "done" : "error");
+      const errorMsg = (payload as { error?: string | null }).error ?? null;
+      deps.finishRun(payload.run_id, statusValue as "done" | "error" | "stopped", errorMsg);
+      
+      const chat = deps.getChatState();
+      // If this run matches the active run for the task, clear it.
+      if (chat.taskActiveRunId[payload.task_id] === payload.run_id) {
+        deps.setExecutionPhase(payload.task_id, isCancelled || statusValue === "done" ? "completed" : "error");
+        deps.setActiveRunId(payload.task_id, null);
+        const msgId = chat.taskActiveAssistantMsgId[payload.task_id];
+        if (msgId) {
+          deps.updateMessage(payload.task_id, msgId, { status: (isCancelled || statusValue === "done") ? "done" : "error" });
+          deps.setActiveAssistantMsgId(payload.task_id, null);
+        }
+        deps.setTaskRunning(payload.task_id, false);
+        deps.setRunning(false); 
+      }
       break;
+    }
+    case "execution_output_chunk": {
+      deps.appendRunTranscript(payload.run_id, payload.chunk);
+      const activeMsgId = deps.getChatState().taskActiveAssistantMsgId[payload.task_id];
+      if (activeMsgId) {
+        deps.appendToMessage(payload.task_id, activeMsgId, payload.chunk);
+      }
+      break;
+    }
     case "messages_updated":
       deps.setMessages(payload.task_id, toMessages(payload.messages));
       break;
@@ -103,15 +150,6 @@ export function applyAgentStateUpdate(payload: AgentStateUpdate, deps: AgentRedu
     case "task_runtime_context_resolved":
       deps.setTaskResolvedRuntimeContext(payload.task_id, payload.context);
       break;
-    case "execution_cancelled":
-      deps.finishRun(payload.run_id, "stopped", null);
-      break;
-    case "execution_output_chunk":
-      deps.appendRunTranscript(payload.run_id, payload.chunk);
-      break;
-    case "execution_started":
-    default:
-      break;
     case "engine_preflight_complete":
       deps.setEnginePreflight(payload.engine_id, payload.result);
       break;
@@ -123,6 +161,30 @@ export function applyAgentStateUpdate(payload: AgentStateUpdate, deps: AgentRedu
       break;
     case "workspace_deleted":
       deps.removeWorkspace(payload.workspace_id);
+      break;
+    case "execution_token_usage": {
+      const msgId = deps.getChatState().taskActiveAssistantMsgId[payload.task_id];
+      if (msgId) {
+        deps.updateMessage(payload.task_id, msgId, {
+          tokenEstimate: {
+            approx_input_tokens: payload.input_tokens,
+            approx_output_tokens: payload.output_tokens,
+            input_chars: 0,
+            output_chars: 0,
+          },
+        });
+      }
+      const appState = deps.getAppState();
+      const task = appState.tasks.find((t) => t.id === payload.task_id);
+      if (task) {
+        const stats = { ...task.stats };
+        stats.approx_input_tokens = (stats.approx_input_tokens || 0) + payload.input_tokens;
+        stats.approx_output_tokens = (stats.approx_output_tokens || 0) + payload.output_tokens;
+        deps.updateTaskRecord(payload.task_id, { stats });
+      }
+      break;
+    }
+    default:
       break;
   }
 }

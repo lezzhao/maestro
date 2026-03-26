@@ -4,14 +4,13 @@ import {
   Edit3,
   RefreshCcw,
   Save,
-  ShieldCheck,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "../ui/button";
-import { Card, CardContent, CardHeader } from "../ui/card";
-import { Input } from "../ui/input";
 import { Select } from "../ui/select";
+import { Input } from "../ui/input";
 import { cn } from "../../lib/utils";
-import { useTranslation } from "../../i18n";
 import type {
   EngineConfig,
   EngineModelListState,
@@ -42,14 +41,12 @@ interface EngineCardProps {
   ) => Promise<EngineModelListState>;
 }
 
-/** 将环境变量对象序列化为多行文本 */
 function envToText(env: Record<string, string>): string {
   return Object.entries(env)
     .map(([k, v]) => `${k}=${v}`)
     .join("\n");
 }
 
-/** 将多行文本解析为环境变量对象 */
 function textToEnv(input: string): Record<string, string> {
   const env: Record<string, string> = {};
   for (const rawLine of input.split("\n")) {
@@ -65,27 +62,6 @@ function textToEnv(input: string): Record<string, string> {
   return env;
 }
 
-/** 根据预检结果返回语义色调 */
-function noteTone(note?: string): "ok" | "warn" | "danger" | "muted" {
-  if (!note) return "muted";
-  const lower = note.toLowerCase();
-  if (lower === "ready") return "ok";
-  if (
-    lower.includes("command not found") ||
-    lower.includes("spawn failed")
-  ) {
-    return "danger";
-  }
-  if (
-    lower.includes("timeout") ||
-    lower.includes("exit code") ||
-    lower.includes("auth check failed")
-  ) {
-    return "warn";
-  }
-  return "muted";
-}
-
 export function EngineCard({
   id,
   engine,
@@ -97,12 +73,7 @@ export function EngineCard({
   onUpsertProfile,
   onFetchModels,
 }: EngineCardProps) {
-  const { t } = useTranslation();
-
-  // 编辑态内部状态
-  const [editingProfileId, setEditingProfileId] = useState<string | null>(
-    null,
-  );
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState<EngineProfile | null>(null);
   const [envText, setEnvText] = useState("");
@@ -110,41 +81,18 @@ export function EngineCard({
   const [headlessArgText, setHeadlessArgText] = useState("");
   const [preflighting, setPreflighting] = useState(false);
   const [switching, setSwitching] = useState(false);
-  const [creatingProfile, setCreatingProfile] = useState(false);
-  const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
 
-  const editing = draft !== null;
-
-  const ok = preflight
-    ? preflight.command_exists && preflight.auth_ok
-    : false;
-  const tone = noteTone(preflight?.notes);
+  const ok = preflight ? preflight.command_exists && preflight.auth_ok : false;
   const profileMap = engine.profiles || {};
   const profileIds = Object.keys(profileMap);
-  const activeProfileId =
-    engine.active_profile_id && profileMap[engine.active_profile_id]
-      ? engine.active_profile_id
-      : profileIds[0];
+  const activeProfileId = engine.active_profile_id && profileMap[engine.active_profile_id]
+    ? engine.active_profile_id
+    : profileIds[0];
   const activeProfile = profileMap[activeProfileId];
 
-  const modelInList = (draft?.model || "").trim()
-    ? modelOptions.includes((draft?.model || "").trim())
-    : true;
-  const modelSelectValue = !draft
-    ? ""
-    : !draft.model
-      ? ""
-      : modelInList
-        ? draft.model
-        : "__custom__";
-
-  const startEdit = (profileId?: string) => {
-    const pid =
-      profileId ||
-      engine.active_profile_id ||
-      Object.keys(engine.profiles || {})[0] ||
-      "default";
+  const startEdit = (pid: string) => {
     const profile = profileMap[pid];
     if (!profile) return;
     setEditingProfileId(pid);
@@ -152,8 +100,7 @@ export function EngineCard({
     setEnvText(envToText(profile.env));
     setArgText(profile.args.join(" "));
     setHeadlessArgText(profile.headless_args.join(" "));
-
-    // 拉取模型列表（如果尚无缓存）
+    
     if (modelOptions.length === 0) {
       void (async () => {
         setLoadingModels(true);
@@ -170,9 +117,6 @@ export function EngineCard({
   const stopEdit = () => {
     setEditingProfileId(null);
     setDraft(null);
-    setEnvText("");
-    setArgText("");
-    setHeadlessArgText("");
   };
 
   const commitEdit = async () => {
@@ -181,19 +125,8 @@ export function EngineCard({
     try {
       await onUpsertProfile(id, editingProfileId, {
         ...draft,
-        id: editingProfileId,
-        execution_mode: draft.execution_mode || "cli",
-        api_provider: draft.api_provider || null,
-        api_base_url: draft.api_base_url || null,
-        api_key: draft.api_key || null,
-        args: argText
-          .split(" ")
-          .map((x) => x.trim())
-          .filter(Boolean),
-        headless_args: headlessArgText
-          .split(" ")
-          .map((x) => x.trim())
-          .filter(Boolean),
+        args: argText.split(" ").filter(Boolean),
+        headless_args: headlessArgText.split(" ").filter(Boolean),
         env: textToEnv(envText),
       });
       stopEdit();
@@ -203,463 +136,133 @@ export function EngineCard({
   };
 
   return (
-    <Card
-      className={cn(
-        "group relative overflow-hidden transition-all duration-200 rounded-xl border border-border bg-bg-surface",
-        isActive &&
-          "ring-1 ring-primary-500 border-primary-500",
-      )}
-    >
-      {isActive && (
-        <div className="absolute top-0 right-0 p-px">
-          <div className="bg-primary-500 text-white text-xs px-2 py-0.5 rounded-bl-lg rounded-tr-xl shadow-sm">
-            {t("active_label")}
+    <div className={cn(
+      "bg-bg-surface border border-border-muted/10 rounded-sm mb-1 transition-all",
+      isActive ? "ring-1 ring-primary-500/30 border-primary-500/20 shadow-sm" : "hover:border-border-muted/30"
+    )}>
+      {/* List Header View */}
+      <div className="px-6 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-6 flex-1 min-w-0">
+          <div className={cn("p-2 rounded-sm", ok ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600")}>
+            <Cpu size={14} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-bold text-text-main truncate">{engine.display_name}</h4>
+              {isActive && <span className="text-[9px] font-black uppercase text-primary-500">Active</span>}
+            </div>
+            <div className="flex items-center gap-4 text-[10px] text-text-muted font-medium pt-0.5">
+               <span className="flex items-center gap-1">
+                 {ok ? <CheckCircle2 size={10} className="text-emerald-500" /> : <AlertCircle size={10} className="text-amber-500" />}
+                 {ok ? "Ready" : "Incomplete"}
+               </span>
+               <span className="opacity-40">/</span>
+               <span className="truncate max-w-[200px]">{activeProfile?.command}</span>
+            </div>
           </div>
         </div>
-      )}
 
-      <CardHeader className="pb-4 pt-6 px-8">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div
+        <div className="flex items-center gap-2 pl-4">
+           {!draft && (
+             <Select
+              value={activeProfileId}
+              options={profileIds.map(p => ({ value: p, label: p }))}
+              onChange={(pid) => void onSetActiveProfile(id, pid)}
+              className="h-7 w-32 px-2 bg-bg-elevated/50 border-border-muted/10 text-[10px] rounded-sm"
+            />
+           )}
+           <button 
+            onClick={async () => {
+              setPreflighting(true);
+              try { await onPreflight(id); } finally { setPreflighting(false); }
+            }}
+            className={cn("p-1.5 rounded-sm hover:bg-bg-elevated transition-all", preflighting && "animate-spin opacity-50")}
+            title="Reload Status"
+           >
+             <RefreshCcw size={12} className="text-text-muted" />
+           </button>
+           <button 
+            onClick={() => draft ? stopEdit() : startEdit(activeProfileId)}
+            className="p-1.5 rounded-sm hover:bg-bg-elevated transition-all"
+            title="Edit Configuration"
+           >
+             <Edit3 size={12} className={cn("text-text-muted", draft && "text-primary-500 rotate-90")} />
+           </button>
+           <Button
+              onClick={async () => {
+                setSwitching(true);
+                try { await onSwitch(id); } finally { setSwitching(false); }
+              }}
+              disabled={isActive}
+              size="sm"
               className={cn(
-                "w-10 h-10 rounded-xl flex items-center justify-center transition-colors",
-                ok
-                  ? "bg-bg-elevated text-text-main"
-                  : "bg-amber-500/10 text-amber-500",
+                "h-7 rounded-sm px-4 text-[10px] font-black uppercase tracking-tight transition-all",
+                isActive 
+                  ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/10 cursor-default" 
+                  : "bg-text-main text-bg-surface hover:opacity-90"
               )}
+              loading={switching}
             >
-              <Cpu size={20} />
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <div className="flex items-center gap-2">
-                <span className="text-base font-semibold tracking-tight text-text-main">
-                  {engine.display_name}
-                </span>
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-bg-elevated text-text-muted border border-border-muted/50">
-                  V1.0
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div
-                  className={cn(
-                    "w-1.5 h-1.5 rounded-full shadow-[0_0_4px_rgba(0,0,0,0.1)]",
-                    ok ? "bg-emerald-500" : "bg-amber-500",
-                  )}
-                />
-                <span
-                  className={cn(
-                    "text-[11px] font-medium",
-                    ok ? "text-text-muted" : "text-amber-500",
-                  )}
-                >
-                  {ok ? "Environment Ready" : "Setup Required"}
-                </span>
-              </div>
-            </div>
-          </div>
+              {isActive ? "Ready" : "Switch"}
+            </Button>
         </div>
-      </CardHeader>
+      </div>
 
-      <CardContent className="px-8 pb-8 space-y-6">
-        {!editing ? (
-          <>
-            <div className="space-y-4">
-              <div className="bg-bg-code rounded-xl p-4 border border-border-muted/50 text-sm font-mono text-text-muted relative overflow-hidden group/code hover:border-border-muted transition-colors">
-                <div className="flex items-start gap-2.5">
-                  <span className="text-primary-500/60 font-bold select-none">
-                    $
-                  </span>
-                  <code className="break-all text-text-main text-[13px] leading-relaxed">
-                    {activeProfile?.command ?? ""}{" "}
-                    {(activeProfile?.args ?? []).join(" ")}
-                  </code>
-                </div>
-                
-                <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 pt-3 border-t border-border-muted/30">
-                  {activeProfile?.model && (
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] uppercase tracking-wider opacity-40 font-bold">Model</span>
-                      <span className="text-[11px] font-semibold text-text-main">{activeProfile.model}</span>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] uppercase tracking-wider opacity-40 font-bold">Mode</span>
-                    <span className="text-[11px] font-semibold text-text-main">
-                      {(activeProfile?.execution_mode || "cli").toUpperCase()}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div
-                className={cn(
-                  "px-4 py-3 rounded-xl border flex items-start gap-3 transition-all",
-                  tone === "ok"
-                    ? "bg-bg-elevated border-border-muted text-text-main"
-                    : tone === "danger"
-                      ? "bg-rose-500/5 border-rose-500/20 text-rose-500"
-                      : "bg-bg-base border-border-muted/50 text-text-muted",
-                )}
-              >
-                <div className="mt-0.5 opacity-60">
-                  <ShieldCheck size={14} />
-                </div>
-                <div className="flex-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider block mb-1 opacity-40">
-                    {t("engine_status")}
-                  </span>
-                  <p className="whitespace-pre-wrap wrap-break-word text-[11px] leading-relaxed font-medium">
-                    {preflight?.notes || t("not_checked_yet")}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-4 pt-2">
-              <div className="grid grid-cols-[1fr_auto] gap-3">
-                <div className="relative group/sel">
-                  <Select
-                    value={activeProfileId}
-                    options={profileIds.map((pid) => ({
-                      value: pid,
-                      label: pid,
-                    }))}
-                    onChange={(pid) => void onSetActiveProfile(id, pid)}
-                    className="h-10 rounded-md bg-bg-base border-border-muted focus:ring-primary-500/20"
-                  />
-                </div>
-                <Button
-                  variant="secondary"
-                  className="h-10 px-4 rounded-md border border-border-muted hover:bg-bg-elevated transition-all"
-                  loading={creatingProfile}
-                  onClick={async () => {
-                    setCreatingProfile(true);
-                    try {
-                      const nextId = `profile-${profileIds.length + 1}`;
-                      const firstProfile = profileIds.length > 0 && engine.profiles
-                        ? engine.profiles[profileIds[0]]
-                        : null;
-                      const base = activeProfile ?? firstProfile ?? {
-                        id: "default",
-                        display_name: "Default",
-                        command: "",
-                        model: "",
-                        args: [],
-                        env: {},
-                        supports_headless: false,
-                        headless_args: [],
-                        ready_signal: null,
-                        execution_mode: "cli",
-                        api_provider: null,
-                        api_base_url: null,
-                        api_key: null,
-                      };
-                      await onUpsertProfile(id, nextId, {
-                        ...base,
-                        id: nextId,
-                        display_name: nextId,
-                      });
-                    } finally {
-                      setCreatingProfile(false);
-                    }
-                  }}
-                >
-                  <span className="font-medium text-xs">
-                    {t("new_profile")}
-                  </span>
-                </Button>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant={isActive ? "default" : "outline"}
-                  loading={switching}
-                  className={cn(
-                    "flex-1 rounded-lg h-9 text-[11px] font-semibold transition-all shadow-none",
-                    isActive ? "bg-primary-500 hover:bg-primary-600 text-white" : "border-border-muted hover:bg-bg-elevated text-text-muted hover:text-text-main",
-                  )}
-                  onClick={async () => {
-                    setSwitching(true);
-                    try {
-                      await onSwitch(id);
-                    } finally {
-                      setSwitching(false);
-                    }
-                  }}
-                  disabled={isActive}
-                >
-                  {isActive ? t("active_label") : t("set_active")}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  loading={preflighting}
-                  className="flex-1 rounded-lg h-9 text-[11px] font-semibold border-border-muted hover:bg-bg-elevated text-text-muted hover:text-text-main transition-colors shadow-none"
-                  onClick={async () => {
-                    setPreflighting(true);
-                    try {
-                      await onPreflight(id);
-                    } finally {
-                      setPreflighting(false);
-                    }
-                  }}
-                >
-                  {t("check")}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="w-9 h-9 p-0 rounded-lg border border-border-muted/50 bg-bg-surface hover:bg-bg-elevated transition-colors shadow-none text-text-muted hover:text-text-main"
-                  onClick={() => startEdit(activeProfileId)}
-                >
-                  <Edit3 size={15} />
-                </Button>
-              </div>
-            </div>
-          </>
-        ) : (
-          <div className="space-y-4 pt-2">
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-text-main mb-1.5 block">
-                {t("command")}
-              </label>
-              <Input
-                value={draft.command}
-                onChange={(e) =>
-                  setDraft((prev) =>
-                    prev ? { ...prev, command: e.target.value } : prev,
-                  )
-                }
-                className="bg-bg-base border-border-muted rounded-md h-10 focus:ring-primary-500/20"
-              />
-            </div>
-
-            <div className="grid grid-cols-[1fr_auto] gap-3 items-end">
-              <div className="space-y-1.5 flex-1">
-                <label className="text-xs font-semibold text-text-main mb-1.5 block">
-                  {t("active_profile")}
-                </label>
-                <Select
-                  value={modelSelectValue}
-                  options={[
-                    { value: "", label: t("no_model") },
-                    ...modelOptions.map((m) => ({ value: m, label: m })),
-                    { value: "__custom__", label: t("custom_model") },
-                  ]}
-                  onChange={(val) =>
-                    setDraft((prev) =>
-                      prev
-                        ? {
-                            ...prev,
-                            model:
-                              val === "__custom__"
-                                ? prev.model || ""
-                                : val,
-                          }
-                        : prev,
-                    )
-                  }
-                  className="bg-bg-base border-border-muted rounded-md h-10 focus:ring-primary-500/20"
-                />
-              </div>
-              <Button
-                size="icon"
-                variant="outline"
-                className="w-10 h-10 rounded-md border-border-muted hover:border-primary-500/40"
-                loading={loadingModels}
-                onClick={() => void onFetchModels(id, { force: true })}
-              >
-                <RefreshCcw
-                  size={16}
-                  className={cn(loadingModels && "animate-spin")}
-                />
-              </Button>
-            </div>
-
-            {modelSelectValue === "__custom__" && (
-              <Input
-                value={draft.model ?? ""}
-                onChange={(e) =>
-                  setDraft((prev) =>
-                    prev ? { ...prev, model: e.target.value } : prev,
-                  )
-                }
-                placeholder={t("model_custom_placeholder")}
-                className="bg-bg-base border-border-muted rounded-md h-10"
-              />
-            )}
-
-            <div className="grid grid-cols-2 gap-4">
+      {/* Editing Drawer Inline */}
+      {draft && (
+        <div className="px-16 pb-6 pt-2 border-t border-border-muted/5 animate-in slide-in-from-top-2 duration-300">
+           <div className="grid grid-cols-2 gap-x-8 gap-y-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-text-main mb-1.5 block">
-                  {t("args")}
-                </label>
-                <Input
-                  value={argText}
-                  onChange={(e) => setArgText(e.target.value)}
-                  className="bg-bg-base border-border-muted rounded-md h-10"
+                <label className="text-[10px] font-bold text-text-muted/60 uppercase">Base Command</label>
+                <Input 
+                  value={draft.command} 
+                  onChange={e => setDraft({...draft, command: e.target.value})}
+                  className="h-8 rounded-sm bg-bg-elevated/40 text-xs border-border-muted/10"
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-text-main mb-1.5 block">
-                  {t("headless_args")}
-                </label>
-                <Input
-                  value={headlessArgText}
-                  onChange={(e) => setHeadlessArgText(e.target.value)}
-                  className="bg-bg-base border-border-muted rounded-md h-10"
+                <label className="text-[10px] font-bold text-text-muted/60 uppercase">Model Identifier</label>
+                 <div className="flex gap-2">
+                    <Select 
+                      value={draft.model || "__custom__"}
+                      options={[
+                        { value: "", label: "Auto" },
+                        ...modelOptions.map(m => ({ value: m, label: m })),
+                        { value: "__custom__", label: "Custom" }
+                      ]}
+                      onChange={v => setDraft({...draft, model: v === "__custom__" ? draft.model : v})}
+                      className="h-8 rounded-sm bg-bg-elevated/40 text-xs flex-1"
+                    />
+                    <button onClick={() => void onFetchModels(id, { force: true })} className="p-2 bg-bg-elevated/40 rounded-sm border border-border-muted/10 hover:bg-bg-elevated/60">
+                      <RefreshCcw size={10} className={cn(loadingModels && "animate-spin")} />
+                    </button>
+                 </div>
+              </div>
+              <div className="space-y-1.5 col-span-2">
+                <label className="text-[10px] font-bold text-text-muted/60 uppercase">Execution Arguments</label>
+                <Input 
+                  value={argText} 
+                  onChange={e => setArgText(e.target.value)}
+                  className="h-8 rounded-sm bg-bg-elevated/40 text-xs border-border-muted/10"
                 />
               </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-semibold text-text-main mb-1.5 block">
-                {t("execution_mode")}
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  type="button"
-                  variant={(draft.execution_mode || "cli") === "api" ? "default" : "outline"}
-                  className="h-9 rounded-md text-[10px] font-semibold uppercase"
-                  onClick={() =>
-                    setDraft((prev) =>
-                      prev
-                        ? {
-                            ...prev,
-                            execution_mode: "api",
-                            api_provider: prev.api_provider || "openai-compatible",
-                            api_base_url: prev.api_base_url || "https://api.openai.com/v1",
-                          }
-                        : prev,
-                    )
-                  }
-                >
-                  API
-                </Button>
-                <Button
-                  type="button"
-                  variant={(draft.execution_mode || "cli") === "cli" ? "default" : "outline"}
-                  className="h-9 rounded-md text-[10px] font-semibold uppercase"
-                  onClick={() =>
-                    setDraft((prev) =>
-                      prev
-                        ? {
-                            ...prev,
-                            execution_mode: "cli",
-                          }
-                        : prev,
-                    )
-                  }
-                >
-                  CLI
-                </Button>
+              <div className="space-y-1.5 col-span-2">
+                <label className="text-[10px] font-bold text-text-muted/60 uppercase">Environment Variables</label>
+                <textarea 
+                  value={envText} 
+                  onChange={e => setEnvText(e.target.value)}
+                  className="w-full h-24 p-3 bg-bg-elevated/40 border border-border-muted/10 rounded-sm font-mono text-xs focus:ring-0 outline-none"
+                />
               </div>
-            </div>
-
-            {(draft.execution_mode || "cli") === "api" && (
-              <div className="grid grid-cols-1 gap-3">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-text-main mb-1.5 block">
-                    {t("api_provider")}
-                  </label>
-                  <Select
-                    value={draft.api_provider || "openai-compatible"}
-                    options={[
-                      { value: "openai-compatible", label: "OpenAI-Compatible" },
-                      { value: "anthropic", label: "Anthropic" },
-                    ]}
-                    onChange={(val) =>
-                      setDraft((prev) =>
-                        prev
-                          ? {
-                              ...prev,
-                              api_provider: val as "openai-compatible" | "anthropic",
-                            }
-                          : prev,
-                      )
-                    }
-                    className="bg-bg-base border-border-muted rounded-md h-10"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-text-main mb-1.5 block">
-                    {t("api_base_url")}
-                  </label>
-                  <Input
-                    value={draft.api_base_url || ""}
-                    onChange={(e) =>
-                      setDraft((prev) =>
-                        prev
-                          ? {
-                              ...prev,
-                              api_base_url: e.target.value,
-                            }
-                          : prev,
-                      )
-                    }
-                    placeholder="https://api.openai.com/v1"
-                    className="bg-bg-base border-border-muted rounded-md h-10"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-text-main mb-1.5 block">
-                    {t("api_key")}
-                  </label>
-                  <Input
-                    type="password"
-                    value={draft.api_key || ""}
-                    onChange={(e) =>
-                      setDraft((prev) =>
-                        prev
-                          ? {
-                              ...prev,
-                              api_key: e.target.value,
-                            }
-                          : prev,
-                      )
-                    }
-                    placeholder="sk-..."
-                    className="bg-bg-base border-border-muted rounded-md h-10"
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-text-main mb-1.5 block">
-                {t("env")}
-              </label>
-              <textarea
-                className="w-full min-h-[100px] rounded-md border border-border-muted bg-bg-base px-4 py-3 text-xs font-mono focus:ring-2 focus:ring-primary-500/20 outline-none transition-all"
-                value={envText}
-                onChange={(e) => setEnvText(e.target.value)}
-                placeholder="KEY=VALUE"
-              />
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <Button
-                variant="default"
-                className="flex-1 rounded-md font-bold"
-                onClick={() => void commitEdit()}
-                loading={saving}
-              >
-                <Save size={16} className="mr-2" />
-                {t("save")}
+           </div>
+           <div className="flex gap-2 mt-6">
+              <Button size="sm" className="h-8 rounded-sm bg-primary-500 text-white font-black text-[10px] px-6" onClick={commitEdit} loading={saving}>
+                <Save size={12} className="mr-2" /> Save Config
               </Button>
-              <Button
-                variant="outline"
-                className="flex-1 rounded-md font-bold"
-                onClick={stopEdit}
-              >
-                {t("cancel")}
-              </Button>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+              <Button size="sm" variant="ghost" className="h-8 rounded-sm text-text-muted text-[10px]" onClick={stopEdit}>Cancel</Button>
+           </div>
+        </div>
+      )}
+    </div>
   );
 }
