@@ -1,11 +1,10 @@
 use crate::api_provider;
 use crate::core::events::StringStream;
-use crate::workflow::types::{ChatApiMessage, TokenEstimate, VerificationSummary};
+use crate::workflow::types::{ChatApiMessage, VerificationSummary};
 use futures::Future;
 use std::pin::Pin;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
-use tokio::io::AsyncReadExt;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone)]
@@ -33,7 +32,6 @@ pub struct CliChatOutput {
 }
 
 pub trait MaestroEngine: Send + Sync {
-    fn estimate_tokens(&self, messages: &[ChatApiMessage]) -> TokenEstimate;
     fn run_api_chat<'a>(
         &'a self,
         request: ApiChatRequest,
@@ -133,46 +131,133 @@ fn extract_verification_summary(output: &str) -> Option<VerificationSummary> {
     })
 }
 
+use tokio::io::{AsyncBufReadExt, BufReader};
+
 async fn forward_output<R>(reader: R, on_data: Arc<dyn StringStream>, aggregate: Arc<Mutex<String>>)
 where
     R: tokio::io::AsyncRead + Unpin,
 {
-    let mut stream = reader;
-    let mut buffer = vec![0_u8; 4096];
+    let mut stream = BufReader::new(reader);
+    let mut line_buf = String::new();
+    let mut is_json_stream = false;
+    let mut json_detected = false;
+    let mut in_thinking = false;
+
     loop {
-        match stream.read(&mut buffer).await {
+        line_buf.clear();
+        match stream.read_line(&mut line_buf).await {
             Ok(0) => break,
-            Ok(size) => {
-                let chunk = String::from_utf8_lossy(&buffer[..size]).to_string();
-                {
-                    let mut text = aggregate.lock().expect("chat aggregate lock poisoned");
-                    text.push_str(&chunk);
-                    if text.len() > 1_500_000 {
-                        let drop_prefix = text.len() - 1_500_000;
-                        text.drain(..drop_prefix);
+            Ok(_) => {
+                let chunk = line_buf.clone();
+                if !json_detected {
+                    let trimmed = chunk.trim();
+                    if trimmed.starts_with("{\"type\":") {
+                        is_json_stream = true;
                     }
+                    json_detected = true;
                 }
-                if on_data.send_string(chunk).is_err() {
-                    break;
+
+                if is_json_stream {
+                    let trimmed = chunk.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                        let ty = v.pointer("/type").and_then(|t| t.as_str()).unwrap_or("");
+                            let text_to_emit = if ty == "thinking" {
+                            let subtype = v.pointer("/subtype").and_then(|s| s.as_str()).unwrap_or("");
+                            if subtype == "completed" {
+                                if in_thinking {
+                                    in_thinking = false;
+                                    Some("\n</think>\n\n".to_string())
+                                } else { None }
+                            } else {
+                                let t = v.pointer("/text").and_then(|t| t.as_str()).unwrap_or("");
+                                if !in_thinking {
+                                    in_thinking = true;
+                                    Some(format!("<think>\n{t}"))
+                                } else {
+                                    Some(t.to_string())
+                                }
+                            }
+                        } else if ty == "assistant" {
+                            if in_thinking {
+                                in_thinking = false;
+                                let _ = on_data.send_string("\n</think>\n\n".to_string());
+                            }
+                            if let Some(arr) = v.pointer("/message/content").and_then(|c| c.as_array()) {
+                                if let Some(first) = arr.first() {
+                                    first.pointer("/text").and_then(|t| t.as_str()).map(|t| t.to_string())
+                                } else {
+                                    None
+                                }
+                            } else if let Some(s) = v.pointer("/message/content").and_then(|c| c.as_str()) {
+                                Some(s.to_string())
+                            } else {
+                                None
+                            }
+                        } else if ty == "result" {
+                            if let Some(usage) = v.pointer("/usage") {
+                                if let (Some(input), Some(output)) = (
+                                    usage.pointer("/inputTokens").and_then(|t| t.as_u64()),
+                                    usage.pointer("/outputTokens").and_then(|t| t.as_u64())
+                                ) {
+                                    let _ = on_data.send_string(format!(
+                                        "\x00TOKEN_USAGE:{{\"approx_input_tokens\":{},\"approx_output_tokens\":{}}}",
+                                        input, output
+                                    ));
+                                }
+                            }
+                            None
+                        } else if ty == "system" || ty == "user" {
+                            None
+                        } else {
+                            // other object, ignore
+                            None
+                        };
+
+                        if let Some(t) = text_to_emit {
+                            {
+                                let mut text = aggregate.lock().expect("chat aggregate lock poisoned");
+                                text.push_str(&t);
+                                if text.len() > 1_500_000 {
+                                    let drop_prefix = text.len() - 1_500_000;
+                                    text.drain(..drop_prefix);
+                                }
+                            }
+                            let _ = on_data.send_string(t);
+                        }
+                    } else {
+                        // Not valid JSON line despite being in JSON stream mode... perhaps stderr mingled.
+                        {
+                            let mut text = aggregate.lock().expect("chat aggregate lock poisoned");
+                            text.push_str(&chunk);
+                        }
+                        let _ = on_data.send_string(chunk);
+                    }
+                } else {
+                    {
+                        let mut text = aggregate.lock().expect("chat aggregate lock poisoned");
+                        text.push_str(&chunk);
+                        if text.len() > 1_500_000 {
+                            let drop_prefix = text.len() - 1_500_000;
+                            text.drain(..drop_prefix);
+                        }
+                    }
+                    if on_data.send_string(chunk).is_err() {
+                        break;
+                    }
                 }
             }
             Err(_) => break,
         }
     }
+    if is_json_stream && in_thinking {
+        let _ = on_data.send_string("\n</think>\n".to_string());
+    }
 }
 
 impl MaestroEngine for DefaultMaestroEngine {
-    fn estimate_tokens(&self, messages: &[ChatApiMessage]) -> TokenEstimate {
-        let input_chars: usize = messages.iter().map(|m| m.content.chars().count()).sum();
-        let approx_input_tokens = (input_chars + 3) / 4;
-        TokenEstimate {
-            input_chars,
-            output_chars: 0,
-            approx_input_tokens,
-            approx_output_tokens: 0,
-        }
-    }
-
     fn run_api_chat<'a>(
         &'a self,
         request: ApiChatRequest,

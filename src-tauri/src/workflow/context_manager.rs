@@ -27,7 +27,7 @@ struct PersistedMessage {
 }
 
 fn estimate_tokens_from_chars(chars: usize) -> usize {
-    (chars + 3) / 4
+    chars.div_ceil(4)
 }
 
 fn sanitize_messages(messages: Vec<ChatApiMessage>) -> Vec<ChatApiMessage> {

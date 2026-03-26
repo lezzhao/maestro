@@ -88,22 +88,9 @@ pub struct WorkspaceUpdateRequest {
     pub settings: Option<String>,
 }
 
-// ── DB helpers ─────────────────────────────────────────────────────────
+// ── DB helpers (shared from task_repository) ──────────────────────────
 
-fn db_err(e: impl std::fmt::Display) -> CoreError {
-    CoreError::Db {
-        message: e.to_string(),
-    }
-}
-
-fn sqlite_datetime_to_ms(s: &str) -> i64 {
-    if s.is_empty() {
-        return 0;
-    }
-    chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
-        .map(|dt| dt.and_utc().timestamp_millis())
-        .unwrap_or(0)
-}
+use crate::task_repository::{db_err, sqlite_datetime_to_ms};
 
 /// Ensure workspaces table exists.
 pub fn ensure_workspace_table(conn: &rusqlite::Connection) -> Result<(), CoreError> {
@@ -498,6 +485,7 @@ mod tests {
             spec_provider: Some("bmad".to_string()),
             spec_mode: None,
             spec_target_ide: None,
+            settings: None,
         };
         let ws = create_workspace(&db_path, &req).expect("create");
         assert_eq!(ws.name, "My Project");
@@ -522,6 +510,7 @@ mod tests {
             spec_provider: None,
             spec_mode: None,
             spec_target_ide: None,
+            settings: None,
         };
         let ws = create_workspace(&db_path, &req).expect("create");
 
@@ -536,6 +525,7 @@ mod tests {
             spec_provider: None,
             spec_mode: None,
             spec_target_ide: None,
+            settings: None,
         };
         let updated = update_workspace(&db_path, &update).expect("update");
         assert_eq!(updated.name, "Updated");
@@ -557,6 +547,7 @@ mod tests {
             spec_provider: None,
             spec_mode: None,
             spec_target_ide: None,
+            settings: None,
         };
         let ws = create_workspace(&db_path, &req).expect("create workspace");
 

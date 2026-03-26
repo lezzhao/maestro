@@ -18,7 +18,7 @@ pub struct CaptureResult {
 }
 
 fn compact_output(text: &str, max_chars: usize) -> String {
-    let trimmed = text.trim().replace('\n', " ").replace('\r', " ");
+    let trimmed = text.trim().replace(['\n', '\r'], " ");
     if trimmed.chars().count() <= max_chars {
         return trimmed;
     }

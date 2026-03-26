@@ -7,7 +7,7 @@ use chrono::NaiveDateTime;
 use std::path::Path;
 
 /// Parse SQLite DATETIME string ("YYYY-MM-DD HH:MM:SS") to Unix timestamp in milliseconds.
-fn sqlite_datetime_to_ms(s: &str) -> i64 {
+pub(crate) fn sqlite_datetime_to_ms(s: &str) -> i64 {
     if s.is_empty() {
         return 0;
     }
@@ -16,7 +16,7 @@ fn sqlite_datetime_to_ms(s: &str) -> i64 {
         .unwrap_or(0)
 }
 
-fn db_err(e: impl std::fmt::Display) -> CoreError {
+pub(crate) fn db_err(e: impl std::fmt::Display) -> CoreError {
     CoreError::Db {
         message: e.to_string(),
     }
@@ -79,11 +79,25 @@ fn ensure_settings_column(conn: &rusqlite::Connection) -> Result<(), CoreError> 
     Ok(())
 }
 
+/// Ensure workspace_id column exists (for workspace association).
+fn ensure_workspace_id_column(conn: &rusqlite::Connection) -> Result<(), CoreError> {
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name='workspace_id'",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(db_err)?;
+    if count == 0 {
+        conn.execute("ALTER TABLE tasks ADD COLUMN workspace_id TEXT", [])
+            .map_err(db_err)?;
+    }
+    Ok(())
+}
+
 /// Ensure tasks and state_transitions tables exist.
+/// Migration columns are checked only AFTER table creation (for existing DBs).
 pub fn ensure_tables(conn: &rusqlite::Connection) -> Result<(), CoreError> {
-    ensure_profile_id_column(conn)?;
-    ensure_runtime_snapshot_id_column(conn)?;
-    ensure_settings_column(conn)?;
     conn.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS tasks (
@@ -94,6 +108,8 @@ pub fn ensure_tables(conn: &rusqlite::Connection) -> Result<(), CoreError> {
             current_state TEXT NOT NULL,
             workspace_boundary TEXT NOT NULL,
             profile_id TEXT,
+            workspace_id TEXT,
+            settings TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
@@ -127,12 +143,16 @@ pub fn ensure_tables(conn: &rusqlite::Connection) -> Result<(), CoreError> {
         "#,
     )
     .map_err(db_err)?;
+    // Migration: add columns for existing DBs that predate these fields
     ensure_profile_id_column(conn)?;
     ensure_runtime_snapshot_id_column(conn)?;
+    ensure_settings_column(conn)?;
+    ensure_workspace_id_column(conn)?;
     Ok(())
 }
 
 /// Insert a state transition record.
+#[allow(clippy::too_many_arguments)]
 pub fn insert_state_transition(
     conn: &rusqlite::Connection,
     transition_id: &str,
@@ -185,11 +205,10 @@ pub struct CreateTaskResult {
     pub id: String,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
-    pub settings: Option<String>,
-    pub workspace_id: Option<String>,
 }
 
 /// Create a new task in the database. Returns the created task id and timestamps.
+#[allow(clippy::too_many_arguments)]
 pub fn create_task(
     db_path: &Path,
     title: &str,
@@ -218,8 +237,6 @@ pub fn create_task(
         id: id.clone(),
         created_at_ms: now_ms,
         updated_at_ms: now_ms,
-        workspace_id: workspace_id.map(String::from),
-        settings: settings.map(String::from),
     })
 }
 
@@ -313,41 +330,7 @@ pub fn update_task_runtime_snapshot(
     Ok(())
 }
 
-/// Get a single task by id from DB.
-#[allow(dead_code)]
-pub fn get_task_by_id(db_path: &Path, task_id: &str) -> Result<Option<TaskRecordPayload>, CoreError> {
-    let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
-    ensure_tables(&conn)?;
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, title, description, engine_id, current_state, workspace_boundary, profile_id, created_at, updated_at, runtime_snapshot_id, settings, workspace_id FROM tasks WHERE id = ?1",
-        )
-        .map_err(db_err)?;
-    let mut rows = stmt
-        .query(rusqlite::params![task_id])
-        .map_err(db_err)?;
-    if let Some(row) = rows.next().map_err(db_err)? {
-        let created_at_str: String = row.get(7).unwrap_or_default();
-        let updated_at_str: String = row.get(8).unwrap_or_default();
-        let payload = TaskRecordPayload {
-            id: row.get(0).map_err(db_err)?,
-            title: row.get(1).map_err(db_err)?,
-            description: row.get(2).map_err(db_err)?,
-            engine_id: row.get(3).map_err(db_err)?,
-            current_state: row.get(4).map_err(db_err)?,
-            workspace_boundary: row.get(5).map_err(db_err)?,
-            profile_id: row.get::<_, Option<String>>(6).ok().flatten(),
-            created_at: sqlite_datetime_to_ms(&created_at_str),
-            updated_at: sqlite_datetime_to_ms(&updated_at_str),
-            runtime_snapshot_id: row.get::<_, Option<String>>(9).ok().flatten(),
-            settings: row.get::<_, Option<String>>(10).ok().flatten(),
-            workspace_id: row.get::<_, Option<String>>(11).ok().flatten(),
-        };
-        Ok(Some(payload))
-    } else {
-        Ok(None)
-    }
-}
+// get_task_by_id removed: use get_task_record instead (identical functionality).
 
 /// List all tasks from DB.
 pub fn list_tasks(db_path: &Path) -> Result<Vec<TaskRecordPayload>, CoreError> {

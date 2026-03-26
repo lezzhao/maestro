@@ -3,8 +3,6 @@
 /// Default engine id when no engines are configured (matches frontend DEFAULT_ENGINE_ID).
 pub const DEFAULT_ENGINE_ID: &str = "cursor";
 
-/// Default profile id when engine has no profiles.
-pub const DEFAULT_PROFILE_ID: &str = "default";
 
 /// Default target IDE for spec injection.
 pub const DEFAULT_TARGET_IDE: &str = "cursor";

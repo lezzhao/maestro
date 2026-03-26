@@ -29,7 +29,7 @@ pub async fn engine_preflight_core(
         .ok_or_else(|| format!("engine not found: {engine_id}"))?;
     let profile = engine.active_profile();
 
-    let command_exists = which::which(&profile.command()).is_ok();
+    let command_exists = which::which(profile.command()).is_ok();
     if !command_exists {
         return Ok(EnginePreflightResult {
             engine_id,

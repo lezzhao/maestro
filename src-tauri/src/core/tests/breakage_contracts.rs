@@ -40,9 +40,10 @@ fn create_test_config() -> AppConfig {
     let mut engines = BTreeMap::new();
     engines.insert("eng1".to_string(), engine);
 
-    let mut cfg = AppConfig::default();
-    cfg.engines = engines;
-    cfg
+    AppConfig {
+        engines,
+        ..Default::default()
+    }
 }
 
 // 1. 验证 Task 无 profile_id 时使用 engine 的第一个 profile 解析（迁移回退已移除）
@@ -51,7 +52,7 @@ fn breakage_contract_task_without_profile_id_uses_first_profile() {
     let (_dir, db_path) = temp_db_path();
     let cfg = create_test_config();
 
-    let task_id = task_state::create_task(&db_path, "Task", "", "eng1", "{}", None)
+    let task_id = task_state::create_task(&db_path, "Task", "", "eng1", "{}", None, None, None)
         .expect("create_task")
         .id;
 
@@ -75,7 +76,7 @@ fn breakage_contract_binding_tamper_invalidates_snapshot() {
     let (_dir, db_path) = temp_db_path();
     let cfg = create_test_config();
     
-    let task_id = task_state::create_task(&db_path, "Task", "", "eng1", "{}", Some("default"))
+    let task_id = task_state::create_task(&db_path, "Task", "", "eng1", "{}", Some("default"), None, None)
         .expect("create_task")
         .id;
 
@@ -102,7 +103,7 @@ fn breakage_contract_old_snapshot_will_not_leak_to_new_binding() {
     let (_dir, db_path) = temp_db_path();
     let cfg = create_test_config();
     
-    let task_id = task_state::create_task(&db_path, "Task", "", "eng1", "{}", Some("default"))
+    let task_id = task_state::create_task(&db_path, "Task", "", "eng1", "{}", Some("default"), None, None)
         .expect("create_task")
         .id;
 
@@ -140,6 +141,7 @@ fn breakage_contract_resolved_from_json_snake_case() {
         ready_signal: None,
         exit_command: None,
         exit_timeout_ms: None,
+        settings: None,
         resolved_from: RuntimeResolvedFrom::ConfigFallback,
     };
     let json = serde_json::to_value(&ctx).expect("serialize");
@@ -167,6 +169,7 @@ fn breakage_contract_resolved_runtime_context_json_has_execution_fields() {
         ready_signal: Some(">".to_string()),
         exit_command: Some("ctrl-c".to_string()),
         exit_timeout_ms: Some(crate::constants::DEFAULT_EXIT_TIMEOUT_MS),
+        settings: None,
         resolved_from: RuntimeResolvedFrom::Snapshot,
     };
     let json = serde_json::to_value(&ctx).expect("serialize");

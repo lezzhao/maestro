@@ -51,16 +51,7 @@ pub struct ResolvedExecutionConfig {
     pub settings: Option<String>,
 }
 
-/// Layer 2: Tracking metadata. Not part of execution input; used for audit and binding.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ResolvedRuntimeMetadata {
-    pub task_id: String,
-    pub engine_id: String,
-    pub profile_id: Option<String>,
-    pub snapshot_id: Option<String>,
-    pub resolved_from: RuntimeResolvedFrom,
-}
+
 
 /// Layer 3: Event/frontend projection. Composed from metadata + execution.
 /// ResolvedRuntimeContext is the flat backward-compat form; do not add new fields here.
@@ -89,32 +80,9 @@ pub struct ResolvedRuntimeContext {
 }
 
 impl ResolvedRuntimeContext {
-    /// Build from metadata + execution layers. Use this pattern for new code.
-    pub fn from_layers(metadata: ResolvedRuntimeMetadata, execution: ResolvedExecutionConfig) -> Self {
-        Self {
-            task_id: metadata.task_id,
-            engine_id: metadata.engine_id,
-            profile_id: metadata.profile_id,
-            snapshot_id: metadata.snapshot_id,
-            command: execution.command,
-            args: execution.args,
-            env: execution.env,
-            execution_mode: execution.execution_mode,
-            model: execution.model,
-            api_provider: execution.api_provider,
-            api_base_url: execution.api_base_url,
-            api_key: execution.api_key,
-            supports_headless: execution.supports_headless,
-            headless_args: execution.headless_args,
-            ready_signal: execution.ready_signal,
-            exit_command: execution.exit_command,
-            exit_timeout_ms: execution.exit_timeout_ms,
-            resolved_from: metadata.resolved_from,
-            settings: execution.settings,
-        }
-    }
 
-    /// Extract execution config for snapshot freeze. Excludes api_key from frozen payload.
+    /// Extract execution config. Note: includes api_key here; the snapshot freeze
+    /// (to_snapshot_payload) is responsible for excluding api_key.
     pub fn to_execution_config(&self) -> ResolvedExecutionConfig {
         ResolvedExecutionConfig {
             command: self.command.clone(),
@@ -131,17 +99,6 @@ impl ResolvedRuntimeContext {
             exit_command: self.exit_command.clone(),
             exit_timeout_ms: self.exit_timeout_ms,
             settings: self.settings.clone(),
-        }
-    }
-
-    /// Extract metadata for tracking.
-    pub fn to_metadata(&self) -> ResolvedRuntimeMetadata {
-        ResolvedRuntimeMetadata {
-            task_id: self.task_id.clone(),
-            engine_id: self.engine_id.clone(),
-            profile_id: self.profile_id.clone(),
-            snapshot_id: self.snapshot_id.clone(),
-            resolved_from: self.resolved_from.clone(),
         }
     }
 }
@@ -226,19 +183,8 @@ pub struct ResolvedTaskRuntimeContext {
 
 /// Resolve task runtime context from DB + config.
 /// - If task has runtime_snapshot_id, loads from snapshot table (reproducibility)
-/// - Else: reads task.engine_id, task.profile_id; fallback to engine.active_profile_id (migration-only).
-///   REMOVAL: See docs/MIGRATION_FALLBACK_REMOVAL.md.
-/// - When FallbackProfile is hit, solidifies by writing profile_id back to task (except when called from ensure).
+/// - Else: reads task.engine_id, task.profile_id; fallback to first profile in engine.
 pub fn resolve_task_runtime_context(
-    db_path: &Path,
-    task_id: &str,
-    cfg: &AppConfig,
-) -> Result<ResolvedRuntimeContext, CoreError> {
-    resolve_task_runtime_context_inner(db_path, task_id, cfg)
-}
-
-/// Like resolve_task_runtime_context. Used by ensure_runtime_snapshot.
-pub(crate) fn resolve_task_runtime_context_no_solidify(
     db_path: &Path,
     task_id: &str,
     cfg: &AppConfig,
@@ -426,7 +372,7 @@ pub fn create_snapshot_and_pin_task(
         profile_id: Some(profile_id.to_string()),
         payload_json,
         reason: "manual_freeze".to_string(),
-        created_at: "".to_string(), // Will be default by DB
+        created_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
     };
     crate::snapshot_repository::insert_runtime_snapshot(&db_path, &snapshot)?;
     task_state::update_task_runtime_snapshot(&db_path, task_id, Some(&snapshot_id))?;
@@ -478,6 +424,8 @@ mod tests {
             "eng1",
             "{}",
             Some("profile_b"),
+            None,
+            None,
         )
             .expect("create_task")
             .id;
@@ -496,8 +444,10 @@ mod tests {
         };
         let mut engines = BTreeMap::new();
         engines.insert("eng1".to_string(), engine);
-        let mut cfg = AppConfig::default();
-        cfg.engines = engines;
+        let cfg = AppConfig {
+            engines,
+            ..Default::default()
+        };
 
         let resolved = resolve_task_runtime_context(&db_path, &task_id, &cfg).expect("resolve");
         assert_eq!(resolved.engine_id, "eng1");
@@ -507,7 +457,7 @@ mod tests {
     #[test]
     fn resolve_falls_back_to_active_profile_when_task_profile_empty() {
         let (_dir, db_path) = temp_db_path();
-        let task_id = task_state::create_task(&db_path, "Task", "", "eng1", "{}", None)
+        let task_id = task_state::create_task(&db_path, "Task", "", "eng1", "{}", None, None, None)
             .expect("create_task")
             .id;
 
@@ -524,8 +474,10 @@ mod tests {
         };
         let mut engines = BTreeMap::new();
         engines.insert("eng1".to_string(), engine);
-        let mut cfg = AppConfig::default();
-        cfg.engines = engines;
+        let cfg = AppConfig {
+            engines,
+            ..Default::default()
+        };
 
         let resolved = resolve_task_runtime_context(&db_path, &task_id, &cfg).expect("resolve");
         assert_eq!(resolved.profile_id.as_deref(), Some("default"));
@@ -534,7 +486,7 @@ mod tests {
     #[test]
     fn resolve_uses_snapshot_when_task_has_runtime_snapshot_id() {
         let (_dir, db_path) = temp_db_path();
-        let task_id = task_state::create_task(&db_path, "Task", "", "eng1", "{}", Some("profile_a"))
+        let task_id = task_state::create_task(&db_path, "Task", "", "eng1", "{}", Some("profile_a"), None, None)
             .expect("create_task")
             .id;
 
@@ -585,8 +537,10 @@ mod tests {
         };
         let mut engines = BTreeMap::new();
         engines.insert("eng1".to_string(), engine);
-        let mut cfg = AppConfig::default();
-        cfg.engines = engines;
+        let cfg = AppConfig {
+            engines,
+            ..Default::default()
+        };
 
         let resolved = resolve_task_runtime_context(&db_path, &task_id, &cfg).expect("resolve");
         assert_eq!(resolved.profile_id.as_deref(), Some("profile_a"));
@@ -611,8 +565,10 @@ mod tests {
         };
         let mut engines = BTreeMap::new();
         engines.insert("eng1".to_string(), engine);
-        let mut cfg = AppConfig::default();
-        cfg.engines = engines;
+        let cfg = AppConfig {
+            engines,
+            ..Default::default()
+        };
 
         let err = resolve_task_runtime_context(&db_path, "nonexistent", &cfg).unwrap_err();
         assert!(matches!(err, CoreError::NotFound { resource, .. } if resource == "task"));

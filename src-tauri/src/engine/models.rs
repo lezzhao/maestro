@@ -110,7 +110,7 @@ pub async fn engine_list_models_core(
 
     let mut models = Vec::new();
     let mut notes = String::new();
-    if which::which(&profile.command()).is_ok() {
+    if which::which(profile.command()).is_ok() {
         for cmd in model_list_commands(&engine.id, &profile.command()) {
             let result = run_capture_shell(&cmd, 10_000).await;
             let parsed = parse_models_from_text(&format!("{}\n{}", result.stdout, result.stderr));

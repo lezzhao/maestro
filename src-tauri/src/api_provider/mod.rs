@@ -14,6 +14,7 @@ pub use sse::AnthropicEvent;
 
 pub trait ApiProvider: Send + Sync {
     fn id(&self) -> &str;
+    #[allow(clippy::too_many_arguments)]
     fn stream_chat<'a>(
         &'a self,
         client: &'a Client,
@@ -78,9 +79,13 @@ async fn stream_openai_compatible(
 
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
+    let mut is_reasoning = false;
     loop {
         tokio::select! {
             _ = cancel_token.cancelled() => {
+                if is_reasoning {
+                    let _ = on_data.send_string("\n</think>\n".to_string());
+                }
                 return Err("请求已取消".to_string());
             }
             next = stream.next() => {
@@ -88,17 +93,38 @@ async fn stream_openai_compatible(
                     Some(Ok(bytes)) => {
                         let chunk = String::from_utf8_lossy(&bytes);
                         buffer.push_str(&chunk);
-                        while let Some((content, done)) = sse::parse_openai_line(&mut buffer) {
+                        while let Some((content, reasoning, done)) = sse::parse_openai_line(&mut buffer) {
                             if done {
+                                if is_reasoning {
+                                    let _ = on_data.send_string("\n</think>\n".to_string());
+                                }
                                 return Ok(());
                             }
-                            if let Some(text) = content {
-                                on_data.send_string(text)?;
+                            if let Some(r_text) = reasoning {
+                                if !is_reasoning {
+                                    is_reasoning = true;
+                                    on_data.send_string(format!("<think>\n{r_text}"))?;
+                                } else {
+                                    on_data.send_string(r_text)?;
+                                }
+                            }
+                            if let Some(c_text) = content {
+                                if is_reasoning {
+                                    is_reasoning = false;
+                                    on_data.send_string(format!("\n</think>\n{c_text}"))?;
+                                } else {
+                                    on_data.send_string(c_text)?;
+                                }
                             }
                         }
                     }
                     Some(Err(e)) => return Err(format!("读取流失败: {e}")),
-                    None => return Ok(()),
+                    None => {
+                        if is_reasoning {
+                            let _ = on_data.send_string("\n</think>\n".to_string());
+                        }
+                        return Ok(());
+                    }
                 }
             }
         }

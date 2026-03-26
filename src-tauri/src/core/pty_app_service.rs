@@ -1,25 +1,17 @@
 use super::error;
 use super::MaestroCore;
-use std::collections::HashMap;
 use tauri::ipc::Channel;
-use crate::pty::PtySessionInfo;
+use crate::pty::{PtySessionInfo, PtySpawnOptions};
 
 impl MaestroCore {
     pub fn pty_spawn(
         &self,
-        session_id: String,
-        task_id: Option<String>,
-        file: String,
-        args: Vec<String>,
-        cwd: Option<String>,
-        env: HashMap<String, String>,
-        cols: u16,
-        rows: u16,
+        options: PtySpawnOptions,
         on_data: Channel<String>,
     ) -> Result<PtySessionInfo, error::CoreError> {
-        super::pty_spawn_guard::validate_pty_spawn(&self.config.get(), &file, &args)?;
+        super::pty_spawn_guard::validate_pty_spawn(&self.config.get(), &options.file, &options.args)?;
         self.pty_state
-            .spawn_session(session_id, task_id, file, args, cwd, env, cols, rows, on_data)
+            .spawn_session(options, on_data)
             .map_err(error::CoreError::from)
     }
 

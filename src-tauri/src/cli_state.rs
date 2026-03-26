@@ -42,7 +42,7 @@ fn cli_log_dir(io: &crate::workspace_io::WorkspaceIo) -> PathBuf {
     io.resolve(".maestro-cli/logs").unwrap_or_else(|_| PathBuf::from(".maestro-cli/logs"))
 }
 
-fn session_log_path(log_dir: &PathBuf, session_id: &str) -> PathBuf {
+fn session_log_path(log_dir: &std::path::Path, session_id: &str) -> PathBuf {
     let normalized: String = session_id
         .chars()
         .map(|ch| {
@@ -58,7 +58,7 @@ fn session_log_path(log_dir: &PathBuf, session_id: &str) -> PathBuf {
 
 fn map_run_records(
     records: &[Execution],
-    log_dir: &PathBuf,
+    log_dir: &std::path::Path,
     engine_filter: Option<&str>,
 ) -> Vec<CliSessionListItem> {
     let mut items: Vec<CliSessionListItem> = records
@@ -221,12 +221,10 @@ pub fn cli_reconcile_active_sessions(
             .as_millis() as i64;
         let mut updated = Vec::new();
         for mut item in run_records {
-            if item.status == ExecutionStatus::Running {
-                if now_ms - item.updated_at > 12 * 60 * 60 * 1000 {
-                    item.status = ExecutionStatus::Failed;
-                    item.updated_at = now_ms;
-                    reconciled += 1;
-                }
+            if item.status == ExecutionStatus::Running && now_ms - item.updated_at > 12 * 60 * 60 * 1000 {
+                item.status = ExecutionStatus::Failed;
+                item.updated_at = now_ms;
+                reconciled += 1;
             }
             updated.push(item);
         }

@@ -43,7 +43,7 @@ fn engine_supports_continue(engine_id: &str) -> bool {
 
 fn builtin_headless_defaults(engine_id: &str) -> Option<Vec<String>> {
     match engine_id {
-        "cursor" => Some(vec!["agent".to_string(), "--print".to_string()]),
+        "cursor" => Some(vec!["agent".to_string(), "--print".to_string(), "--output-format".to_string(), "stream-json".to_string(), "--stream-partial-output".to_string()]),
         "claude" => Some(vec!["-p".to_string()]),
         "gemini" => Some(vec!["-p".to_string()]),
         "opencode" => Some(vec!["run".to_string()]),
@@ -532,7 +532,7 @@ pub fn chat_spawn_core(
             InvokeResponseBody::Raw(bytes) => String::from_utf8_lossy(&bytes).to_string(),
         };
         {
-            let mut buf = output_buf_ch.lock().expect("chat output lock poisoned");
+            let mut buf = output_buf_ch.lock().unwrap_or_else(|e| e.into_inner());
             buf.push_str(&text);
             if buf.len() > 1_000_000 {
                 let drop_prefix = buf.len() - 1_000_000;
@@ -546,18 +546,20 @@ pub fn chat_spawn_core(
     let session_id = uuid::Uuid::new_v4().to_string();
 
     let spawn: PtySessionInfo = pty_state.spawn_session(
-        session_id,
-        request.task_id.clone(),
-        exec.command.clone(),
-        with_model_args(exec.args.clone(), &resolved.engine_id, &exec.model.clone().unwrap_or_default()),
-        if cfg.project.path.trim().is_empty() {
-            None
-        } else {
-            Some(cfg.project.path.clone())
+        crate::pty::PtySpawnOptions {
+            session_id,
+            task_id: request.task_id.clone(),
+            file: exec.command.clone(),
+            args: with_model_args(exec.args.clone(), &resolved.engine_id, &exec.model.clone().unwrap_or_default()),
+            cwd: if cfg.project.path.trim().is_empty() {
+                None
+            } else {
+                Some(cfg.project.path.clone())
+            },
+            env: exec.env.clone().into_iter().collect(),
+            cols: request.cols.unwrap_or(120).clamp(60, 240),
+            rows: request.rows.unwrap_or(36).clamp(20, 80),
         },
-        exec.env.clone().into_iter().collect(),
-        request.cols.unwrap_or(120).clamp(60, 240),
-        request.rows.unwrap_or(36).clamp(20, 80),
         bridge,
     ).map_err(|e| CoreError::ExecutionFailed { id: "chat_spawn".to_string(), reason: e })?;
 
@@ -567,7 +569,7 @@ pub fn chat_spawn_core(
             while Instant::now() < deadline {
                 let snap = output_buf
                     .lock()
-                    .expect("chat output lock poisoned")
+                    .unwrap_or_else(|e| e.into_inner())
                     .clone();
                 if completion_matched(Some(ready_signal), &snap) {
                     break;

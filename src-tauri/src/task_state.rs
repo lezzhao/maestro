@@ -116,6 +116,7 @@ pub fn delete_task(db_path: &Path, task_id: &str) -> Result<(), CoreError> {
 }
 
 /// Create a new task in the database. Returns the created task id.
+#[allow(clippy::too_many_arguments)]
 pub fn create_task(
     db_path: &Path,
     title: &str,
@@ -188,11 +189,7 @@ pub fn update_task_runtime_snapshot(
     crate::task_repository::update_task_runtime_snapshot(db_path, task_id, snapshot_id)
 }
 
-/// Get a single task by id from DB.
-#[allow(dead_code)]
-pub fn get_task_by_id(db_path: &Path, task_id: &str) -> Result<Option<TaskRecordPayload>, CoreError> {
-    crate::task_repository::get_task_by_id(db_path, task_id)
-}
+// get_task_by_id removed: use task_repository::get_task_record instead (identical functionality).
 
 #[cfg(test)]
 mod tests {

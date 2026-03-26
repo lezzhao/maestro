@@ -251,7 +251,7 @@ fn insert_tree_path(nodes: &mut Vec<FileTreeNode>, parts: &[&str], prefix: &str)
     insert_tree_path(&mut dir_node.children, &parts[1..], &next_path);
 }
 
-fn sort_tree(nodes: &mut Vec<FileTreeNode>) {
+fn sort_tree(nodes: &mut [FileTreeNode]) {
     for node in nodes.iter_mut() {
         if node.is_dir {
             sort_tree(&mut node.children);

@@ -75,7 +75,7 @@ impl MaestroCore {
                 && self
                     .deleted_task_ids
                     .lock()
-                    .expect("deleted_task_ids lock poisoned")
+                    .unwrap_or_else(|e| e.into_inner())
                     .contains(&item.task_id)
             {
                 item.status = crate::core::execution::ExecutionStatus::Failed;

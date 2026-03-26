@@ -1,11 +1,6 @@
 use crate::core::error::CoreError;
+use crate::task_repository::db_err;
 use std::path::Path;
-
-fn db_err(e: impl std::fmt::Display) -> CoreError {
-    CoreError::Db {
-        message: e.to_string(),
-    }
-}
 
 /// Insert a new execution binding.
 pub fn insert_execution_binding(

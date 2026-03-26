@@ -6,17 +6,17 @@ use serde_json::Value;
 /// Parse OpenAI-compatible SSE format: `data: {...}` or `data: [DONE]`.
 /// Returns (content_opt, is_done).
 /// Modifies buffer in place, consuming parsed lines.
-pub fn parse_openai_line(buffer: &mut String) -> Option<(Option<String>, bool)> {
+pub fn parse_openai_line(buffer: &mut String) -> Option<(Option<String>, Option<String>, bool)> {
     let pos = buffer.find('\n')?;
     let line = buffer[..pos].to_string();
     buffer.drain(..=pos);
     let trimmed = line.trim();
     if !trimmed.starts_with("data:") {
-        return Some((None, false));
+        return Some((None, None, false));
     }
     let payload = trimmed.trim_start_matches("data:").trim();
     if payload == "[DONE]" {
-        return Some((None, true));
+        return Some((None, None, true));
     }
     let value: Value = serde_json::from_str(payload).ok()?;
     let text = value
@@ -24,7 +24,13 @@ pub fn parse_openai_line(buffer: &mut String) -> Option<(Option<String>, bool)> 
         .and_then(|v| v.as_str())
         .or_else(|| value.pointer("/choices/0/delta/content/0/text").and_then(|v| v.as_str()));
     let content = text.filter(|s| !s.is_empty()).map(|s| s.to_string());
-    Some((content, false))
+
+    let reasoning_text = value
+        .pointer("/choices/0/delta/reasoning_content")
+        .and_then(|v| v.as_str());
+    let reasoning = reasoning_text.filter(|s| !s.is_empty()).map(|s| s.to_string());
+
+    Some((content, reasoning, false))
 }
 
 /// Parsed Anthropic SSE event (event: + data: lines).
@@ -69,28 +75,6 @@ impl AnthropicEvent {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_openai_line_done() {
-        let mut buf = "data: [DONE]\n".to_string();
-        let (content, done) = parse_openai_line(&mut buf).unwrap();
-        assert!(content.is_none());
-        assert!(done);
-    }
-
-    #[test]
-    fn test_parse_openai_line_content() {
-        let mut buf = r#"data: {"choices":[{"delta":{"content":"Hello"}}]}
-"#.to_string();
-        let (content, done) = parse_openai_line(&mut buf).unwrap();
-        assert_eq!(content.as_deref(), Some("Hello"));
-        assert!(!done);
-    }
-}
-
 /// Parse one line of Anthropic SSE into current event state.
 /// Returns true if a complete event was flushed (empty line separator).
 pub fn parse_anthropic_line(
@@ -111,4 +95,28 @@ pub fn parse_anthropic_line(
         return false;
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_openai_line_done() {
+        let mut buf = "data: [DONE]\n".to_string();
+        let (content, reasoning, done) = parse_openai_line(&mut buf).unwrap();
+        assert!(content.is_none());
+        assert!(reasoning.is_none());
+        assert!(done);
+    }
+
+    #[test]
+    fn test_parse_openai_line_content() {
+        let mut buf = r#"data: {"choices":[{"delta":{"content":"Hello"}}]}
+"#.to_string();
+        let (content, reasoning, done) = parse_openai_line(&mut buf).unwrap();
+        assert_eq!(content.as_deref(), Some("Hello"));
+        assert!(reasoning.is_none());
+        assert!(!done);
+    }
 }

@@ -404,7 +404,7 @@ async fn execute_workflow_step(
                 InvokeResponseBody::Json(s) => s,
                 InvokeResponseBody::Raw(bytes) => String::from_utf8_lossy(&bytes).to_string(),
             };
-            let mut buf = output_buf_ch.lock().expect("workflow output lock poisoned");
+            let mut buf = output_buf_ch.lock().unwrap_or_else(|e| e.into_inner());
             buf.push_str(&text);
             if buf.len() > 1_000_000 {
                 let drop_prefix = buf.len() - 1_000_000;
@@ -415,18 +415,20 @@ async fn execute_workflow_step(
 
         let session_id = uuid::Uuid::new_v4().to_string();
         let spawn = pty_state.spawn_session(
-            session_id,
-            None,
-            resolved.command.clone(),
-            args_for_pty,
-            if cfg.project.path.trim().is_empty() {
-                None
-            } else {
-                Some(cfg.project.path.clone())
+            crate::pty::PtySpawnOptions {
+                session_id,
+                task_id: None,
+                file: resolved.command.clone(),
+                args: args_for_pty,
+                cwd: if cfg.project.path.trim().is_empty() {
+                    None
+                } else {
+                    Some(cfg.project.path.clone())
+                },
+                env: resolved.env.clone().into_iter().collect(),
+                cols: 120,
+                rows: 36,
             },
-            resolved.env.clone().into_iter().collect(),
-            120,
-            36,
             on_data,
         ).map_err(CoreError::from)?;
 
@@ -436,7 +438,7 @@ async fn execute_workflow_step(
             while Instant::now() < ready_deadline {
                 let snap = output_buf
                     .lock()
-                    .expect("workflow output lock poisoned")
+                    .unwrap_or_else(|e| e.into_inner())
                     .clone();
                 if completion_matched(Some(ready_signal), &snap) {
                     break;
@@ -454,7 +456,7 @@ async fn execute_workflow_step(
         while Instant::now() < deadline {
             let snap = output_buf
                 .lock()
-                .expect("workflow output lock poisoned")
+                .unwrap_or_else(|e| e.into_inner())
                 .clone();
             if completion_matched(step.completion_signal.as_deref(), &snap) {
                 matched = true;
@@ -472,7 +474,7 @@ async fn execute_workflow_step(
         let _ = pty_state.kill_session(&spawn.session_id);
         let final_output = output_buf
             .lock()
-            .expect("workflow output lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .clone();
 
         WorkflowStepResult {
@@ -621,7 +623,7 @@ pub async fn workflow_run_core(
     let execution_id = format!("workflow-{workflow_name}-{now_ms}");
 
     // When task_id exists and app is available, ensure execution binding before run
-    if let (Some(ref app_handle), Some(ref task_id)) = (app.as_ref(), request.task_id.as_ref()) {
+    if let (Some(app_handle), Some(task_id)) = (app.as_ref(), request.task_id.as_ref()) {
         if !task_id.is_empty() {
             prepare_execution_binding(app_handle, &execution_id, task_id, cfg)?;
         }

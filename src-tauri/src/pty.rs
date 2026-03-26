@@ -7,6 +7,18 @@ use std::thread;
 use std::time::{Duration, Instant};
 use tauri::{command, ipc::Channel};
 
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+pub struct PtySpawnOptions {
+    pub session_id: String,
+    pub task_id: Option<String>,
+    pub file: String,
+    pub args: Vec<String>,
+    pub cwd: Option<String>,
+    pub env: HashMap<String, String>,
+    pub cols: u16,
+    pub rows: u16,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct PtySessionInfo {
     pub session_id: String,
@@ -31,14 +43,14 @@ pub struct PtyManagerState {
 
 impl PtyManagerState {
     fn add_session(&self, session: Arc<PtySession>) {
-        let mut sessions = self.sessions.write().expect("sessions write lock poisoned");
+        let mut sessions = self.sessions.write().unwrap_or_else(|e| e.into_inner());
         sessions.insert(session.id.clone(), session.clone());
     }
 
     fn get_session(&self, session_id: &str) -> Result<Arc<PtySession>, String> {
         self.sessions
             .read()
-            .expect("sessions read lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .get(session_id)
             .cloned()
             .ok_or_else(|| format!("session not found: {session_id}"))
@@ -47,7 +59,7 @@ impl PtyManagerState {
     fn remove_session(&self, session_id: &str) {
         self.sessions
             .write()
-            .expect("sessions write lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .remove(session_id);
     }
 
@@ -55,7 +67,7 @@ impl PtyManagerState {
         let ids: Vec<String> = self
             .sessions
             .read()
-            .expect("sessions read lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .keys()
             .cloned()
             .collect();
@@ -67,9 +79,9 @@ impl PtyManagerState {
     pub fn cleanup_dead_sessions(&self) -> usize {
         let mut dead_ids = Vec::new();
         {
-            let sessions = self.sessions.read().expect("sessions read lock poisoned");
+            let sessions = self.sessions.read().unwrap_or_else(|e| e.into_inner());
             for (id, session) in sessions.iter() {
-                if let Ok(Some(_)) = session.child.lock().expect("child lock poisoned").try_wait() {
+                if let Ok(Some(_)) = session.child.lock().unwrap_or_else(|e| e.into_inner()).try_wait() {
                     dead_ids.push(id.clone());
                 }
             }
@@ -86,7 +98,7 @@ impl PtyManagerState {
         session
             .writer
             .lock()
-            .expect("writer lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .write_all(data.as_bytes())
             .map_err(|e| format!("write failed: {e}"))?;
         Ok(())
@@ -102,7 +114,7 @@ impl PtyManagerState {
         session
             .master
             .lock()
-            .expect("master lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .resize(PtySize {
                 rows,
                 cols,
@@ -118,7 +130,7 @@ impl PtyManagerState {
     pub fn list_sessions(&self) -> Vec<PtySessionInfo> {
         self.sessions
             .read()
-            .expect("sessions read lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .values()
             .map(|s| PtySessionInfo {
                 session_id: s.id.clone(),
@@ -132,7 +144,7 @@ impl PtyManagerState {
         let ids: Vec<String> = self
             .sessions
             .read()
-            .expect("sessions read lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .values()
             .filter(|session| session.task_id.as_deref() == Some(task_id))
             .map(|session| session.id.clone())
@@ -154,13 +166,13 @@ impl PtyManagerState {
         let session = self
             .sessions
             .read()
-            .expect("sessions read lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .get(session_id)
             .cloned()?;
         let status = session
             .child
             .lock()
-            .expect("child lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .try_wait()
             .ok()
             .flatten();
@@ -171,14 +183,14 @@ impl PtyManagerState {
         let session = self
             .sessions
             .read()
-            .expect("sessions read lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .get(session_id)
             .cloned()
             .ok_or_else(|| format!("session not found: {session_id}"))?;
         session
             .killer
             .lock()
-            .expect("killer lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .kill()
             .map_err(|e| format!("kill failed: {e}"))?;
         self.remove_session(session_id);
@@ -187,32 +199,25 @@ impl PtyManagerState {
 
     pub fn spawn_session(
         &self,
-        session_id: String,
-        task_id: Option<String>,
-        file: String,
-        args: Vec<String>,
-        cwd: Option<String>,
-        env: HashMap<String, String>,
-        cols: u16,
-        rows: u16,
+        options: PtySpawnOptions,
         on_data: Channel<String>,
     ) -> Result<PtySessionInfo, String> {
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
-                rows,
-                cols,
+                rows: options.rows,
+                cols: options.cols,
                 pixel_width: 0,
                 pixel_height: 0,
             })
             .map_err(|e| format!("openpty failed: {e}"))?;
 
-        let mut cmd = CommandBuilder::new(&file);
-        cmd.args(&args);
-        if let Some(cwd) = cwd {
+        let mut cmd = CommandBuilder::new(&options.file);
+        cmd.args(&options.args);
+        if let Some(cwd) = options.cwd {
             cmd.cwd(cwd);
         }
-        for (k, v) in env {
+        for (k, v) in options.env {
             cmd.env(k, v);
         }
 
@@ -234,10 +239,10 @@ impl PtyManagerState {
             .try_clone_reader()
             .map_err(|e| format!("try_clone_reader failed: {e}"))?;
 
-        let session_task_id = task_id.clone();
+        let session_task_id = options.task_id.clone();
         let session = Arc::new(PtySession {
-            id: session_id.clone(),
-            task_id,
+            id: options.session_id.clone(),
+            task_id: options.task_id,
             os_pid,
             master: Mutex::new(pair.master),
             writer: Arc::new(Mutex::new(writer)),
@@ -279,7 +284,7 @@ impl PtyManagerState {
         });
 
         Ok(PtySessionInfo {
-            session_id,
+            session_id: options.session_id,
             os_pid,
             task_id: session_task_id,
         })
@@ -288,20 +293,13 @@ impl PtyManagerState {
 
 #[command]
 pub fn pty_spawn(
-    session_id: String,
-    task_id: Option<String>,
-    file: String,
-    args: Vec<String>,
-    cwd: Option<String>,
-    env: HashMap<String, String>,
-    cols: u16,
-    rows: u16,
+    options: PtySpawnOptions,
     on_data: Channel<String>,
     core_state: tauri::State<'_, crate::core::MaestroCore>,
 ) -> Result<PtySessionInfo, crate::core::error::CoreError> {
     core_state
         .inner()
-        .pty_spawn(session_id, task_id, file, args, cwd, env, cols, rows, on_data)
+        .pty_spawn(options, on_data)
 }
 
 #[command]

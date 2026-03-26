@@ -16,7 +16,6 @@ commands.allow = [
   "pty_resize",
   "pty_kill",
   "pty_kill_all",
-  "pty_active_session",
   "spec_list",
   "spec_inject",
   "spec_remove",

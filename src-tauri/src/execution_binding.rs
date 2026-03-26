@@ -14,20 +14,11 @@
 use crate::config::AppConfig;
 use crate::core::error::CoreError;
 use crate::task_runtime::{
-    resolve_task_runtime_context, resolve_task_runtime_context_no_solidify, ResolvedRuntimeContext,
+    resolve_task_runtime_context, ResolvedRuntimeContext,
     RuntimeSnapshot,
 };
 use crate::task_state::{self, bmad_db_path};
 use tauri::AppHandle;
-
-/// Distinguishes bound (task + snapshot) vs ad-hoc (config fallback) execution.
-/// Bound: reproducible, has execution binding, snapshot frozen.
-/// Adhoc: no task binding, no snapshot, config-only resolution.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExecutionBindingKind {
-    BoundSnapshot,
-    AdhocConfig,
-}
 
 /// Opaque execution preparation result. Workflow/chat consume this without knowing
 /// whether it came from task binding or config resolution.
@@ -36,8 +27,6 @@ pub struct PreparedExecution {
     pub context: ResolvedRuntimeContext,
     /// Set when binding was created (task_id path).
     pub execution_id: Option<String>,
-    /// BoundSnapshot: task-bound, has snapshot; AdhocConfig: config fallback, no binding.
-    pub binding_kind: ExecutionBindingKind,
 }
 
 /// Ensures a runtime snapshot exists for the given task.
@@ -61,10 +50,10 @@ pub fn ensure_runtime_snapshot(
         }
     }
 
-    // Resolve context from config (no solidify: we're creating snapshot, task stays as-is)
-    let ctx = resolve_task_runtime_context_no_solidify(&db_path, task_id, config)?;
+    // Resolve context from config
+    let ctx = resolve_task_runtime_context(&db_path, task_id, config)?;
 
-    // Create snapshot payload from ResolvedExecutionConfig (excludes api_key)
+    // Create snapshot payload from ResolvedExecutionConfig (api_key excluded by to_snapshot_payload)
     let exec_config = ctx.to_execution_config();
     let payload = exec_config.to_snapshot_payload(&ctx.engine_id, ctx.profile_id.as_deref());
 
@@ -72,6 +61,7 @@ pub fn ensure_runtime_snapshot(
         message: format!("serialize payload failed: {e}"),
     })?;
 
+    let now_str = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let snapshot_id = uuid::Uuid::new_v4().to_string();
     let snapshot = RuntimeSnapshot {
         id: snapshot_id.clone(),
@@ -80,7 +70,7 @@ pub fn ensure_runtime_snapshot(
         profile_id: ctx.profile_id.clone(),
         payload_json,
         reason: "first_execution".to_string(),
-        created_at: "".to_string(),
+        created_at: now_str,
     };
 
     crate::snapshot_repository::insert_runtime_snapshot(&db_path, &snapshot)?;
@@ -131,7 +121,6 @@ pub fn resolve_execution(
             return Ok(PreparedExecution {
                 context: ctx,
                 execution_id: Some(execution_id),
-                binding_kind: ExecutionBindingKind::BoundSnapshot,
             });
         }
     }
@@ -139,7 +128,6 @@ pub fn resolve_execution(
     Ok(PreparedExecution {
         context: ctx,
         execution_id: None,
-        binding_kind: ExecutionBindingKind::AdhocConfig,
     })
 }
 
@@ -213,12 +201,13 @@ fn ensure_runtime_snapshot_with_path(
         }
     }
 
-    let ctx = resolve_task_runtime_context_no_solidify(db_path, task_id, config)?;
+    let ctx = resolve_task_runtime_context(db_path, task_id, config)?;
     let exec_config = ctx.to_execution_config();
     let payload = exec_config.to_snapshot_payload(&ctx.engine_id, ctx.profile_id.as_deref());
     let payload_json = serde_json::to_string(&payload).map_err(|e| CoreError::Io {
         message: format!("serialize payload failed: {e}"),
     })?;
+    let now_str = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let snapshot_id = uuid::Uuid::new_v4().to_string();
     let snapshot = RuntimeSnapshot {
         id: snapshot_id.clone(),
@@ -227,7 +216,7 @@ fn ensure_runtime_snapshot_with_path(
         profile_id: ctx.profile_id.clone(),
         payload_json,
         reason: "first_execution".to_string(),
-        created_at: "".to_string(),
+        created_at: now_str,
     };
     crate::snapshot_repository::insert_runtime_snapshot(db_path, &snapshot)?;
     task_state::update_task_runtime_snapshot(db_path, task_id, Some(&snapshot_id))?;
@@ -236,32 +225,7 @@ fn ensure_runtime_snapshot_with_path(
 
 /// Unified execution preparation entry. Generates execution_id and prepares binding.
 /// Returns (ResolvedRuntimeContext, execution_id) for callers to use in Execution records.
-/// All execution entries must use this or prepare_execution_binding.
-pub fn prepare_execution(
-    app: &AppHandle,
-    task_id: &str,
-    source: &str,
-    config: &AppConfig,
-) -> Result<(ResolvedRuntimeContext, String), CoreError> {
-    let execution_id = format!("{}-{}", source, uuid::Uuid::new_v4());
-    let ctx = prepare_execution_binding(app, &execution_id, task_id, config)?;
-    Ok((ctx, execution_id))
-}
-
-/// Like prepare_execution but with db_path for headless/testing. Returns (ctx, execution_id).
-#[cfg(test)]
-pub fn prepare_execution_with_path(
-    db_path: &std::path::Path,
-    task_id: &str,
-    source: &str,
-    config: &AppConfig,
-) -> Result<(ResolvedRuntimeContext, String), CoreError> {
-    let execution_id = format!("{}-{}", source, uuid::Uuid::new_v4());
-    let ctx = prepare_execution_binding_with_path(db_path, &execution_id, task_id, config)?;
-    Ok((ctx, execution_id))
-}
-
-/// Prepares the execution binding for a new run.
+/// All execution entries must use this or prepare_execution_binding./// Prepares the execution binding for a new run.
 /// 1. Ensures snapshot exists.
 /// 2. Records ExecutionBinding.
 /// 3. Returns the resolved runtime context for execution.
@@ -310,7 +274,7 @@ mod tests {
     fn prepare_execution_binding_creates_snapshot_and_binding() {
         let (_dir, db_path) = temp_db_path();
         let cfg = AppConfig::default();
-        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None)
+        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None, None, None)
             .expect("create_task")
             .id;
 
@@ -333,7 +297,7 @@ mod tests {
     fn prepare_execution_binding_resolved_context_from_snapshot() {
         let (_dir, db_path) = temp_db_path();
         let mut cfg = AppConfig::default();
-        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None)
+        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None, None, None)
             .expect("create_task")
             .id;
 
@@ -363,7 +327,7 @@ mod tests {
     fn contract_prepare_creates_binding() {
         let (_dir, db_path) = temp_db_path();
         let cfg = AppConfig::default();
-        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None)
+        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None, None, None)
             .expect("create_task")
             .id;
 
@@ -382,7 +346,7 @@ mod tests {
     fn contract_resolved_context_matches_snapshot() {
         let (_dir, db_path) = temp_db_path();
         let mut cfg = AppConfig::default();
-        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None)
+        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None, None, None)
             .expect("create_task")
             .id;
 
@@ -411,7 +375,7 @@ mod tests {
     fn contract_binding_change_invalidates_snapshot() {
         let (_dir, db_path) = temp_db_path();
         let cfg = AppConfig::default();
-        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None)
+        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None, None, None)
             .expect("create_task")
             .id;
 
@@ -470,18 +434,17 @@ mod tests {
     fn prepare_execution_returns_valid_execution_id_and_creates_binding() {
         let (_dir, db_path) = temp_db_path();
         let cfg = AppConfig::default();
-        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None)
+        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None, None, None)
             .expect("create_task")
             .id;
 
-        let (ctx, execution_id) =
-            prepare_execution_with_path(&db_path, &task_id, "chat_api", &cfg)
+        let binding =
+            prepare_execution_binding_with_path(&db_path, "chat_api-123", &task_id, &cfg)
                 .expect("prepare_execution");
 
-        assert!(execution_id.starts_with("chat_api-"));
-        assert_eq!(ctx.engine_id, "cursor");
+        assert_eq!(binding.engine_id, "cursor");
         assert!(matches!(
-            ctx.resolved_from,
+            binding.resolved_from,
             crate::task_runtime::RuntimeResolvedFrom::Snapshot
         ));
 

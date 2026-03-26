@@ -21,7 +21,7 @@ impl HeadlessProcessState {
         let exec_id = execution.id.clone();
         self.entries
             .lock()
-            .expect("headless process lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .insert(
                 exec_id.clone(),
                 HeadlessEntry {
@@ -35,7 +35,7 @@ impl HeadlessProcessState {
     /// Cancel an active execution. Sends cancel signal; the task will call fail_and_extract
     /// to remove and persist. Do NOT remove here to avoid race with the task.
     pub fn cancel(&self, exec_id: &str) -> Result<(), String> {
-        let mut map = self.entries.lock().expect("headless process lock poisoned");
+        let mut map = self.entries.lock().unwrap_or_else(|e| e.into_inner());
         let entry = map
             .get_mut(exec_id)
             .ok_or_else(|| format!("exec not found: {exec_id}"))?;
@@ -47,7 +47,7 @@ impl HeadlessProcessState {
     pub fn get_execution(&self, exec_id: &str) -> Option<Execution> {
         self.entries
             .lock()
-            .expect("headless process lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .get(exec_id)
             .map(|entry| entry.execution.clone())
     }
@@ -57,7 +57,7 @@ impl HeadlessProcessState {
     where
         F: FnOnce(&mut Execution),
     {
-        let mut map = self.entries.lock().expect("headless process lock poisoned");
+        let mut map = self.entries.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(entry) = map.get_mut(exec_id) {
             f(&mut entry.execution);
             Ok(entry.execution.clone())
@@ -70,7 +70,7 @@ impl HeadlessProcessState {
     pub fn remove(&self, exec_id: &str) -> Option<Execution> {
         self.entries
             .lock()
-            .expect("headless process lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .remove(exec_id)
             .map(|entry| entry.execution)
     }
@@ -79,7 +79,7 @@ impl HeadlessProcessState {
     pub fn list_active(&self) -> Vec<Execution> {
         self.entries
             .lock()
-            .expect("headless process lock poisoned")
+            .unwrap_or_else(|e| e.into_inner())
             .values()
             .map(|entry| entry.execution.clone())
             .collect()
@@ -93,7 +93,7 @@ impl HeadlessProcessState {
         output_preview: impl Into<String>,
         verification: Option<VerificationSummary>,
     ) -> Result<Execution, String> {
-        let mut map = self.entries.lock().expect("headless process lock poisoned");
+        let mut map = self.entries.lock().unwrap_or_else(|e| e.into_inner());
         let mut entry = map
             .remove(exec_id)
             .ok_or_else(|| format!("exec not found: {exec_id}"))?;
@@ -109,7 +109,7 @@ impl HeadlessProcessState {
         reason: impl Into<String>,
         output_preview: impl Into<String>,
     ) -> Result<Execution, String> {
-        let mut map = self.entries.lock().expect("headless process lock poisoned");
+        let mut map = self.entries.lock().unwrap_or_else(|e| e.into_inner());
         let mut entry = map
             .remove(exec_id)
             .ok_or_else(|| format!("exec not found: {exec_id}"))?;

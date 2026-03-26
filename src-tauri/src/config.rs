@@ -69,7 +69,7 @@ pub struct EngineConfig {
     pub legacy_profile: EngineProfile,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SpecSection {
     pub enabled: bool,
     pub active_provider: String,
@@ -131,14 +131,7 @@ impl Default for AppSection {
     }
 }
 
-impl Default for SpecSection {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            active_provider: String::new(),
-        }
-    }
-}
+
 
 fn default_plugin_type() -> String {
     "cli".to_string()
@@ -156,11 +149,11 @@ impl Default for AppConfig {
                 crate::constants::DEFAULT_ENGINE_ID,
                 "ctrl-c",
                 true,
-                vec!["agent".to_string(), "--print".to_string()],
+                vec!["agent".to_string(), "--yolo".to_string(), "--print".to_string(), "--output-format".to_string(), "stream-json".to_string(), "--stream-partial-output".to_string()],
                 ">",
                 "terminal-square",
                 "cli",
-                vec!["agent".to_string()],
+                vec!["agent".to_string(), "--yolo".to_string()],
             ),
         );
 
@@ -264,6 +257,9 @@ impl AppConfigState {
         }
     }
 
+    /// Get a copy of the current config.
+    /// NOTE: This clones the entire AppConfig. If profiling shows this is a bottleneck,
+    /// consider wrapping inner with Arc (RwLock<Arc<AppConfig>>) to enable cheap clones.
     pub fn get(&self) -> AppConfig {
         self.inner
             .read()
@@ -401,6 +397,23 @@ pub(crate) fn migrate_engine_profiles(config: &mut AppConfig) {
                 engine.active_profile_id = first_key;
             }
         }
+        // Migration: automatically upgrade old `cursor` engine headless_args to enable JSON stream reasoning extraction
+        if engine.id == "cursor" {
+            let old_args: Vec<String> = vec!["agent".to_string(), "--yolo".to_string(), "--print".to_string()];
+            let new_args: Vec<String> = vec![
+                "agent".to_string(), "--yolo".to_string(), "--print".to_string(),
+                "--output-format".to_string(), "stream-json".to_string(), "--stream-partial-output".to_string()
+            ];
+            
+            if engine.legacy_profile.headless_args == old_args {
+                engine.legacy_profile.headless_args = new_args.clone();
+            }
+            for profile in engine.profiles.values_mut() {
+                if profile.headless_args == old_args {
+                    profile.headless_args = new_args.clone();
+                }
+            }
+        }
         // No longer sync to legacy_profile - profiles is the single source of truth
     }
 }
@@ -505,10 +518,10 @@ fn config_path(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
     config_path_core()
 }
 
-pub fn load_or_create_config_headless() -> Result<AppConfig, String> {
-    let path = config_path_core()?;
+/// Internal: load or create config from the given path.
+fn load_or_create_config_from_path(path: &PathBuf) -> Result<AppConfig, String> {
     if path.exists() {
-        let raw = std::fs::read_to_string(&path)
+        let raw = fs::read_to_string(path)
             .map_err(|e| format!("failed to read config: {}", e))?;
         let mut config = toml::from_str::<AppConfig>(&raw)
             .map_err(|e| format!("failed to parse config.toml: {}", e))?;
@@ -528,9 +541,14 @@ pub fn load_or_create_config_headless() -> Result<AppConfig, String> {
         }
         let content = toml::to_string_pretty(&safe_default)
             .map_err(|e| format!("toml serialize failed: {}", e))?;
-        std::fs::write(&path, content).map_err(|e| format!("failed to write default config: {}", e))?;
+        fs::write(path, content).map_err(|e| format!("failed to write default config: {}", e))?;
         Ok(default)
     }
+}
+
+pub fn load_or_create_config_headless() -> Result<AppConfig, String> {
+    let path = config_path_core()?;
+    load_or_create_config_from_path(&path)
 }
 
 pub fn write_config_to_disk_core(config: &AppConfig) -> Result<(), String> {
@@ -556,29 +574,7 @@ pub fn write_config_to_disk(_app: &AppHandle, config: &AppConfig) -> Result<(), 
 #[command]
 pub fn load_or_create_config(app: AppHandle) -> Result<AppConfig, String> {
     let path = config_path(&app)?;
-    if path.exists() {
-        let raw = fs::read_to_string(&path).map_err(|e| format!("failed to read config: {}", e))?;
-        let mut config = toml::from_str::<AppConfig>(&raw)
-            .map_err(|e| format!("failed to parse config.toml: {}", e))?;
-        migrate_engine_profiles(&mut config);
-        load_api_keys_from_keyring(&mut config);
-        Ok(config)
-    } else {
-        let mut default = AppConfig::default();
-        migrate_engine_profiles(&mut default);
-        load_api_keys_from_keyring(&mut default);
-        let mut safe_default = default.clone();
-        for engine in safe_default.engines.values_mut() {
-            engine.legacy_profile.api_key = None;
-            for profile in engine.profiles.values_mut() {
-                profile.api_key = None;
-            }
-        }
-        let content = toml::to_string_pretty(&safe_default)
-            .map_err(|e| format!("toml serialize failed: {}", e))?;
-        fs::write(path, content).map_err(|e| format!("failed to write default config: {}", e))?;
-        Ok(default)
-    }
+    load_or_create_config_from_path(&path)
 }
 
 #[command]
