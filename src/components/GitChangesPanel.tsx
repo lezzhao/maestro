@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileCode2, RefreshCcw, ChevronLeft, ChevronRight } from "lucide-react";
+import { FileCode2, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { cn } from "../lib/utils";
@@ -9,28 +9,16 @@ import type { FileChange } from "../types";
 interface Props {
   gitChanges: FileChange[];
   activeFile: string;
-  activeDiff: string;
   onFileSelect: (path: string) => void;
-  onRefresh: () => Promise<void>;
 }
 
-export function GitChangesPanel({ gitChanges, activeFile, activeDiff, onFileSelect, onRefresh }: Props) {
+export function GitChangesPanel({ gitChanges, activeFile, onFileSelect }: Props) {
   const { t } = useTranslation();
-  const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(1);
   const pageSize = 15;
 
   const totalPages = Math.ceil(gitChanges.length / pageSize) || 1;
   const pagedChanges = gitChanges.slice((page - 1) * pageSize, page * pageSize);
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    try {
-      await onRefresh();
-    } finally {
-      setRefreshing(false);
-    }
-  };
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-bg-surface/30 rounded-xl border border-border-muted/20">
@@ -44,15 +32,6 @@ export function GitChangesPanel({ gitChanges, activeFile, activeDiff, onFileSele
             {gitChanges.length}
           </Badge>
         </div>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="h-6 w-6 text-text-muted hover:text-text-main"
-          disabled={refreshing}
-          onClick={handleRefresh}
-        >
-          <RefreshCcw size={12} className={refreshing ? "animate-spin" : ""} />
-        </Button>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-2 space-y-1">
@@ -93,39 +72,6 @@ export function GitChangesPanel({ gitChanges, activeFile, activeDiff, onFileSele
             </button>
           ))
         )}
-      </div>
-
-      <div className="h-44 border-t border-border-muted/30 bg-bg-base/40 p-2">
-        <div className="text-[10px] font-semibold text-text-muted mb-1.5">Diff 预览</div>
-        <div className="h-[calc(100%-18px)] overflow-auto custom-scrollbar rounded border border-border-muted/20 bg-bg-surface/20 p-2">
-          {activeFile && activeDiff ? (
-            <div className="font-mono text-[10px] leading-relaxed select-text">
-              {activeDiff.split('\n').map((line, idx) => {
-                const isAdded = line.startsWith('+') && !line.startsWith('+++');
-                const isRemoved = line.startsWith('-') && !line.startsWith('---');
-                const isHeader = line.startsWith('@@') || line.startsWith('diff') || line.startsWith('---') || line.startsWith('+++');
-                
-                return (
-                  <div 
-                    key={idx} 
-                    className={cn(
-                      "whitespace-pre",
-                      isAdded ? "text-emerald-500 bg-emerald-500/5" :
-                      isRemoved ? "text-rose-500 bg-rose-500/5" :
-                      isHeader ? "text-blue-500 opacity-60" : "text-text-main opacity-80"
-                    )}
-                  >
-                    {line}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="text-[10px] text-text-muted italic flex items-center justify-center h-full">
-              请选择文件查看 diff 预览。
-            </div>
-          )}
-        </div>
       </div>
 
       {totalPages > 1 && (

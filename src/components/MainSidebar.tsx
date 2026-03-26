@@ -24,11 +24,11 @@ export function MainSidebar({
       defaultSize={260}
       minSize={200}
       maxSize={450}
-      className="flex flex-col border-r border-border-muted/30 bg-bg-surface overflow-hidden relative z-20"
+      className="flex flex-col bg-bg-surface/40 backdrop-blur-2xl overflow-hidden relative z-20 border-r border-border-muted/5 shadow-[2px_0_12px_rgba(0,0,0,0.02)]"
     >
       {/* Sidebar Header (Contextual) */}
-      <div className="h-14 flex items-center px-6 border-b border-border-muted/10">
-        <h2 className="text-sm font-bold text-text-main tracking-tight truncate" title={activeWorkspace?.name}>
+      <div className="h-14 flex items-center px-6 pt-2">
+        <h2 className="text-[13px] font-extrabold text-text-main tracking-tight truncate" title={activeWorkspace?.name}>
           {activeWorkspace ? activeWorkspace.name : (t("active_tasks") || "Session Tasks")}
         </h2>
       </div>

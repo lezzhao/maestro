@@ -43,22 +43,26 @@ export function ActivityBar({
   onCreateWorkspace,
 }: ActivityBarProps) {
   const { t } = useTranslation();
-  const { workspaces, activeWorkspaceId, setActiveWorkspaceId } = useAppStore(
+  const { workspaces, activeWorkspaceId, setActiveWorkspaceId, setShowSettings } = useAppStore(
     useShallow((s) => ({
       workspaces: s.workspaces,
       activeWorkspaceId: s.activeWorkspaceId,
       setActiveWorkspaceId: s.setActiveWorkspaceId,
+      setShowSettings: s.setShowSettings,
     }))
   );
 
   return (
-    <div className="w-[60px] h-full flex flex-col items-center py-3 bg-bg-surface/50 border-r border-border-muted/15 z-30 shrink-0 relative transition-all gap-2">
+    <div className="w-[60px] h-full flex flex-col items-center py-3 bg-transparent z-30 shrink-0 relative transition-all gap-2">
       {/* Workspace List */}
       <div className="flex flex-col items-center gap-2 flex-1 overflow-y-auto custom-scrollbar w-full px-2.5">
         {workspaces.map((ws) => {
           const isActive = ws.id === activeWorkspaceId && !isSettingsOpen;
           return (
-            <div key={ws.id} className="relative" onClick={() => setActiveWorkspaceId(ws.id)}>
+            <div key={ws.id} className="relative" onClick={() => {
+              setActiveWorkspaceId(ws.id);
+              setShowSettings(false);
+            }}>
               <WorkspaceIcon workspace={ws} isActive={isActive} />
               {isActive && (
                 <div className="absolute -left-2.5 top-1/2 -translate-y-1/2 w-1 h-5 bg-white rounded-r-full shadow-sm" />

@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useRef } from "react";
 import { AnimatePresence } from "framer-motion";
 import { SendHorizontal, Square, X } from "lucide-react";
 import { Badge } from "../ui/badge";
@@ -33,26 +33,32 @@ export const ChatInput = memo(function ChatInput({
   onRecoveryAction,
   recoveryActionLabel,
 }: ChatInputProps) {
+  const isComposingRef = useRef(false);
   const canSend = (input.trim() || pendingAttachments.length > 0) && !sendBlocked;
 
   return (
-    <div className="pb-6 px-6">
+    <div className="pb-4 px-4">
       <div className={cn(
-        "bg-bg-surface/80 backdrop-blur-xl border border-border-muted/30 rounded-2xl overflow-hidden transition-all shadow-lg",
-        isRunning ? "ring-1 ring-primary-500/20" : "focus-within:border-primary-500/40 focus-within:ring-4 focus-within:ring-primary-500/5 shadow-black/5"
+        "bg-bg-surface/60 backdrop-blur-3xl border border-border-muted/20 rounded-[20px] overflow-hidden transition-all shadow-[0_8px_32px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_32px_rgb(0,0,0,0.2)]",
+        isRunning ? "ring-2 ring-primary-500/30 glow-primary" : "focus-within:border-primary-500/40 focus-within:ring-4 focus-within:ring-primary-500/10 hover:border-border-muted/40"
       )}>
         {sendBlocked && (
-          <div className="flex items-center justify-between gap-4 px-4 py-2 bg-rose-500/5 border-b border-rose-500/10">
-            <p className="text-[11px] font-bold text-rose-500/80">{sendBlockedReason}</p>
-            {onRecoveryAction && (
-              <button
-                type="button"
-                onClick={onRecoveryAction}
-                className="shrink-0 px-2.5 py-1 rounded-lg bg-emerald-500 text-white text-[10px] font-black uppercase tracking-wider hover:bg-emerald-600 transition-all active:scale-95"
-              >
-                {recoveryActionLabel}
-              </button>
-            )}
+          <div className="flex justify-center border-b border-border-muted/5 px-4 py-2 bg-bg-surface/30 relative">
+            <div className="flex items-center gap-3 relative z-10 w-full justify-between">
+              <span className="flex items-center gap-2 text-[11px] font-bold text-rose-500/80 tracking-wide">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse shadow-[0_0_6px_rgba(244,63,94,0.6)]" />
+                {sendBlockedReason}
+              </span>
+              {onRecoveryAction && (
+                <button
+                  type="button"
+                  onClick={onRecoveryAction}
+                  className="shrink-0 text-[9px] font-black uppercase tracking-widest text-emerald-500 hover:text-emerald-400 border border-emerald-500/20 hover:border-emerald-500/50 bg-emerald-500/5 rounded px-2.5 py-1 transition-all active:scale-95"
+                >
+                  {recoveryActionLabel}
+                </button>
+              )}
+            </div>
           </div>
         )}
         <AnimatePresence>
@@ -76,19 +82,34 @@ export const ChatInput = memo(function ChatInput({
               e.target.style.height = "auto";
               e.target.style.height = `${Math.min(e.target.scrollHeight, 240)}px`;
             }}
+            onCompositionStart={() => {
+              isComposingRef.current = true;
+            }}
+            onCompositionEnd={() => {
+              // React 偶尔会先触发 onCompositionEnd 再触发 onKeyDown(Enter)
+              // 使用 setTimeout 保证当前事件循环中的 onKeyDown 仍然判断为 composing
+              setTimeout(() => {
+                isComposingRef.current = false;
+              }, 50);
+            }}
             onKeyDown={(e) => {
+              // 229 也是某些浏览器下输入法正在输入的重要标志
+              if (e.nativeEvent.isComposing || isComposingRef.current || e.keyCode === 229) {
+                return;
+              }
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 if (canSend) void handleSend();
               }
             }}
             placeholder={placeholder}
-            className="w-full bg-transparent border-none focus:ring-0 text-[13px] font-medium leading-relaxed py-4 px-5 resize-none min-h-[56px] max-h-[250px] text-text-main placeholder:text-text-muted/20"
+            className="w-full bg-transparent border-none focus:ring-0 text-[13px] font-medium leading-relaxed py-3 px-4 resize-none min-h-[44px] max-h-[250px] text-text-main placeholder:text-text-muted/20"
             rows={1}
           />
           
-          <div className="flex items-center justify-between px-4 pb-4">
-            <div className="text-[10px] font-bold text-text-muted/30 uppercase tracking-widest pl-1">
+          <div className="flex items-center justify-between px-4 pb-3 mt-0">
+            <div className="text-[10px] font-black text-text-muted/30 uppercase tracking-[0.15em] flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/60" />
               Context Ready
             </div>
 

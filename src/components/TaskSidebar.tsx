@@ -1,4 +1,4 @@
-import { Plus, MessageSquare, Trash2, Clock, PlayCircle } from "lucide-react";
+import { Plus, MessageSquare, Trash2 } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
 import { useShallow } from "zustand/react/shallow";
 import { useTranslation } from "../i18n";
@@ -7,15 +7,18 @@ import { Button } from "./ui/button";
 
 export function TaskSidebar() {
   const { t } = useTranslation();
-  const { tasks, activeTaskId, addTask, removeTask, setActiveTaskId } = useAppStore(
+  const { tasks: allTasks, activeWorkspaceId, activeTaskId, addTask, removeTask, setActiveTaskId } = useAppStore(
     useShallow((s) => ({
       tasks: s.tasks,
+      activeWorkspaceId: s.activeWorkspaceId,
       activeTaskId: s.activeTaskId,
       addTask: s.addTask,
       removeTask: s.removeTask,
       setActiveTaskId: s.setActiveTaskId,
     }))
   );
+
+  const tasks = allTasks.filter(t => (t.workspaceId || null) === (activeWorkspaceId || null));
 
   const handleNewTask = () => {
     void addTask("");
@@ -58,15 +61,15 @@ export function TaskSidebar() {
               <div
                 key={task.id}
                 className={cn(
-                  "group relative flex flex-col gap-1.5 p-3.5 rounded-lg transition-all cursor-pointer border mx-1.5 mb-1.5",
+                  "group relative flex flex-col gap-1 px-2.5 py-1.5 rounded-md transition-all cursor-pointer border mx-1 mb-0.5",
                   activeTaskId === task.id
-                    ? "bg-bg-surface border-border-strong shadow-sm"
+                    ? "bg-bg-elevated/40 border-border-strong shadow-sm"
                     : "bg-transparent border-transparent hover:bg-bg-elevated/60"
                 )}
                 onClick={() => setActiveTaskId(task.id)}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
                     <div className={cn(
                       "w-1.5 h-1.5 rounded-full shrink-0",
                       task.status === "running" ? "bg-emerald-500 animate-pulse" : 
@@ -76,36 +79,34 @@ export function TaskSidebar() {
                       task.status === "completed" ? "bg-primary-500" : "bg-text-muted/30"
                     )} />
                     <span className={cn(
-                      "text-[12px] font-bold truncate transition-colors",
-                      activeTaskId === task.id ? "text-primary-500" : "text-text-main"
+                      "text-[11px] font-extrabold truncate transition-colors",
+                      activeTaskId === task.id ? "text-primary-500" : "text-text-main/80 group-hover:text-text-main"
                     )}>
                       {task.name}
                     </span>
                   </div>
                   <button
-                    className="opacity-0 group-hover:opacity-60 hover:opacity-100! p-1 text-text-muted hover:text-rose-500 transition-all active:scale-90"
+                    className="opacity-0 group-hover:opacity-100 p-0.5 text-text-muted hover:text-rose-500 transition-all"
                     onClick={(e) => {
                       e.stopPropagation();
                       removeTask(task.id);
                     }}
                   >
-                    <Trash2 size={13} />
+                    <Trash2 size={12} />
                   </button>
                 </div>
 
-                <div className="flex items-center gap-3 text-[10px] font-bold text-text-muted/60 tracking-tight">
+                <div className="flex items-center gap-3 text-[9px] font-bold text-text-muted/50 tracking-wide pl-3.5 mt-0.5">
                   <div className="flex items-center gap-1">
-                    <Clock size={11} className="opacity-40" />
                     {formatDate(task.created_at)}
                   </div>
                   <div className="flex items-center gap-1">
-                    <PlayCircle size={11} className="opacity-40" />
                     {(task.stats?.approx_input_tokens || 0) + (task.stats?.approx_output_tokens || 0)} T
                   </div>
                 </div>
 
                 {activeTaskId === task.id && (
-                  <div className="absolute -left-1.5 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary-500 rounded-r-full shadow-sm" />
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-[60%] bg-primary-500 rounded-r-full shadow-sm" />
                 )}
               </div>
             ))

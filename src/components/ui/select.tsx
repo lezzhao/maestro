@@ -1,6 +1,6 @@
-import * as React from "react"
-import { ChevronDown, Check, LucideIcon } from "lucide-react"
-import { cn } from "../../lib/utils"
+import * as React from "react";
+import { ChevronDown, Check, type LucideIcon } from "lucide-react";
+import { cn } from "../../lib/utils";
 
 export interface SelectOption {
   value: string;
@@ -13,10 +13,11 @@ export interface SelectProps {
   options: SelectOption[];
   icon?: LucideIcon;
   placeholder?: string;
-  className?: string;
+  className?: string; // Wrapper className
+  buttonClassName?: string; // Button className
 }
 
-const Select = ({ value, onChange, options, icon: Icon, placeholder = "Select...", className }: SelectProps) => {
+export const Select = ({ value, onChange, options, icon: Icon, placeholder = "Select...", className, buttonClassName }: SelectProps) => {
   const [open, setOpen] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
 
@@ -38,52 +39,53 @@ const Select = ({ value, onChange, options, icon: Icon, placeholder = "Select...
         type="button"
         onClick={() => setOpen(!open)}
         className={cn(
-          "flex h-9 w-full items-center justify-between rounded-md border border-border-muted bg-bg-base px-3 py-1 text-sm shadow-sm transition-all hover:bg-bg-elevated/50 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-50",
-          Icon && "pl-10", // Increased padding for icon
-          open && "ring-1 ring-primary-500 border-primary-500"
+          "flex h-7 w-full items-center justify-between rounded-lg border border-transparent bg-transparent px-2 text-[11px] font-bold transition-all hover:bg-bg-elevated/80 focus:outline-none group",
+          open && "bg-bg-elevated ring-1 ring-primary-500/30",
+          buttonClassName
         )}
       >
-        <div className="flex items-center gap-2 overflow-hidden mr-2">
-          {Icon && (
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted transition-colors pointer-events-none">
-              <Icon size={14} />
-            </div>
-          )}
-          <span className={cn("truncate", !selectedOption && "text-text-muted/50")}>
-            {selectedOption ? selectedOption.label : placeholder}
+        <div className="flex items-center gap-1.5 overflow-hidden">
+          {Icon && <Icon size={11} className="text-text-muted/40 group-hover:text-primary-500/60 transition-colors" />}
+          <span className={cn("truncate text-left", !selectedOption && "text-text-muted/50")}>
+            {selectedOption ? selectedOption.label : (value || placeholder)}
           </span>
         </div>
-        <ChevronDown size={14} className={cn("text-text-muted transition-transform duration-200 shrink-0", open && "rotate-180")} />
+        <ChevronDown size={11} className={cn("text-text-muted/30 transition-transform duration-200 shrink-0 ml-1.5", open && "rotate-180 text-primary-500")} />
       </button>
 
       {open && (
-        <div className="absolute top-[calc(100%+4px)] left-0 w-full z-100 min-w-32 overflow-hidden rounded-md border border-border-strong bg-bg-surface text-text-main shadow-lg animate-in fade-in zoom-in-95 duration-200 origin-top">
-          <div className="p-1 max-h-60 overflow-y-auto scrollbar-thin">
+        <div className="absolute top-[calc(100%+6px)] left-0 w-full z-100 min-w-[180px] overflow-hidden rounded-lg border border-border-strong bg-bg-surface text-text-main shadow-xl animate-in fade-in zoom-in-95 duration-200 origin-top p-1 backdrop-blur-xl">
+          <div className="max-h-60 overflow-y-auto scrollbar-thin scrollbar-thumb-bg-elevated scrollbar-track-transparent">
             {options.map((option) => (
               <div
                 key={option.value}
                 onClick={() => {
-                  onChange(option.value);
+                  if (option.value !== value) onChange(option.value);
                   setOpen(false);
                 }}
                 className={cn(
-                  "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none transition-colors hover:bg-primary-500/20 hover:text-primary-400",
-                  value === option.value && "bg-primary-500/15 text-primary-400 font-bold"
+                  "relative flex w-full cursor-default select-none items-center rounded-md py-1.5 pl-8 pr-3 text-[11px] font-bold outline-none transition-all duration-150 mb-0.5 last:mb-0",
+                  value === option.value 
+                    ? "bg-primary-500/15 text-primary-500" 
+                    : "text-text-muted hover:bg-bg-elevated hover:text-text-main"
                 )}
               >
                 {value === option.value && (
-                  <span className="absolute left-2.5 flex h-3.5 w-3.5 items-center justify-center">
-                    <Check size={14} />
+                  <span className="absolute left-2.5 flex h-3.5 w-3.5 items-center justify-center text-primary-500">
+                    <Check size={12} strokeWidth={3} />
                   </span>
                 )}
                 <span className="truncate">{option.label}</span>
               </div>
             ))}
+            {options.length === 0 && (
+              <div className="py-2 px-3 text-[10px] text-text-muted italic text-center">
+                No items found
+              </div>
+            )}
           </div>
         </div>
       )}
     </div>
   );
 };
-
-export { Select }

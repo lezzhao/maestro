@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Cpu, ListTree, MessageSquare, RefreshCcw } from "lucide-react";
+import { useMemo } from "react";
+import { MessageSquare, RefreshCcw } from "lucide-react";
 import { useChatStore } from "../stores/chatStore";
 import { useAppStore } from "../stores/appStore";
 import { useTranslation } from "../i18n";
@@ -29,12 +29,10 @@ export function ChatPanel({
   const isRunning = useChatStore((s) => s.getTaskRunning(activeTaskId));
   const clearMessages = useChatStore((s) => s.clearMessages);
   const clearTaskRuns = useChatStore((s) => s.clearTaskRuns);
-  const [showExecutionTrace, setShowExecutionTrace] = useState(true);
 
   const {
     input,
     setInput,
-    executionPhase,
     handleSend,
     handleStop,
     handleRetry,
@@ -65,17 +63,7 @@ export function ChatPanel({
     [projectPath, t],
   );
 
-  const statusLabel = isRunning ? t("status_processing") : t("status_idle");
-  const executionPhaseLabel =
-    executionPhase === "connecting"
-      ? t("stage_connecting")
-      : executionPhase === "sending"
-        ? t("stage_sending")
-        : executionPhase === "streaming"
-          ? t("stage_streaming")
-          : executionPhase === "completed"
-            ? t("stage_done")
-            : t("stage_idle");
+  // Execution Phase Label is removed as the UI no longer needs it
 
   const isActiveEngineUnavailable = !isReady;
   const sendBlockedReason = isActiveEngineUnavailable
@@ -99,71 +87,41 @@ export function ChatPanel({
   }
 
   return (
-    <div className="flex flex-col h-full bg-bg-surface animate-in fade-in duration-500">
-      <div className="flex items-center justify-between h-[42px] px-3 border-b border-border-muted/30 shrink-0">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span
-              className={cn(
-              "w-1.5 h-1.5 rounded-full",
-                isRunning ? "bg-emerald-500" : "bg-text-muted/20",
-              )}
-            />
-            <span className="text-[10px] font-semibold text-text-muted uppercase">
-              {statusLabel}
-            </span>
-          </div>
-          
-          <div className="flex items-center gap-2 text-text-muted/60">
-            <Cpu size={12} />
-            <span className="text-[10px] font-medium truncate max-w-[120px]">
-              {activeEngine?.display_name}
-              <span className="ml-1 opacity-50">{activeProfile?.model || "Auto"}</span>
-            </span>
-          </div>
-          <div className="flex items-center gap-1">
+    <div className="flex flex-col h-full bg-transparent animate-in fade-in duration-200">
+      <div className="flex items-center justify-end h-[36px] px-4 border-b border-border-muted/10 shrink-0 gap-4">
+        {Boolean(activeProfile?.api_provider || activeProfile?.api_base_url) && (
+          <div className="flex items-center space-x-2">
             <button
               type="button"
               className={cn(
-                "px-2 py-0.5 text-[10px] font-semibold transition-colors rounded-sm",
+                "relative px-1.5 py-1 text-[10px] font-bold tracking-wider uppercase transition-colors shrink-0",
                 executionMode === "api"
-                  ? "bg-emerald-500/15 text-emerald-500"
-                  : "text-text-muted hover:text-text-main",
+                  ? "text-emerald-500"
+                  : "text-text-muted/40 hover:text-text-main",
               )}
               onClick={() => void onSetExecutionMode("api")}
             >
               API
+              {executionMode === "api" && <div className="absolute -bottom-1 left-0 right-0 h-[2px] bg-emerald-500 rounded-full shadow-[0_0_6px_rgba(16,185,129,0.5)]" />}
             </button>
+            <span className="text-text-muted/20 text-[10px]">|</span>
             <button
               type="button"
               className={cn(
-                "px-2 py-0.5 text-[10px] font-semibold transition-colors rounded-sm",
+                "relative px-1.5 py-1 text-[10px] font-bold tracking-wider uppercase transition-colors shrink-0",
                 executionMode === "cli"
-                  ? "bg-amber-500/15 text-amber-500"
-                  : "text-text-muted hover:text-text-main",
+                  ? "text-amber-500"
+                  : "text-text-muted/40 hover:text-text-main",
               )}
               onClick={() => void onSetExecutionMode("cli")}
             >
               CLI
+              {executionMode === "cli" && <div className="absolute -bottom-1 left-0 right-0 h-[2px] bg-amber-500 rounded-full shadow-[0_0_6px_rgba(245,158,11,0.5)]" />}
             </button>
           </div>
-        </div>
+        )}
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowExecutionTrace((v) => !v)}
-            className={cn(
-              "inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-semibold border transition-colors",
-              showExecutionTrace
-                ? "border-primary-500/40 text-primary-500 bg-primary-500/10"
-                : "border-border-muted text-text-muted hover:text-text-main",
-            )}
-            title={t("toggle_execution_trace")}
-          >
-            <ListTree size={11} />
-            {showExecutionTrace ? t("execution_trace_on") : t("execution_trace_off")}
-          </button>
           <button
             onClick={() => {
               if (isRunning) return;
@@ -171,7 +129,7 @@ export function ChatPanel({
               clearTaskRuns(activeTaskId);
             }}
             disabled={isRunning}
-            className="text-text-muted hover:text-rose-500 p-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="text-text-muted hover:text-rose-500 p-1.5 rounded-lg hover:bg-rose-500/10 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             title={isRunning ? "执行中不可清空，请先停止任务" : t("clear_chat")}
           >
             <RefreshCcw size={12} />
@@ -185,8 +143,6 @@ export function ChatPanel({
         handleRetry={handleRetry}
         handleCopy={handleCopy}
         t={t}
-        executionPhaseLabel={executionPhaseLabel}
-        showExecutionTrace={showExecutionTrace}
       />
 
       <ChatInput 

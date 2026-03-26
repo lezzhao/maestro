@@ -37,10 +37,7 @@ export const ChatMessageContent = memo(function ChatMessageContent({
     return out.trim();
   }, [content, isStreaming]);
 
-  const isTerminalLike = useMemo(() => {
-    // If it has boxed characters or multiple carriage returns/ANSI escapes initially
-    return content.includes("\u001b") || content.includes("\r");
-  }, [content]);
+
 
   if (!cleaned) {
     // Fallback if cleaning stripped everything but the original had content
@@ -57,17 +54,7 @@ export const ChatMessageContent = memo(function ChatMessageContent({
     return null;
   }
 
-  if (isStreaming) {
-    return (
-      <div className={cn(
-        "text-[13px] leading-relaxed whitespace-pre-wrap font-mono w-full",
-        isTerminalLike ? "bg-black/5 dark:bg-white/5 p-2 rounded-md border border-black/5" : "opacity-90",
-        className
-      )}>
-        {cleaned}
-      </div>
-    );
-  }
+
 
   const components: Components = {
     code({ className: codeClassName, children, ...props }) {
@@ -88,7 +75,7 @@ export const ChatMessageContent = memo(function ChatMessageContent({
   };
 
   return (
-    <div className={cn("chat-markdown text-[14px] leading-relaxed", className)}>
+    <div className={cn("chat-markdown", className)}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {cleaned}
       </ReactMarkdown>

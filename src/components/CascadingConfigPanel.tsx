@@ -41,10 +41,11 @@ export const CascadingConfigPanel: React.FC<CascadingConfigPanelProps> = ({
           settings: taskSettingsStr,
         },
       });
-      updateTaskRecord(taskId, { settings: taskSettingsStr } as any);
+      updateTaskRecord(taskId, { settings: taskSettingsStr });
       setError(null);
-    } catch (e: any) {
-      setError("Task Settings Invalid JSON: " + e.message);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError("Task Settings Invalid JSON: " + msg);
     }
   };
 
@@ -61,8 +62,9 @@ export const CascadingConfigPanel: React.FC<CascadingConfigPanelProps> = ({
       });
       updateWorkspace(workspaceId, { settings: wsSettingsStr });
       setError(null);
-    } catch (e: any) {
-      setError("Workspace Settings Invalid JSON: " + e.message);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError("Workspace Settings Invalid JSON: " + msg);
     }
   };
 

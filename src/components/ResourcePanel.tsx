@@ -6,7 +6,7 @@ import { CascadingConfigPanel } from "./CascadingConfigPanel";
 import { useAppStore } from "../stores/appStore";
 import { cn } from "../lib/utils";
 import type { ChatMessage, VerificationSummary } from "../types";
-import type { TaskRun } from "../types";
+import type { TaskRun, FileChange } from "../types";
 
 export type RightPanelTab = "runs" | "verification" | "changes" | "conclusion" | "config";
 
@@ -16,12 +16,10 @@ interface ResourcePanelProps {
   rightPanelTab: RightPanelTab;
   setRightPanelTab: (tab: RightPanelTab) => void;
   // Git Props
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  gitChanges: any[];
+  gitChanges: FileChange[];
   activeFile: string;
   activeDiff: string;
   onFileSelect: (path: string) => void;
-  onRefreshGit: () => Promise<void>;
   // Verification & Runs Props
   latestVerification: VerificationSummary | null;
   latestRun: TaskRun | null;
@@ -35,9 +33,7 @@ export function ResourcePanel({
   setRightPanelTab,
   gitChanges,
   activeFile,
-  activeDiff,
   onFileSelect,
-  onRefreshGit,
   latestVerification,
   latestRun,
   activeTaskMessages,
@@ -172,9 +168,7 @@ export function ResourcePanel({
           <GitChangesPanel
             gitChanges={gitChanges}
             activeFile={activeFile}
-            activeDiff={activeDiff}
             onFileSelect={onFileSelect}
-            onRefresh={onRefreshGit}
           />
         </div>
       ) : rightPanelTab === "conclusion" ? (
@@ -193,7 +187,7 @@ export function ResourcePanel({
                 <div className="text-emerald-500">未检测到高风险信号</div>
               ) : (
                 <div className="space-y-1">
-                  {conclusionSummary.risks.map((risk: any) => (
+                  {conclusionSummary.risks.map((risk: string) => (
                     <div key={risk} className="text-rose-400">{risk}</div>
                   ))}
                 </div>
@@ -205,7 +199,7 @@ export function ResourcePanel({
                 <div className="text-text-main">无</div>
               ) : (
                 <div className="space-y-1">
-                  {conclusionSummary.pending.map((item: any) => (
+                  {conclusionSummary.pending.map((item: string) => (
                     <div key={item} className="text-amber-400">{item}</div>
                   ))}
                 </div>

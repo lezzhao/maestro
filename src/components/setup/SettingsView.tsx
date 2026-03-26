@@ -51,6 +51,7 @@ export function SettingsView({
   onSwitch,
   onPreflight,
   onPreflightAll,
+  onSaveEngine,
   onSetActiveProfile,
   onUpsertProfile,
   onFetchModels,
@@ -128,7 +129,7 @@ export function SettingsView({
               <div className="flex flex-col gap-2">
                 <h3 className="text-lg font-semibold">{t("core_engines")}</h3>
                 <p className="text-sm text-text-muted">{t("engine_desc")}</p>
-                <div className="mt-4 flex">
+                <div className="mt-4 flex gap-3">
                   <Button 
                     variant="outline" 
                     size="sm" 
@@ -137,6 +138,40 @@ export function SettingsView({
                   >
                     <Activity size={14} />
                     {t("check_all")}
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="rounded-lg gap-2"
+                    onClick={() => {
+                        const nextId = `custom-engine-${Date.now()}`;
+                        void onSaveEngine(nextId, {
+                          id: nextId,
+                          plugin_type: "custom",
+                          icon: "",
+                          display_name: `Custom Engine ${ids.length + 1}`,
+                          active_profile_id: "default",
+                          profiles: {
+                            default: {
+                              id: "default",
+                              display_name: "Default",
+                              command: "",
+                              model: "",
+                              args: [],
+                              env: {},
+                              supports_headless: true,
+                              headless_args: [],
+                              ready_signal: null,
+                              execution_mode: "cli",
+                              api_provider: null,
+                              api_base_url: null,
+                              api_key: null,
+                            }
+                          }
+                        });
+                    }}
+                  >
+                    {t("new_profile") || "Add Custom Engine"}
                   </Button>
                 </div>
               </div>
