@@ -110,6 +110,27 @@ function App() {
         run: () => setShowSettings(true),
       },
       {
+        id: "ui.theme",
+        title: t("cmd_toggle_theme"),
+        subtitle: t("cmd_toggle_theme_sub"),
+        keywords: "theme dark light system mode",
+        run: () => {
+          const themes: ("light" | "dark" | "system")[] = ["light", "dark", "system"];
+          const next = themes[(themes.indexOf(theme) + 1) % themes.length];
+          useAppStore.getState().setTheme(next);
+        },
+      },
+      {
+        id: "ui.lang",
+        title: t("cmd_switch_lang"),
+        subtitle: t("cmd_switch_lang_sub"),
+        keywords: "language translation chinese english zh en",
+        run: () => {
+          const current = useAppStore.getState().lang;
+          useAppStore.getState().setLang(current === "zh" ? "en" : "zh");
+        },
+      },
+      {
         id: "task.new",
         title: t("cmd_new_task") || "New Task",
         subtitle: t("cmd_new_task_sub") || "Create a parallel workspace",
@@ -117,7 +138,7 @@ function App() {
         run: () => void useAppStore.getState().addTask(""),
       }
     ],
-    [handleOpenProjectPicker, setShowSettings, t],
+    [handleOpenProjectPicker, setShowSettings, theme, t],
   );
 
   return (
@@ -128,12 +149,12 @@ function App() {
           theme={theme === "system" ? "light" : theme}
           toastOptions={{
             style: {
-              borderRadius: 'var(--radius-lg)',
-              background: 'var(--glass-bg)',
-              backdropFilter: 'blur(16px)',
-              border: '1px solid var(--glass-border)',
-              boxShadow: 'var(--shadow-lg)',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border-muted)',
+              boxShadow: 'var(--shadow-md)',
               color: 'var(--text-main)',
+              fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
             },
           }}
         />
