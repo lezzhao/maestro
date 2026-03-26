@@ -38,7 +38,7 @@ export function TaskSidebar() {
         <Button
           variant="ghost"
           size="icon"
-          className="h-6 w-6 rounded-lg hover:bg-primary-500/10 hover:text-primary-500"
+          className="h-6 w-6 rounded-sm hover:bg-primary/10 hover:text-primary transition-colors"
           onClick={handleNewTask}
         >
           <Plus size={14} />
@@ -61,10 +61,10 @@ export function TaskSidebar() {
               <div
                 key={task.id}
                 className={cn(
-                  "group relative flex flex-col gap-1 px-2.5 py-1.5 rounded-md transition-all cursor-pointer border mx-1 mb-0.5",
+                  "group relative flex flex-col gap-1 px-2.5 py-1.5 rounded-sm transition-all cursor-pointer border mx-1 mb-0.5",
                   activeTaskId === task.id
-                    ? "bg-bg-elevated/40 border-border-strong shadow-sm"
-                    : "bg-transparent border-transparent hover:bg-bg-elevated/60"
+                    ? "bg-primary/5 border-primary/20 shadow-glow"
+                    : "bg-transparent border-transparent hover:bg-bg-elevated/40 hover:border-border-muted/10"
                 )}
                 onClick={() => setActiveTaskId(task.id)}
               >
@@ -72,15 +72,15 @@ export function TaskSidebar() {
                   <div className="flex items-center gap-2 min-w-0">
                     <div className={cn(
                       "w-1.5 h-1.5 rounded-full shrink-0",
-                      task.status === "running" ? "bg-emerald-500 animate-pulse" : 
+                      task.status === "running" ? "bg-primary animate-pulse" : 
                       task.status === "error" ? "bg-rose-500" :
                       task.status === "verified" ? "bg-sky-500" :
                       task.status === "needs_review" ? "bg-amber-500" :
-                      task.status === "completed" ? "bg-primary-500" : "bg-text-muted/30"
+                      task.status === "completed" ? "bg-primary" : "bg-text-muted/30"
                     )} />
                     <span className={cn(
-                      "text-[11px] font-extrabold truncate transition-colors",
-                      activeTaskId === task.id ? "text-primary-500" : "text-text-main/80 group-hover:text-text-main"
+                      "text-[11px] font-bold truncate transition-colors font-mono",
+                      activeTaskId === task.id ? "text-primary" : "text-text-main/80 group-hover:text-text-main"
                     )}>
                       {task.name}
                     </span>
@@ -106,7 +106,7 @@ export function TaskSidebar() {
                 </div>
 
                 {activeTaskId === task.id && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-[60%] bg-primary-500 rounded-r-full shadow-sm" />
+                  <div className="absolute left-[-4px] top-1/2 -translate-y-1/2 w-[3px] h-4 bg-primary rounded-r-sm" />
                 )}
               </div>
             ))

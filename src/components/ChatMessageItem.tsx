@@ -1,7 +1,5 @@
 import { memo, useMemo, useState } from "react";
 import {
-  Copy,
-  RotateCcw,
   Sparkles,
   Wrench,
   CircleCheck,
@@ -26,11 +24,8 @@ type Labels = {
 
 type Props = {
   message: ChatMessage;
-  minimalMode: boolean;
   labels: Labels;
   isRunning?: boolean;
-  onRetry?: (messageId: string) => void;
-  onCopy?: (content: string) => void;
   liveTranscript?: string;
 };
 
@@ -59,71 +54,55 @@ function extractThoughtBlock(content: string, isStreaming: boolean): ThoughtExtr
   let inThought = false;
   let hasFoundMain = false;
 
-  // Many agents just output "Thought: " or "Thinking:" or even markdown bullet points before the final answer
   const thoughtStartRe = /^\s*(?:#{1,6}\s*)?(?:thinking|thought|analysis|plan|思考|推理|分析|计划|步骤)\s*[:：]?\s*$/i;
-  // DeepSeek often outputs "```thought" or similar
   const thoughtBlockStartRe = /^\s*```(?:thought|thinking|思考)\s*$/i;
-  
   const answerStartRe = /^\s*(?:#{1,6}\s*)?(?:final|answer|result|结论|结果|回复|回答)\s*[:：]?\s*$/i;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    
-    // If we haven't found a thought block yet, check if this line looks like the start of one
     if (!inThought && !hasFoundMain && (thoughtStartRe.test(line) || thoughtBlockStartRe.test(line))) {
       inThought = true;
       continue;
     }
-
     if (inThought) {
       if (answerStartRe.test(line) || line.trim() === "```") {
         inThought = false;
-        hasFoundMain = true; // Once we exit thought, everything else is main
+        hasFoundMain = true;
         continue;
       }
       thoughtLines.push(line);
     } else {
       mainLines.push(line);
       if (line.trim().length > 0) {
-         hasFoundMain = true; // If we see content outside a thought block, we've started the main content
+         hasFoundMain = true;
       }
     }
   }
 
   const thought = thoughtLines.join("\n").trim();
   const main = mainLines.join("\n").trim();
-
-  // If we couldn't confidently separate thought and main, or if the "thought" is just empty
-  if (!thought) {
-    return { thought: null, main: content };
-  }
-  
+  if (!thought) return { thought: null, main: content };
   if (!main) {
-    // If there's no main response at all, we don't treat everything as a thought unless it was streaming
-    // and explicitly used <think> tags. For heuristic matching, if there is no main, we just render normally.
-    if (isStreaming) {
-      return { thought, main: "" };
-    }
+    if (isStreaming) return { thought, main: "" };
     return { thought: null, main: content };
   }
-  
   return { thought, main };
 }
 
-function ChatMessageItemBase({ message, minimalMode: _minimalMode, labels, isRunning, onRetry, onCopy, liveTranscript }: Props) {
+function ChatMessageItemBase({ message, labels, liveTranscript }: Props) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
   const isSystem = message.role === "system";
 
   const cleanContent = useMemo(() => stripAnsi(message.content || ""), [message.content]);
-  const isCollapsible = isAssistant && message.status !== "streaming" && cleanContent.length > 1400;
-  const [expanded, setExpanded] = useState(!isCollapsible);
+  const isCollapsible = isAssistant && message.status !== "streaming" && cleanContent.length > 2000;
+  const [expanded] = useState(!isCollapsible);
   const [showThought, setShowThought] = useState(false);
 
   const renderedAssistantContent = useMemo(() => {
     if (!isAssistant) return "";
     if (expanded || !isCollapsible) return cleanContent;
-    return `${cleanContent.slice(0, 900)}\n\n...`;
+    return `${cleanContent.slice(0, 1000)}\n\n...`;
   }, [cleanContent, expanded, isAssistant, isCollapsible]);
 
   const extractedThought = useMemo(
@@ -138,26 +117,22 @@ function ChatMessageItemBase({ message, minimalMode: _minimalMode, labels, isRun
     const Icon = isError ? AlertTriangle : isTool ? Wrench : isDone ? CircleCheck : Sparkles;
     return (
       <div className="flex justify-center p-1">
-        <div className="w-full max-w-[760px] rounded-lg border border-border-muted bg-bg-surface px-3 py-2">
-          <div className="flex items-center gap-2 text-[10px] uppercase font-semibold text-text-muted">
-            <Icon size={12} />
+        <div className="w-full max-w-[760px] rounded-lg border border-border-muted bg-bg-surface px-3 py-2 shadow-sm">
+          <div className="flex items-center gap-2 text-[10px] uppercase font-bold text-text-muted/60 tracking-wider">
+            <Icon size={12} className="opacity-60" />
             <span>{message.meta?.toolName || labels.roleSystem}</span>
             {message.meta?.eventStatus && (
               <span
                 className={cn(
                   "ml-auto rounded-full px-2 py-0.5 border text-[9px]",
-                  isError
-                    ? "text-rose-500 border-rose-500/40"
-                    : isDone
-                      ? "text-emerald-500 border-emerald-500/40"
-                      : "text-amber-500 border-amber-500/40",
+                  isError ? "text-rose-500 border-rose-500/30 bg-rose-500/5" : isDone ? "text-emerald-500 border-emerald-500/30 bg-emerald-500/5" : "text-amber-500 border-amber-500/30 bg-amber-500/5",
                 )}
               >
                 {message.meta.eventStatus}
               </span>
             )}
           </div>
-          <div className="mt-1 text-[12px] text-text-main/85">{message.content}</div>
+          <div className="mt-1 text-[12px] text-text-main/80 leading-relaxed">{message.content}</div>
         </div>
       </div>
     );
@@ -166,36 +141,25 @@ function ChatMessageItemBase({ message, minimalMode: _minimalMode, labels, isRun
   return (
     <div
       className={cn(
-        "group relative flex w-full gap-2.5 py-1.5 px-4 transition-colors font-mono text-[13px] hover:bg-bg-subtle/30",
+        "group relative flex w-full gap-3 py-1 px-5 transition-colors font-mono text-[12px] hover:bg-bg-subtle/5",
         isUser ? "bg-transparent" : "bg-transparent"
       )}
     >
       {/* Terminal Prompt Prefix */}
       <div className={cn(
-        "shrink-0 mt-[2px] select-none font-bold",
-        isUser 
-          ? "text-emerald-500" 
-          : isAssistant ? "text-primary-500" : "text-amber-500"
+        "shrink-0 mt-[2px] select-none font-black tracking-tight",
+        isUser ? "text-emerald-500" : isAssistant ? "text-primary/70 font-bold" : "text-amber-500"
       )}>
-        {isUser ? "❯" : "AGENT ❯"}
+        ❯
       </div>
 
-      <div className={cn(
-        "flex flex-col w-full min-w-0 font-sans"
-      )}>
-        <div
-          className={cn(
-            "relative group/bubble p-0 transition-all duration-200 w-full text-text-main"
-          )}
-        >
+      <div className="flex flex-col w-full min-w-0 font-sans">
+        <div className="relative group/bubble p-0 transition-all duration-200 w-full text-text-main">
           {message.attachments && message.attachments.length > 0 && (
-            <div className="mb-1.5 flex flex-wrap gap-1.5">
+            <div className="mb-2 flex flex-wrap gap-1.5">
               {message.attachments.map((attachment) => (
-                <div key={attachment.path} className={cn(
-                  "flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-medium border",
-                  isUser ? "bg-white/10 border-white/20 text-white" : "bg-bg-base border-border-muted/30 text-text-muted"
-                )}>
-                  <span className="w-1 h-1 rounded-full bg-current opacity-50" />
+                <div key={attachment.path} className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-bold border bg-bg-base/40 border-border-muted/30 text-text-muted">
+                  <span className="w-1 h-1 rounded-full bg-current opacity-40" />
                   {attachment.name}
                 </div>
               ))}
@@ -206,28 +170,28 @@ function ChatMessageItemBase({ message, minimalMode: _minimalMode, labels, isRun
             {isAssistant && message.status === "streaming" && !message.content.trim() ? (
               <div className="leading-[1.4] whitespace-pre-wrap break-all text-text-muted tracking-tight min-h-[20px]">
                 {liveTranscript || ""}
-                <span className="inline-block w-2 h-3.5 ml-1 bg-text-muted animate-pulse align-text-bottom opacity-70" />
+                <span className="inline-block w-2 h-3.5 ml-1 bg-text-muted animate-pulse align-text-bottom opacity-50" />
               </div>
             ) : isAssistant && message.status === "error" && !message.content.trim() ? (
-              <div className="flex items-center gap-2 py-2 px-3.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-500 text-sm font-medium">
-                <AlertTriangle size={16} />
-                <span>执行过程中遇到错误，请查看执行记录。</span>
+              <div className="flex items-center gap-2 py-2 px-3 border border-rose-500/10 text-rose-500 text-[11px] font-bold rounded-lg bg-rose-500/5">
+                <AlertTriangle size={14} />
+                <span>Execution error. Check logs.</span>
               </div>
             ) : isAssistant ? (
               <>
                 {extractedThought.thought && (
-                  <div className="mb-2 rounded-md border border-border-muted bg-bg-surface/50 pl-3 pr-4 py-1.5 opacity-80 backdrop-blur-sm">
+                  <div className="mb-2 rounded-xl border border-border-muted/20 bg-bg-surface/30 p-4 animate-in fade-in duration-300 shadow-sm">
                     <button
                       type="button"
-                      className="flex items-center gap-2 w-full text-left text-[11px] font-bold tracking-widest uppercase text-text-muted hover:text-text-main transition-colors"
+                      className="flex items-center gap-2 w-full text-left text-[10px] font-black tracking-[0.2em] uppercase text-text-muted/40 hover:text-text-muted transition-colors"
                       onClick={() => setShowThought((v) => !v)}
                     >
-                      <Sparkles size={12} className="text-primary-500" />
+                      <Sparkles size={12} className="text-primary/40" />
                       <span>{labels.thinking}</span>
-                      <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded bg-bg-elevated border border-border-muted/30">{showThought ? "收起" : "展开"}</span>
+                      <span className="ml-auto text-[8px] opacity-40">{showThought ? "COLLAPSE" : "EXPAND"}</span>
                     </button>
                     {showThought && (
-                      <div className="mt-2 text-[12px] leading-[1.6] whitespace-pre-wrap wrap-break-word text-text-muted opacity-80 border-l-2 border-primary-500/30 pl-3 py-0.5">
+                      <div className="mt-2 text-[11px] leading-normal text-text-muted/70 border-l-2 border-primary/10 pl-4 py-1 font-mono italic">
                         {extractedThought.thought}
                       </div>
                     )}
@@ -240,9 +204,9 @@ function ChatMessageItemBase({ message, minimalMode: _minimalMode, labels, isRun
                   />
                 )}
                 {!extractedThought.main && extractedThought.thought && message.status === "streaming" && (
-                  <div className="text-[12px] text-text-muted italic flex items-center gap-2 mt-1.5">
-                    <span className="w-1 h-1 rounded-full bg-primary-500 animate-pulse" />
-                    思考中...
+                  <div className="text-[11px] text-text-muted/40 italic flex items-center gap-2 mt-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary/20 animate-pulse" />
+                    Thinking...
                   </div>
                 )}
                 {!extractedThought.main && !extractedThought.thought && (
@@ -251,55 +215,18 @@ function ChatMessageItemBase({ message, minimalMode: _minimalMode, labels, isRun
                     isStreaming={message.status === "streaming"}
                   />
                 )}
-                {isCollapsible && (
-                  <button
-                    type="button"
-                    className="mt-1 text-[11px] text-primary-500 hover:text-primary-600 transition-colors"
-                    onClick={() => setExpanded((v) => !v)}
-                  >
-                    {expanded ? labels.collapseResult : labels.expandResult}
-                  </button>
-                )}
               </>
             ) : (
-              <div className="whitespace-pre-wrap wrap-break-word">{message.content}</div>
+              <div className="whitespace-pre-wrap wrap-break-word font-medium text-[13px]">{message.content}</div>
             )}
-          </div>
-
-          {/* Controls - more discrete */}
-          <div className={cn(
-            "absolute -top-2 opacity-0 group-hover/bubble:opacity-100 transition-opacity right-0"
-          )}>
-            <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-bg-surface border border-border-muted shadow-lg">
-              <button 
-                onClick={() => onCopy?.(message.content)}
-                className="p-1.5 rounded-md hover:bg-bg-elevated text-text-muted transition-colors"
-                title="Copy"
-              >
-                <Copy size={12} />
-              </button>
-              {isAssistant && !isRunning && (
-                <button 
-                  onClick={() => onRetry?.(message.id)}
-                  className="p-1.5 rounded-md hover:bg-bg-elevated text-text-muted transition-colors"
-                  title="Retry"
-                >
-                  <RotateCcw size={12} />
-                </button>
-              )}
-            </div>
           </div>
         </div>
 
         {isAssistant && message.durationMs && message.status === "done" && (
-          <div className="flex gap-2.5 px-1 opacity-40">
-            <span className="text-[9px] font-semibold uppercase">
-              {(message.durationMs / 1000).toFixed(1)}s
-            </span>
+          <div className="flex gap-3 px-1 opacity-20 mt-1 transition-opacity group-hover:opacity-40 select-none">
+            <span className="text-[9px] font-black tracking-widest uppercase">{(message.durationMs / 1000).toFixed(1)}s</span>
             {message.tokenEstimate && (
-              <span className="text-[9px] font-semibold uppercase">
-                {message.tokenEstimate.approx_output_tokens} tokens
-              </span>
+              <span className="text-[9px] font-black tracking-widest uppercase">{message.tokenEstimate.approx_output_tokens} tokens</span>
             )}
           </div>
         )}
@@ -312,7 +239,6 @@ export const ChatMessageItem = memo(
   ChatMessageItemBase,
   (prev, next) =>
     prev.message === next.message &&
-    prev.minimalMode === next.minimalMode &&
     prev.labels === next.labels &&
     prev.isRunning === next.isRunning &&
     prev.liveTranscript === next.liveTranscript,

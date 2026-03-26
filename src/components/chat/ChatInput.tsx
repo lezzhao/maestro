@@ -1,6 +1,6 @@
 import { memo, useRef } from "react";
-import { AnimatePresence } from "framer-motion";
-import { SendHorizontal, Square, X } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { SendHorizontal, Square, X, Paperclip, AlertCircle } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { cn } from "../../lib/utils";
 
@@ -37,119 +37,118 @@ export const ChatInput = memo(function ChatInput({
   const canSend = (input.trim() || pendingAttachments.length > 0) && !sendBlocked;
 
   return (
-    <div className="pb-4 px-4">
+    <div className="pb-8 px-6 max-w-[960px] mx-auto w-full">
       <div className={cn(
-        "bg-bg-surface/60 backdrop-blur-3xl border border-border-muted/20 rounded-[20px] overflow-hidden transition-all shadow-[0_8px_32px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_32px_rgb(0,0,0,0.2)]",
-        isRunning ? "ring-2 ring-primary-500/30 glow-primary" : "focus-within:border-primary-500/40 focus-within:ring-4 focus-within:ring-primary-500/10 hover:border-border-muted/40"
+        "relative flex flex-col bg-bg-surface/40 backdrop-blur-xl transition-all duration-300 rounded-3xl overflow-hidden",
+        isRunning ? "ring-1 ring-primary/20" : ""
       )}>
+        {/* Extreme Minimalist Warning */}
         {sendBlocked && (
-          <div className="flex justify-center border-b border-border-muted/5 px-4 py-2 bg-bg-surface/30 relative">
-            <div className="flex items-center gap-3 relative z-10 w-full justify-between">
-              <span className="flex items-center gap-2 text-[11px] font-bold text-rose-500/80 tracking-wide">
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse shadow-[0_0_6px_rgba(244,63,94,0.6)]" />
-                {sendBlockedReason}
-              </span>
-              {onRecoveryAction && (
-                <button
-                  type="button"
-                  onClick={onRecoveryAction}
-                  className="shrink-0 text-[9px] font-black uppercase tracking-widest text-emerald-500 hover:text-emerald-400 border border-emerald-500/20 hover:border-emerald-500/50 bg-emerald-500/5 rounded px-2.5 py-1 transition-all active:scale-95"
-                >
-                  {recoveryActionLabel}
-                </button>
-              )}
+          <div className="px-5 pt-3 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-1 duration-300">
+            <div className="flex items-center gap-2 text-rose-500/80 font-bold text-[10px] tracking-tight uppercase">
+              <AlertCircle size={12} />
+              <span>{sendBlockedReason}</span>
             </div>
+            {onRecoveryAction && (
+              <button
+                type="button"
+                onClick={onRecoveryAction}
+                className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-500 hover:opacity-80 transition-all"
+              >
+                [{recoveryActionLabel}]
+              </button>
+            )}
           </div>
         )}
+
+        {/* Attachments Area */}
         <AnimatePresence>
           {pendingAttachments.length > 0 && (
-            <div className="flex flex-wrap gap-2 p-3 bg-bg-base/20 border-b border-border-muted/5">
+            <div className="flex flex-wrap gap-2 px-5 py-3">
               {pendingAttachments.map((att) => (
-                <Badge key={att.path} variant="secondary" className="h-7 gap-2 px-2.5 bg-bg-base rounded-lg border-border-muted/20 text-text-muted text-[10px] font-bold shadow-sm">
-                  <span className="max-w-[120px] truncate">{att.name}</span>
-                  <button onClick={() => removePendingAttachment(att.path)} className="hover:text-rose-500 transition-colors"><X size={12} /></button>
-                </Badge>
+                <div key={att.path} className="flex items-center gap-2 pl-3 pr-2 py-1.5 bg-bg-base/40 border border-white/5 rounded-full text-[10px] font-bold text-text-muted hover:border-primary/30 transition-all group">
+                  <span className="max-w-[150px] truncate">{att.name}</span>
+                  <button onClick={() => removePendingAttachment(att.path)} className="text-text-muted/30 hover:text-rose-500 transition-colors"><X size={12} /></button>
+                </div>
               ))}
             </div>
           )}
         </AnimatePresence>
 
-        <div className="flex flex-col">
+        {/* Textarea Area */}
+        <div className="relative flex flex-col p-1">
           <textarea
             value={input}
             onChange={(e) => {
               setInput(e.target.value);
               e.target.style.height = "auto";
-              e.target.style.height = `${Math.min(e.target.scrollHeight, 240)}px`;
+              e.target.style.height = `${Math.min(e.target.scrollHeight, 300)}px`;
             }}
-            onCompositionStart={() => {
-              isComposingRef.current = true;
-            }}
-            onCompositionEnd={() => {
-              // React 偶尔会先触发 onCompositionEnd 再触发 onKeyDown(Enter)
-              // 使用 setTimeout 保证当前事件循环中的 onKeyDown 仍然判断为 composing
-              setTimeout(() => {
-                isComposingRef.current = false;
-              }, 50);
-            }}
+            onCompositionStart={() => { isComposingRef.current = true; }}
+            onCompositionEnd={() => { setTimeout(() => { isComposingRef.current = false; }, 50); }}
             onKeyDown={(e) => {
-              // 229 也是某些浏览器下输入法正在输入的重要标志
-              if (e.nativeEvent.isComposing || isComposingRef.current || e.keyCode === 229) {
-                return;
-              }
+              if (e.nativeEvent.isComposing || isComposingRef.current || e.keyCode === 229) return;
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 if (canSend) void handleSend();
               }
             }}
             placeholder={placeholder}
-            className="w-full bg-transparent border-none focus:ring-0 text-[13px] font-medium leading-relaxed py-3 px-4 resize-none min-h-[44px] max-h-[250px] text-text-main placeholder:text-text-muted/20"
+            className="w-full bg-transparent border-none outline-none focus:ring-0 focus:outline-none text-[15px] font-medium leading-relaxed py-4 px-6 resize-none min-h-[56px] max-h-[400px] text-text-main placeholder:text-text-muted/20"
             rows={1}
           />
           
-          <div className="flex items-center justify-between px-4 pb-3 mt-0">
-            <div className="text-[10px] font-black text-text-muted/30 uppercase tracking-[0.15em] flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/60" />
-              Context Ready
-            </div>
+          {/* Minimalist Action Bar */}
+          <div className="flex items-center justify-between px-6 pb-4">
+             <div className="flex items-center gap-6">
+               {/* Context Status */}
+               <div className="flex items-center gap-2 opacity-40 hover:opacity-100 transition-opacity">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"></span>
+                  <span className="text-[9px] font-black uppercase tracking-[0.2em] text-text-muted">READY</span>
+               </div>
+               
+               <button className="text-text-muted/20 hover:text-text-muted transition-colors">
+                 <Paperclip size={16} />
+               </button>
+             </div>
 
-            {!isRunning ? (
-              <button
-                disabled={!canSend}
-                onClick={handleSend}
-                title={sendBlocked ? sendBlockedReason : undefined}
-                className={cn(
-                  "w-10 h-10 flex items-center justify-center rounded-xl transition-all shadow-sm active:scale-90",
-                  canSend
-                    ? "bg-primary-500 text-white hover:bg-primary-600 shadow-primary-500/20"
-                    : "bg-bg-base text-text-muted/10 border border-border-muted/10 cursor-not-allowed"
+             <div className="flex items-center gap-3">
+                {!isRunning ? (
+                  <button
+                    disabled={!canSend}
+                    onClick={handleSend}
+                    className={cn(
+                      "flex items-center justify-center p-2 rounded-full transition-all duration-300",
+                      canSend
+                        ? "text-primary hover:bg-primary/10 active:scale-90"
+                        : "text-text-muted/10 cursor-not-allowed"
+                    )}
+                  >
+                    <SendHorizontal size={20} className={cn("transition-transform", canSend ? "scale-100" : "scale-90")} />
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={handleSend}
+                      disabled={!input.trim() || sendBlocked}
+                      className={cn(
+                        "text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-full transition-all",
+                        input.trim() && !sendBlocked
+                          ? "text-primary bg-primary/10" 
+                          : "text-text-muted/20"
+                      )}
+                    >
+                      CONFIRM
+                    </button>
+                    <button
+                      onClick={handleStop}
+                      className="p-2 rounded-full text-rose-500 hover:bg-rose-500/10 transition-all active:scale-95"
+                    >
+                      <Square size={16} fill="currentColor" />
+                    </button>
+                  </div>
                 )}
-              >
-                <SendHorizontal size={18} className={cn(canSend ? "opacity-100" : "opacity-40")} />
-              </button>
-            ) : (
-              <div className="flex items-center gap-2">
-                 <button
-                  onClick={handleSend}
-                  disabled={!input.trim() || sendBlocked}
-                  title={sendBlocked ? sendBlockedReason : undefined}
-                  className={cn(
-                    "h-9 px-4 flex items-center justify-center rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95",
-                    input.trim() && !sendBlocked
-                      ? "bg-primary-500 text-white shadow-lg shadow-primary-500/20" 
-                      : "bg-bg-base text-text-muted/20 border border-border-muted/10 cursor-not-allowed"
-                  )}
-                >
-                  Confirm Send
-                </button>
-                <button
-                  onClick={handleStop}
-                  className="w-10 h-10 flex items-center justify-center rounded-xl bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all active:scale-90 shadow-sm"
-                >
-                  <Square size={14} fill="currentColor" />
-                </button>
-              </div>
-            )}
+             </div>
           </div>
         </div>
       </div>

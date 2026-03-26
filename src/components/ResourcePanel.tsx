@@ -79,17 +79,17 @@ export function ResourcePanel({
   }, [latestRun?.status, latestVerification]);
 
   return (
-    <Panel id="resource-panel" defaultSize={320} minSize={200} className="flex flex-col bg-bg-surface border-l border-border-muted z-10">
-      <div className="flex items-center gap-1 p-2 shrink-0 bg-bg-base/30 backdrop-blur-sm border-b border-border-muted/5">
-        <div className="flex bg-bg-base/80 p-1 rounded-xl w-full">
+    <Panel id="resource-panel" defaultSize={320} minSize={200} className="flex flex-col bg-bg-surface backdrop-blur-xl border-l border-border-muted z-10">
+      <div className="flex items-center gap-1 p-2 shrink-0 bg-bg-base/40 border-b border-border-muted/5">
+        <div className="flex bg-bg-base/60 p-1 rounded-md w-full shadow-inner">
           {(["runs", "verification", "changes", "conclusion", "config"] as RightPanelTab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setRightPanelTab(tab)}
               className={cn(
-                "flex-1 h-8 rounded-lg text-[10px] font-bold transition-all",
+                "flex-1 h-8 rounded-sm text-[10px] font-black uppercase tracking-tight transition-all",
                 rightPanelTab === tab 
-                  ? "bg-bg-surface text-primary-500 shadow-sm shadow-black/5" 
+                  ? "bg-bg-surface text-primary shadow-vibe" 
                   : "text-text-muted hover:text-text-main"
               )}
             >
@@ -113,27 +113,27 @@ export function ResourcePanel({
             <div className="text-xs text-text-muted">本轮暂无结构化验证数据。</div>
           ) : (
             <div className="space-y-2 text-xs">
-              <div className="rounded-xl border border-border-muted/10 bg-bg-base/40 px-3 py-2.5 shadow-sm">
+              <div className="rounded-sm border border-border-muted bg-bg-base px-3 py-2.5 shadow-sm">
                 <div className="text-[10px] font-bold text-text-muted/60 uppercase tracking-tighter mb-1">测试框架</div>
                 <div className="text-sm font-black text-text-main uppercase">
                   {latestVerification.test_run.framework}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl border border-border-muted/10 bg-emerald-500/5 px-3 py-2.5 shadow-sm">
-                  <div className="text-[10px] font-bold text-emerald-600/60 uppercase tracking-tighter mb-1">通过用例</div>
+                <div className="rounded-sm border border-border-muted/10 bg-emerald-500/10 px-3 py-2.5 shadow-sm">
+                  <div className="text-[10px] font-bold text-emerald-500/60 uppercase tracking-tighter mb-1">通过用例</div>
                   <div className="text-base font-black text-emerald-500">
                     {latestVerification.test_run.passed_cases}
                   </div>
                 </div>
-                <div className="rounded-xl border border-border-muted/10 bg-rose-500/5 px-3 py-2.5 shadow-sm">
-                  <div className="text-[10px] font-bold text-rose-600/60 uppercase tracking-tighter mb-1">失败用例</div>
+                <div className="rounded-sm border border-border-muted/10 bg-rose-500/10 px-3 py-2.5 shadow-sm">
+                  <div className="text-[10px] font-bold text-rose-500/60 uppercase tracking-tighter mb-1">失败用例</div>
                   <div className="text-base font-black text-rose-500">
                     {latestVerification.test_run.failed_cases}
                   </div>
                 </div>
               </div>
-              <div className="rounded-xl border border-border-muted/10 bg-bg-base/40 px-3 py-2.5 shadow-sm">
+              <div className="rounded-sm border border-border-muted/10 bg-bg-base px-3 py-2.5 shadow-sm">
                 <div className="text-[10px] font-bold text-text-muted/60 uppercase tracking-tighter mb-1">数据源</div>
                 <div className="text-xs font-bold text-text-main">{latestVerification.source || "unknown"}</div>
               </div>
@@ -218,7 +218,7 @@ export function ResourcePanel({
           </div>
         </div>
       ) : (
-        <div className="flex-1 min-h-0 p-3 overflow-y-auto custom-scrollbar shadow-inner bg-slate-900/5">
+        <div className="flex-1 min-h-0 p-3 overflow-y-auto custom-scrollbar shadow-inner bg-bg-subtle">
           <CascadingConfigPanel 
              taskId={activeTaskId || null} 
              workspaceId={useAppStore.getState().activeWorkspaceId} 
