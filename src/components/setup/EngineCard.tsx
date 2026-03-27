@@ -6,6 +6,7 @@ import {
   Save,
   CheckCircle2,
   AlertCircle,
+  Trash2
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { Select } from "../ui/select";
@@ -39,6 +40,7 @@ interface EngineCardProps {
     engineId: string,
     options?: { force?: boolean },
   ) => Promise<EngineModelListState>;
+  onDelete?: (engineId: string) => Promise<void>;
 }
 
 function envToText(env: Record<string, string>): string {
@@ -72,6 +74,7 @@ export function EngineCard({
   onSetActiveProfile,
   onUpsertProfile,
   onFetchModels,
+  onDelete,
 }: EngineCardProps) {
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -137,11 +140,11 @@ export function EngineCard({
 
   return (
     <div className={cn(
-      "bg-bg-surface border border-border-muted/10 rounded-sm mb-1 transition-all",
+      "bg-bg-surface border border-border-muted/10 rounded-sm mb-2 transition-all",
       isActive ? "ring-1 ring-primary/30 border-primary/20 shadow-sm" : "hover:border-border-muted/30"
     )}>
       {/* List Header View */}
-      <div className="px-6 py-4 flex items-center justify-between">
+      <div className="px-5 py-3 flex items-center justify-between">
         <div className="flex items-center gap-6 flex-1 min-w-0">
           <div className={cn("p-2 rounded-sm", ok ? "bg-emerald-500/10 text-emerald-500" : "bg-amber-500/10 text-amber-500")}>
             <Cpu size={14} />
@@ -176,7 +179,7 @@ export function EngineCard({
               value={activeProfileId}
               options={profileIds.map(p => ({ value: p, label: p }))}
               onChange={(pid) => void onSetActiveProfile(id, pid)}
-              className="h-7 w-32 px-2 bg-bg-elevated/50 border-border-muted/10 text-[10px] rounded-sm"
+              className="h-8 w-32 px-2 bg-bg-elevated/50 border-border-muted/10 text-[10px] rounded-sm"
             />
            )}
            <button 
@@ -189,6 +192,18 @@ export function EngineCard({
            >
              <RefreshCcw size={12} className="text-text-muted" />
            </button>
+            <button 
+                onClick={() => {
+                  if (window.confirm(`确定要删除提供商 "${engine.display_name}" 吗？`)) {
+                    void onDelete?.(id);
+                  }
+                }}
+                className="p-1.5 rounded-sm hover:bg-red-500/10 hover:text-red-500 transition-all ml-1"
+                title="Delete Provider"
+            >
+                <Trash2 size={12} className="text-text-muted/40 hover:text-red-500 transition-colors" />
+            </button>
+
            <button 
             onClick={() => draft ? stopEdit() : startEdit(activeProfileId)}
             className="p-1.5 rounded-sm hover:bg-bg-elevated transition-all"
@@ -204,7 +219,7 @@ export function EngineCard({
               disabled={isActive}
               size="sm"
               className={cn(
-                "h-7 rounded-sm px-4 text-[10px] font-black uppercase tracking-tight transition-all",
+                "h-8 rounded-sm px-5 text-[11px] font-black uppercase tracking-widest transition-all ml-2",
                 isActive 
                   ? "bg-primary/10 text-primary border border-primary/10 cursor-default" 
                   : "bg-text-main text-bg-surface hover:opacity-90"

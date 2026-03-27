@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { 
   Settings, 
   Cpu, 
@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { useTranslation } from "../../i18n";
+import { cn } from "../../lib/utils";
 import { EngineCard } from "./EngineCard";
 import { SystemDiagnostics } from "./SystemDiagnostics";
 import { ProviderCreateDialog } from "./ProviderCreateDialog";
@@ -17,11 +18,13 @@ import type {
   EngineProfile,
 } from "../../types";
 
+const SHELL_COMMANDS = ["bash", "sh", "zsh", "fish", "powershell.exe", "powershell", "pwsh", "cmd.exe", "cmd"];
+
 interface SettingsViewProps {
   engines: Record<string, EngineConfig>;
-  availableEngines: EngineConfig[];
   enginePreflight: Record<string, EnginePreflightResult>;
   activeEngineId: string;
+  onDeleteEngine: (engineId: string) => Promise<void>;
   onSwitch: (engineId: string) => Promise<void>;
   onPreflight: (engineId: string) => Promise<unknown>;
   onPreflightAll: () => Promise<void>;
@@ -42,34 +45,65 @@ interface SettingsViewProps {
   onLangChange: (lang: "zh" | "en") => void;
 }
 
-export function SettingsView({
-  engines,
-  availableEngines,
-  enginePreflight,
-  activeEngineId,
-  onSwitch,
-  onPreflight,
-  onPreflightAll,
-  onSetActiveProfile,
-  onUpsertProfile,
-  onFetchModels,
-  onUpsertEngine,
-  theme,
-  onThemeChange,
-  lang,
-  onLangChange,
-}: SettingsViewProps) {
+export function SettingsView(props: SettingsViewProps) {
+  const {
+    engines,
+    enginePreflight,
+    activeEngineId,
+    onSwitch,
+    onPreflight,
+    onPreflightAll,
+    onSetActiveProfile,
+    onUpsertProfile,
+    onFetchModels,
+    onUpsertEngine,
+    onDeleteEngine,
+    theme,
+    onThemeChange,
+    lang,
+    onLangChange,
+  } = props;
+
   const { t } = useTranslation();
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showCreateProvider, setShowCreateProvider] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+
+  const engineList = useMemo(() => {
+    const list = Object.values(engines);
+
+    return list.filter(e => {
+      const activeProfile = e.profiles?.[e.active_profile_id || "default"];
+      const command = activeProfile?.command?.toLowerCase() || "";
+      
+      // Filter out shells absolutely (exact or ends with /bash etc.)
+      const isShell = SHELL_COMMANDS.some(sc => 
+        command === sc || command.endsWith(`/${sc}`) || command.endsWith(`\\${sc}`)
+      );
+      
+      // If it's a shell, hide it by default, but show it if user clicks "Show All" 
+      // so they can see what's being "hidden" and delete it if they want.
+      if (!showAll && isShell) {
+        return false;
+      }
+
+      if (showAll) return true;
+
+      const res = enginePreflight[e.id];
+      // Valid = Preflight ran and reported both command & auth are OK
+      return !res || (res.command_exists && res.auth_ok);
+    });
+  }, [engines, enginePreflight, showAll]);
+
+  const hiddenCount = Object.keys(engines).length - engineList.length;
 
   const ControlGroup = ({ title, icon: Icon, children }: { title: string, icon: import("lucide-react").LucideIcon, children: React.ReactNode }) => (
     <div className="space-y-4">
       <div className="flex items-center gap-2 px-1">
         <Icon size={14} className="text-text-muted opacity-50" />
-        <h3 className="text-[11px] font-bold uppercase tracking-[0.1em] text-text-muted">{title}</h3>
+        <h3 className="text-[11px] font-bold uppercase tracking-widest text-text-muted">{title}</h3>
       </div>
-      <div className="bg-bg-surface border border-border-muted/10 rounded-sm divide-y divide-border-muted/5">
+      <div className="bg-bg-surface border border-border-muted/10 rounded-sm divide-y divide-border-muted/10">
         {children}
       </div>
     </div>
@@ -80,8 +114,8 @@ export function SettingsView({
       <div className="max-w-3xl mx-auto space-y-12">
         
         {/* Simple Header */}
-        <header className="flex items-center justify-between py-6">
-          <h2 className="text-xl font-bold tracking-tight text-text-main">Settings</h2>
+        <header className="flex items-center justify-between pt-12 pb-8">
+          <h2 className="text-2xl font-black tracking-tighter text-text-main uppercase">Settings</h2>
         </header>
 
         <main className="space-y-10">
@@ -90,15 +124,18 @@ export function SettingsView({
           <ControlGroup title="Global Preferences" icon={Settings}>
             {/* Theme Row */}
             <div className="flex items-center justify-between p-4 px-6 h-14">
-              <span className="text-sm font-medium text-text-main/80">{t("theme_label") || "App Theme"}</span>
+              <span className="text-[11px] font-bold uppercase tracking-widest text-text-main/60">{t("theme_label") || "App Theme"}</span>
               <div className="flex gap-1 p-0.5 bg-bg-elevated/50 rounded-sm">
                 {["light", "dark", "system"].map((tOpt) => (
                   <button 
                     key={tOpt}
                     onClick={() => onThemeChange(tOpt as "light" | "dark" | "system")}
-                    className={`px-4 py-1 text-[10px] uppercase font-black transition-all rounded-[1px] ${
-                      theme === tOpt ? "bg-bg-surface text-text-main shadow-sm" : "text-text-muted hover:text-text-main"
-                    }`}
+                    className={cn(
+                      "h-7 px-5 text-[11px] uppercase font-black transition-all rounded-sm",
+                      theme === tOpt 
+                        ? "bg-bg-surface text-text-main shadow-sm border border-border-muted/10 cursor-default" 
+                        : "text-text-muted hover:text-text-main hover:bg-bg-elevated/20"
+                    )}
                   >
                     {tOpt}
                   </button>
@@ -108,7 +145,7 @@ export function SettingsView({
 
             {/* Language Row */}
             <div className="flex items-center justify-between p-4 px-6 h-14">
-              <span className="text-sm font-medium text-text-main/80">{t("language_label") || "Language"}</span>
+              <span className="text-[11px] font-bold uppercase tracking-widest text-text-main/60">{t("language_label") || "Language"}</span>
               <div className="flex gap-1 p-0.5 bg-bg-elevated/50 rounded-sm">
                 {[
                    { id: "zh", label: "中文" },
@@ -117,9 +154,10 @@ export function SettingsView({
                    <button 
                     key={lOpt.id}
                     onClick={() => onLangChange(lOpt.id as "zh" | "en")}
-                    className={`px-6 py-1 text-[10px] uppercase font-black transition-all rounded-[1px] ${
-                      lang === lOpt.id ? "bg-bg-surface text-text-main shadow-sm" : "text-text-muted hover:text-text-main"
-                    }`}
+                    className={cn(
+                      "h-7 px-6 text-[11px] uppercase font-black transition-all rounded-sm",
+                      lang === lOpt.id ? "bg-bg-surface text-text-main shadow-sm border border-border-muted/10" : "text-text-muted hover:text-text-main hover:bg-bg-elevated/20"
+                    )}
                    >
                      {lOpt.label}
                    </button>
@@ -133,20 +171,20 @@ export function SettingsView({
             <div className="flex items-center justify-between px-1">
               <div className="flex items-center gap-2">
                 <Cpu size={14} className="text-text-muted opacity-50" />
-                <h3 className="text-[11px] font-bold uppercase tracking-[0.1em] text-text-muted">Language Providers</h3>
+                <h3 className="text-[11px] font-bold uppercase tracking-widest text-text-muted">Language Providers</h3>
               </div>
               <div className="flex gap-2">
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  className="h-7 rounded-sm text-[10px] border-border-muted/20 text-text-muted hover:text-text-main hover:bg-bg-elevated font-black uppercase tracking-tight"
+                  className="h-8 rounded-sm text-[11px] border-border-muted/20 text-text-muted hover:text-text-main hover:bg-bg-elevated font-black uppercase tracking-widest"
                   onClick={onPreflightAll}
                 >
                   {t("check_all") || "Check All"}
                 </Button>
                 <Button 
                   size="sm" 
-                  className="h-8 rounded-xl bg-primary text-white font-black text-[11px] px-6 shadow-glow hover:opacity-90 uppercase tracking-widest transition-all hover:scale-105 active:scale-95"
+                  className="h-8 rounded-sm bg-text-main text-bg-surface font-black text-[11px] px-6 shadow-sm hover:opacity-90 uppercase tracking-widest transition-all active:scale-95"
                   onClick={() => setShowCreateProvider(true)}
                 >
                   <Plus size={14} className="mr-2" /> Add Provider
@@ -156,14 +194,55 @@ export function SettingsView({
 
             {/* Provider List */}
             <div className="space-y-2">
-               {availableEngines.map(e => (
+               {engineList.map(e => (
                   <EngineCard
                     key={e.id} id={e.id} engine={e} preflight={enginePreflight[e.id]}
                     isActive={e.id === activeEngineId} activeEngineId={activeEngineId}
                     onSwitch={onSwitch} onPreflight={onPreflight}
-                    onSetActiveProfile={onSetActiveProfile} onUpsertProfile={onUpsertProfile} onFetchModels={onFetchModels}
+                    onSetActiveProfile={onSetActiveProfile} onUpsertProfile={onUpsertProfile} 
+                    onFetchModels={onFetchModels} onDelete={onDeleteEngine}
                   />
                ))}
+                {hiddenCount > 0 && (
+                  <div className="pt-4 flex items-center justify-center gap-6 border-t border-border-muted/5">
+                    <button
+                      onClick={() => setShowAll(!showAll)}
+                      className="text-[10px] font-bold text-text-muted/40 hover:text-text-muted/60 uppercase tracking-widest transition-colors flex items-center gap-2"
+                    >
+                      <span>{showAll ? "隐藏无效项 / Hide Invalid" : `+${hiddenCount} 更多无效/不完整项`}</span>
+                      <div className="h-px w-4 bg-border-muted/20" />
+                      {!showAll && <span>展开全部 / Show All</span>}
+                    </button>
+
+                    <button
+                      onClick={async () => {
+                        const toDelete = Object.values(engines).filter(e => {
+                          if (e.id === activeEngineId) return false;
+                          const res = enginePreflight[e.id];
+                          const activeProfile = e.profiles?.[e.active_profile_id || "default"];
+                          const command = activeProfile?.command?.toLowerCase() || "";
+                          const isShell = SHELL_COMMANDS.some((sc: string) => 
+                            command === sc || command.endsWith(`/${sc}`) || command.endsWith(`\\${sc}`)
+                          );
+                          
+                          // Delete if: It fails preflight OR it's a blacklisted shell
+                          return (res && (!res.command_exists || !res.auth_ok)) || isShell;
+                        });
+                        
+                        if (toDelete.length === 0) return;
+                        
+                        if (window.confirm(`确认要彻底删除全部 ${toDelete.length} 个无效或非 AI 提供商吗？此操作不可撤销。`)) {
+                          // Wait for all to finish
+                          await Promise.all(toDelete.map(e => onDeleteEngine(e.id)));
+                          setShowAll(false);
+                        }
+                      }}
+                      className="text-[10px] font-bold text-red-500/40 hover:text-red-500 uppercase tracking-widest transition-colors"
+                    >
+                      直接删除全部无效项 / Cleanup All
+                    </button>
+                  </div>
+                )}
             </div>
           </div>
 
@@ -193,7 +272,7 @@ export function SettingsView({
                 <div className="flex items-center justify-between px-1">
                   <div className="flex items-center gap-2">
                     <Activity size={14} className="text-text-muted opacity-50" />
-                    <h3 className="text-[11px] font-bold uppercase tracking-[0.1em] text-text-muted">Diagnostics</h3>
+                    <h3 className="text-[11px] font-bold uppercase tracking-widest text-text-muted">Diagnostics</h3>
                   </div>
                   <button 
                     onClick={() => setShowAdvanced(false)}

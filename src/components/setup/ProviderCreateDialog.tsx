@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { cn } from "../../lib/utils";
 import type { EngineConfig } from "../../types";
 
 interface ProviderCreateDialogProps {
@@ -26,10 +25,36 @@ export function ProviderCreateDialog({
   const [name, setName] = useState("");
   const [command, setCommand] = useState("bash");
   const [model, setModel] = useState("claude-3-5-sonnet-latest");
+  const [apiKey, setApiKey] = useState("");
+  const [apiBaseUrl, setApiBaseUrl] = useState("https://api.anthropic.com");
+  const [apiProvider, setApiProvider] = useState<"anthropic" | "openai-compatible">("anthropic");
   const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleCreate = async () => {
+    setError(null);
     setIsSaving(true);
+
+    if (type === "cli") {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const exists = await invoke<boolean>("engine_check_command", { command });
+        if (!exists) {
+          setError(`未在本地找到命令 '${command}'，请确保已安装到 PATH。`);
+          setIsSaving(false);
+          return;
+        }
+      } catch (e) {
+        console.error("Check command failed:", e);
+      }
+    } else {
+      if (!apiKey.trim()) {
+        setError("API Key 不能为空，请提供有效的 Key 或环境变量。");
+        setIsSaving(false);
+        return;
+      }
+    }
+
     const id = `provider-${Math.random().toString(36).slice(2, 6)}`;
     
     const engine: EngineConfig = {
@@ -43,11 +68,11 @@ export function ProviderCreateDialog({
           display_name: "Default Profile",
           command: type === "cli" ? command : "",
           args: [],
-          env: {},
+          env: type === "api" ? { [apiProvider === "anthropic" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY"]: apiKey } : {},
           supports_headless: false,
           headless_args: [],
           execution_mode: type,
-          ...(type === "api" ? { api_provider: "anthropic", model } : {})
+          ...(type === "api" ? { api_provider: apiProvider, api_base_url: apiBaseUrl, api_key: apiKey, model } : {})
         }
       },
       active_profile_id: "default",
@@ -56,14 +81,16 @@ export function ProviderCreateDialog({
     try {
       await onUpsertEngine(id, engine);
       onClose();
+    } catch (e: any) {
+      setError(e?.message || String(e));
     } finally {
       setIsSaving(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-bg-base/60 backdrop-blur-xl animate-in fade-in duration-300">
-      <div className="bg-bg-surface w-full max-w-[480px] rounded-2xl border border-border-muted/10 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-bg-base/60 backdrop-blur-xl animate-in fade-in duration-300">
+      <div className="bg-bg-surface w-full max-w-[480px] rounded-md border border-border-muted/10 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
         
         {/* Header */}
         <div className="px-8 pt-8 pb-4 flex items-center justify-between">
@@ -86,9 +113,9 @@ export function ProviderCreateDialog({
             <div className="grid gap-4">
               <button 
                 onClick={() => { setType("cli"); setStep("details"); }}
-                className="group flex items-start gap-4 p-5 rounded-xl border border-border-muted/10 bg-bg-elevated/40 hover:bg-bg-elevated hover:border-border-muted/30 transition-all text-left"
+                className="group flex items-start gap-4 p-5 rounded-sm border border-border-muted/10 bg-bg-elevated/40 hover:bg-bg-elevated hover:border-border-muted/30 transition-all text-left"
               >
-                <div className="p-3 rounded-lg bg-bg-surface border border-border-muted/5 group-hover:bg-primary/5 group-hover:border-primary/20 group-hover:text-primary transition-all">
+                <div className="p-3 rounded-sm bg-bg-surface border border-border-muted/5 group-hover:bg-primary/5 group-hover:border-primary/20 group-hover:text-primary transition-all">
                   <Terminal size={22} />
                 </div>
                 <div className="flex-1">
@@ -104,9 +131,9 @@ export function ProviderCreateDialog({
 
               <button 
                 onClick={() => { setType("api"); setStep("details"); }}
-                className="group flex items-start gap-4 p-5 rounded-xl border border-border-muted/10 bg-bg-elevated/40 hover:bg-bg-elevated hover:border-border-muted/30 transition-all text-left"
+                className="group flex items-start gap-4 p-5 rounded-sm border border-border-muted/10 bg-bg-elevated/40 hover:bg-bg-elevated hover:border-border-muted/30 transition-all text-left"
               >
-                <div className="p-3 rounded-lg bg-bg-surface border border-border-muted/5 group-hover:bg-sky-500/5 group-hover:border-sky-500/20 group-hover:text-sky-500 transition-all">
+                <div className="p-3 rounded-sm bg-bg-surface border border-border-muted/5 group-hover:bg-sky-500/5 group-hover:border-sky-500/20 group-hover:text-sky-500 transition-all">
                   <Cloud size={22} />
                 </div>
                 <div className="flex-1">
@@ -132,7 +159,7 @@ export function ProviderCreateDialog({
                     placeholder={type === "cli" ? "e.g. Claude CLI" : "e.g. Anthropic API"}
                     value={name}
                     onChange={e => setName(e.target.value)}
-                    className="h-11 rounded-xl bg-bg-elevated/60 text-sm border-border-muted/10 focus:ring-primary/20 focus:border-primary/30"
+                    className="h-11 rounded-sm bg-bg-elevated/60 text-sm border-border-muted/10 focus:ring-primary/20 focus:border-primary/30"
                   />
                 </div>
 
@@ -145,25 +172,77 @@ export function ProviderCreateDialog({
                       placeholder="e.g. claude"
                       value={command}
                       onChange={e => setCommand(e.target.value)}
-                      className="h-11 rounded-xl bg-bg-elevated/60 text-xs font-mono border-border-muted/10"
+                      className="h-11 rounded-sm bg-bg-elevated/60 text-xs font-mono border-border-muted/10"
                     />
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase text-text-muted/40 tracking-widest pl-1 flex items-center gap-2">
-                      <Cpu size={10} /> 默认模型 (Default Model)
-                    </label>
-                    <Input 
-                      placeholder="claude-3-5-sonnet-latest"
-                      value={model}
-                      onChange={e => setModel(e.target.value)}
-                      className="h-11 rounded-xl bg-bg-elevated/60 text-xs font-mono border-border-muted/10"
-                    />
+                  <div className="space-y-4 pt-2">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-text-muted/40 tracking-widest pl-1 flex items-center gap-2">
+                          <Cloud size={10} /> 提供商 (Provider)
+                        </label>
+                        <select 
+                          value={apiProvider}
+                          onChange={e => {
+                            const p = e.target.value as any;
+                            setApiProvider(p);
+                            setApiBaseUrl(p === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com/v1");
+                          }}
+                          className="w-full h-11 rounded-sm bg-bg-elevated/60 text-xs font-mono border border-border-muted/10 px-3 outline-none focus:border-primary/30 transition-colors cursor-pointer appearance-none"
+                        >
+                          <option value="anthropic">Anthropic</option>
+                          <option value="openai-compatible">OpenAI Compatible</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase text-text-muted/40 tracking-widest pl-1 flex items-center gap-2">
+                          <Cpu size={10} /> 模型 (Model)
+                        </label>
+                        <Input 
+                          placeholder="claude-3-5-sonnet..."
+                          value={model}
+                          onChange={e => setModel(e.target.value)}
+                          className="h-11 rounded-sm bg-bg-elevated/60 text-xs font-mono border-border-muted/10"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase text-text-muted/40 tracking-widest pl-1 flex items-center gap-2">
+                        <X size={10} /> API Key
+                      </label>
+                      <Input 
+                        type="password"
+                        placeholder="sk-..."
+                        value={apiKey}
+                        onChange={e => setApiKey(e.target.value)}
+                        className="h-11 rounded-sm bg-bg-elevated/60 text-xs font-mono border-border-muted/10"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase text-text-muted/40 tracking-widest pl-1 flex items-center gap-2">
+                        <Cloud size={10} /> Base URL
+                      </label>
+                      <Input 
+                        placeholder="https://..."
+                        value={apiBaseUrl}
+                        onChange={e => setApiBaseUrl(e.target.value)}
+                        className="h-11 rounded-sm bg-bg-elevated/60 text-xs font-mono border-border-muted/10"
+                      />
+                    </div>
+                  </div>
+                )}
+                
+                {error && (
+                  <div className="p-3 rounded-sm bg-red-500/5 border border-red-500/20 text-red-500 text-[10px] font-bold uppercase tracking-widest transition-all animate-in fade-in slide-in-from-top-1">
+                    Error: {error}
                   </div>
                 )}
               </div>
 
-              <div className="p-4 rounded-xl bg-primary/5 border border-primary/10 flex items-start gap-3">
+              <div className="p-4 rounded-sm bg-primary/5 border border-primary/10 flex items-start gap-3">
                 <div className="text-primary mt-0.5"><Cpu size={14} /></div>
                 <p className="text-[10px] leading-relaxed text-primary/80 font-medium italic">
                   创建后您仍可以在提供商详情页中补充更复杂的参数（Arguments）或环境变量（Environment Variables）。
@@ -178,8 +257,8 @@ export function ProviderCreateDialog({
           {step === "details" && (
             <Button 
               variant="ghost" 
-              className="px-6 rounded-xl text-text-muted/60 text-[11px] font-bold uppercase transition-all"
-              onClick={() => setStep("type")}
+              className="px-6 rounded-sm text-text-muted/60 text-[11px] font-bold uppercase transition-all"
+              onClick={() => { setStep("type"); setError(null); }}
             >
               上一步 / Back
             </Button>
@@ -189,7 +268,7 @@ export function ProviderCreateDialog({
 
           {step === "details" ? (
             <Button 
-              className="px-8 h-10 rounded-xl bg-primary text-white font-black text-[11px] shadow-glow uppercase transition-all tracking-wider"
+              className="px-8 h-10 rounded-sm bg-primary text-white font-black text-[11px] shadow-glow uppercase transition-all tracking-widest"
               onClick={handleCreate}
               loading={isSaving}
             >
@@ -198,7 +277,7 @@ export function ProviderCreateDialog({
           ) : (
             <Button 
               variant="ghost"
-              className="px-6 rounded-xl text-text-muted/40 text-[11px] font-bold uppercase"
+              className="px-6 rounded-sm text-text-muted/40 text-[11px] font-bold uppercase"
               onClick={onClose}
             >
               取消 / Cancel
