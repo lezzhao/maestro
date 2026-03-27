@@ -1,6 +1,7 @@
 //! SSE (Server-Sent Events) parsing for streaming API responses.
 //! Extracted from provider-specific logic for reuse and testability.
 
+use super::ApiProviderError;
 use serde_json::Value;
 
 /// Parse OpenAI-compatible SSE format: `data: {...}` or `data: [DONE]`.
@@ -22,13 +23,19 @@ pub fn parse_openai_line(buffer: &mut String) -> Option<(Option<String>, Option<
     let text = value
         .pointer("/choices/0/delta/content")
         .and_then(|v| v.as_str())
-        .or_else(|| value.pointer("/choices/0/delta/content/0/text").and_then(|v| v.as_str()));
+        .or_else(|| {
+            value
+                .pointer("/choices/0/delta/content/0/text")
+                .and_then(|v| v.as_str())
+        });
     let content = text.filter(|s| !s.is_empty()).map(|s| s.to_string());
 
     let reasoning_text = value
         .pointer("/choices/0/delta/reasoning_content")
         .and_then(|v| v.as_str());
-    let reasoning = reasoning_text.filter(|s| !s.is_empty()).map(|s| s.to_string());
+    let reasoning = reasoning_text
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
 
     Some((content, reasoning, false))
 }
@@ -46,7 +53,7 @@ impl AnthropicEvent {
     }
 
     /// Extract text content from content_block_delta event.
-    pub fn extract_content(&self) -> Result<Option<String>, String> {
+    pub fn extract_content(&self) -> Result<Option<String>, ApiProviderError> {
         if self.event_type == "message_stop" {
             return Ok(None);
         }
@@ -54,8 +61,8 @@ impl AnthropicEvent {
             return Ok(None);
         }
         let payload = self.data_lines.join("\n");
-        let value: Value =
-            serde_json::from_str(&payload).map_err(|e| format!("解析响应失败: {e}"))?;
+        let value: Value = serde_json::from_str(&payload)
+            .map_err(|e| ApiProviderError::Execution(format!("解析响应失败: {e}")))?;
         let text = if self.event_type == "content_block_delta" {
             value.pointer("/delta/text").and_then(|v| v.as_str())
         } else if self.event_type.is_empty() {
@@ -113,7 +120,8 @@ mod tests {
     #[test]
     fn test_parse_openai_line_content() {
         let mut buf = r#"data: {"choices":[{"delta":{"content":"Hello"}}]}
-"#.to_string();
+"#
+        .to_string();
         let (content, reasoning, done) = parse_openai_line(&mut buf).unwrap();
         assert_eq!(content.as_deref(), Some("Hello"));
         assert!(reasoning.is_none());

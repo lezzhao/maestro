@@ -1,7 +1,6 @@
 mod sse;
 
 use crate::core::events::StringStream;
-use crate::workflow::types::ChatApiMessage;
 use futures::StreamExt;
 use reqwest::Client;
 use serde_json::json;
@@ -12,6 +11,35 @@ use tokio_util::sync::CancellationToken;
 
 pub use sse::AnthropicEvent;
 
+#[derive(Debug, Clone)]
+pub struct ApiProviderMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum ApiProviderError {
+    Config(String),
+    Execution(String),
+}
+
+impl std::fmt::Display for ApiProviderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Config(msg) => write!(f, "{msg}"),
+            Self::Execution(msg) => write!(f, "{msg}"),
+        }
+    }
+}
+
+impl std::error::Error for ApiProviderError {}
+
+impl From<String> for ApiProviderError {
+    fn from(message: String) -> Self {
+        Self::Execution(message)
+    }
+}
+
 pub trait ApiProvider: Send + Sync {
     fn id(&self) -> &str;
     #[allow(clippy::too_many_arguments)]
@@ -21,17 +49,17 @@ pub trait ApiProvider: Send + Sync {
         base_url: &'a str,
         api_key: &'a str,
         model: &'a str,
-        messages: &'a [ChatApiMessage],
+        messages: &'a [ApiProviderMessage],
         cancel_token: CancellationToken,
         on_data: &'a Arc<dyn StringStream>,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = Result<(), ApiProviderError>> + Send + 'a>>;
 }
 
 fn normalize_base_url(input: &str) -> String {
     input.trim().trim_end_matches('/').to_string()
 }
 
-fn normalize_messages(messages: &[ChatApiMessage]) -> Vec<serde_json::Value> {
+fn normalize_messages(messages: &[ApiProviderMessage]) -> Vec<serde_json::Value> {
     messages
         .iter()
         .filter_map(|m| {
@@ -53,10 +81,10 @@ async fn stream_openai_compatible(
     base_url: &str,
     api_key: &str,
     model: &str,
-    messages: &[ChatApiMessage],
+    messages: &[ApiProviderMessage],
     cancel_token: CancellationToken,
     on_data: &Arc<dyn StringStream>,
-) -> Result<(), String> {
+) -> Result<(), ApiProviderError> {
     let endpoint = format!("{}/chat/completions", normalize_base_url(base_url));
     let body = json!({
         "model": model,
@@ -70,11 +98,15 @@ async fn stream_openai_compatible(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("请求失败: {e}"))?;
+        .map_err(|e| ApiProviderError::Execution(format!("请求失败: {e}")))?;
     let status = response.status();
     if !status.is_success() {
         let text = response.text().await.unwrap_or_default();
-        return Err(format!("HTTP {}: {}", status.as_u16(), text));
+        return Err(ApiProviderError::Execution(format!(
+            "HTTP {}: {}",
+            status.as_u16(),
+            text
+        )));
     }
 
     let mut stream = response.bytes_stream();
@@ -86,7 +118,7 @@ async fn stream_openai_compatible(
                 if is_reasoning {
                     let _ = on_data.send_string("\n</think>\n".to_string());
                 }
-                return Err("请求已取消".to_string());
+                return Err(ApiProviderError::Execution("请求已取消".into()));
             }
             next = stream.next() => {
                 match next {
@@ -118,7 +150,7 @@ async fn stream_openai_compatible(
                             }
                         }
                     }
-                    Some(Err(e)) => return Err(format!("读取流失败: {e}")),
+                    Some(Err(e)) => return Err(ApiProviderError::Execution(format!("读取流失败: {e}"))),
                     None => {
                         if is_reasoning {
                             let _ = on_data.send_string("\n</think>\n".to_string());
@@ -134,7 +166,7 @@ async fn stream_openai_compatible(
 fn flush_anthropic_event(
     event: &AnthropicEvent,
     on_data: &Arc<dyn StringStream>,
-) -> Result<bool, String> {
+) -> Result<bool, ApiProviderError> {
     if event.is_complete() {
         return Ok(true);
     }
@@ -149,10 +181,10 @@ async fn stream_anthropic(
     base_url: &str,
     api_key: &str,
     model: &str,
-    messages: &[ChatApiMessage],
+    messages: &[ApiProviderMessage],
     cancel_token: CancellationToken,
     on_data: &Arc<dyn StringStream>,
-) -> Result<(), String> {
+) -> Result<(), ApiProviderError> {
     let endpoint = format!("{}/v1/messages", normalize_base_url(base_url));
     let body = json!({
         "model": model,
@@ -168,11 +200,15 @@ async fn stream_anthropic(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("请求失败: {e}"))?;
+        .map_err(|e| ApiProviderError::Execution(format!("请求失败: {e}")))?;
     let status = response.status();
     if !status.is_success() {
         let text = response.text().await.unwrap_or_default();
-        return Err(format!("HTTP {}: {}", status.as_u16(), text));
+        return Err(ApiProviderError::Execution(format!(
+            "HTTP {}: {}",
+            status.as_u16(),
+            text
+        )));
     }
 
     let mut stream = response.bytes_stream();
@@ -182,7 +218,7 @@ async fn stream_anthropic(
     loop {
         tokio::select! {
             _ = cancel_token.cancelled() => {
-                return Err("请求已取消".to_string());
+                return Err(ApiProviderError::Execution("请求已取消".into()));
             }
             next = stream.next() => {
                 match next {
@@ -203,7 +239,7 @@ async fn stream_anthropic(
                             }
                         }
                     }
-                    Some(Err(e)) => return Err(format!("读取流失败: {e}")),
+                    Some(Err(e)) => return Err(ApiProviderError::Execution(format!("读取流失败: {e}"))),
                     None => {
                         // Process any remaining buffer (last chunk may lack trailing newline)
                         while let Some(pos) = buffer.find('\n') {
@@ -260,12 +296,18 @@ impl ApiProvider for OpenAiProvider {
         base_url: &'a str,
         api_key: &'a str,
         model: &'a str,
-        messages: &'a [ChatApiMessage],
+        messages: &'a [ApiProviderMessage],
         cancel_token: CancellationToken,
         on_data: &'a Arc<dyn StringStream>,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<(), ApiProviderError>> + Send + 'a>> {
         Box::pin(stream_openai_compatible(
-            client, base_url, api_key, model, messages, cancel_token, on_data,
+            client,
+            base_url,
+            api_key,
+            model,
+            messages,
+            cancel_token,
+            on_data,
         ))
     }
 }
@@ -283,12 +325,18 @@ impl ApiProvider for AnthropicProvider {
         base_url: &'a str,
         api_key: &'a str,
         model: &'a str,
-        messages: &'a [ChatApiMessage],
+        messages: &'a [ApiProviderMessage],
         cancel_token: CancellationToken,
         on_data: &'a Arc<dyn StringStream>,
-    ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<(), ApiProviderError>> + Send + 'a>> {
         Box::pin(stream_anthropic(
-            client, base_url, api_key, model, messages, cancel_token, on_data,
+            client,
+            base_url,
+            api_key,
+            model,
+            messages,
+            cancel_token,
+            on_data,
         ))
     }
 }
@@ -327,18 +375,18 @@ pub async fn stream_chat(
     base_url: &str,
     api_key: &str,
     model: &str,
-    messages: &[ChatApiMessage],
+    messages: &[ApiProviderMessage],
     cancel_token: CancellationToken,
     on_data: Arc<dyn StringStream>,
-) -> Result<(), String> {
+) -> Result<(), ApiProviderError> {
     if api_key.trim().is_empty() {
-        return Err("API Key 未配置".to_string());
+        return Err(ApiProviderError::Config("API Key 未配置".into()));
     }
     if model.trim().is_empty() {
-        return Err("模型未配置".to_string());
+        return Err(ApiProviderError::Config("模型未配置".into()));
     }
     if base_url.trim().is_empty() {
-        return Err("API Base URL 未配置".to_string());
+        return Err(ApiProviderError::Config("API Base URL 未配置".into()));
     }
     let client = Client::new();
     let registry = &*PROVIDER_REGISTRY;
@@ -350,7 +398,7 @@ pub async fn stream_chat(
 
     let p = registry
         .get(internal_provider_id)
-        .ok_or_else(|| format!("unsupported provider: {provider}"))?;
+        .ok_or_else(|| ApiProviderError::Config(format!("unsupported provider: {provider}")))?;
 
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(API_TIMEOUT_SECS),
@@ -369,6 +417,9 @@ pub async fn stream_chat(
     match result {
         Ok(Ok(())) => Ok(()),
         Ok(Err(e)) => Err(e),
-        Err(_) => Err(format!("API timeout after {}s", API_TIMEOUT_SECS)),
+        Err(_) => Err(ApiProviderError::Execution(format!(
+            "API timeout after {}s",
+            API_TIMEOUT_SECS
+        ))),
     }
 }
