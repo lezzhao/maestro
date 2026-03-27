@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { useAppStore } from "../stores/appStore";
+import { useTaskStoreState } from "./use-app-store-selectors";
 import type { AppTask } from "../types";
 
 /**
@@ -11,10 +11,7 @@ export function useActiveTask(): {
   activeTaskId: string | null;
   activeTask: AppTask | undefined;
 } {
-  const tasks = useAppStore((s) => s.tasks);
-  const activeTaskId = useAppStore((s) => s.activeTaskId);
-  const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId);
-  const setActiveTaskId = useAppStore((s) => s.setActiveTaskId);
+  const { tasks, activeTaskId, activeWorkspaceId, setActiveTaskId } = useTaskStoreState();
 
   const activeTask = useMemo(
     () => tasks.find((t) => t.id === activeTaskId),

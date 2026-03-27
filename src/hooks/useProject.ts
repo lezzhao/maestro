@@ -1,16 +1,18 @@
 import { useCallback, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "../stores/appStore";
-import type {
-  EngineRecommendation,
-  FileChange,
-  ProjectSetResult,
-  ProjectStackResult,
-} from "../types";
+import { useProjectStoreState } from "./use-app-store-selectors";
+import {
+  detectProjectStackCommand,
+  getProjectGitDiffCommand,
+  getProjectGitStatusCommand,
+  readProjectFileCommand,
+  recommendProjectEngineCommand,
+  setCurrentProjectCommand,
+} from "./project-commands";
+import { loadProjectGitDiff, loadProjectGitStatus } from "./project-cache-support";
+import type { FileChange } from "../types";
 
 export function useProject() {
-  const projectPath = useAppStore((s) => s.projectPath);
-  const setProjectPath = useAppStore((s) => s.setProjectPath);
+  const { projectPath, setProjectPath } = useProjectStoreState();
   const gitStatusCacheRef = useRef<Map<string, { value: FileChange[]; ts: number }>>(
     new Map(),
   );
@@ -18,19 +20,12 @@ export function useProject() {
 
   const detectAndRecommend = useCallback(
     async (path: string) => {
-      const stack = await invoke<ProjectStackResult>("project_detect_stack", {
-        projectPath: path,
-      });
-      await invoke<ProjectSetResult>("project_set_current", {
-        projectPath: path,
-      });
+      const stack = await detectProjectStackCommand(path);
+      await setCurrentProjectCommand(path);
       // Set path immediately after setting the current project in backend
       setProjectPath(path);
       
-      const recommendation = await invoke<EngineRecommendation>(
-        "project_recommend_engine",
-        { projectPath: path },
-      );
+      const recommendation = await recommendProjectEngineCommand(path);
       return { stack, recommendation };
     },
     [setProjectPath],
@@ -39,16 +34,12 @@ export function useProject() {
   const gitStatus = useCallback(
     async (path = projectPath, options?: { force?: boolean }) => {
       if (!path) return [];
-      const cacheKey = path;
-      const ttlMs = 15_000;
-      const now = Date.now();
-      const cached = gitStatusCacheRef.current.get(cacheKey);
-      if (!options?.force && cached && now - cached.ts <= ttlMs) {
-        return cached.value;
-      }
-      const value = await invoke<FileChange[]>("project_git_status", { projectPath: path });
-      gitStatusCacheRef.current.set(cacheKey, { value, ts: now });
-      return value;
+      return loadProjectGitStatus({
+        projectPath: path,
+        force: options?.force ?? false,
+        cache: gitStatusCacheRef.current,
+        fetchStatus: getProjectGitStatusCommand,
+      });
     },
     [projectPath],
   );
@@ -56,19 +47,13 @@ export function useProject() {
   const gitDiff = useCallback(
     async (filePath?: string, path = projectPath, options?: { force?: boolean }) => {
       if (!path) return "";
-      const cacheKey = `${path}::${filePath || "__all__"}`;
-      const ttlMs = 15_000;
-      const now = Date.now();
-      const cached = gitDiffCacheRef.current.get(cacheKey);
-      if (!options?.force && cached && now - cached.ts <= ttlMs) {
-        return cached.value;
-      }
-      const value = await invoke<string>("project_git_diff", {
+      return loadProjectGitDiff({
         projectPath: path,
-        filePath: filePath ?? null,
+        filePath,
+        force: options?.force ?? false,
+        cache: gitDiffCacheRef.current,
+        fetchDiff: getProjectGitDiffCommand,
       });
-      gitDiffCacheRef.current.set(cacheKey, { value, ts: now });
-      return value;
     },
     [projectPath],
   );
@@ -76,11 +61,7 @@ export function useProject() {
   const readProjectFile = useCallback(
     async (filePath: string, path = projectPath, maxChars = 20_000) => {
       if (!path) return "";
-      return invoke<string>("project_read_file", {
-        projectPath: path,
-        filePath,
-        maxChars,
-      });
+      return readProjectFileCommand(path, filePath, maxChars);
     },
     [projectPath],
   );

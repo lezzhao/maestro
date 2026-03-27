@@ -1,7 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
-import { useAppStore } from "../stores/appStore";
+import { usePerformanceStoreState } from "./use-app-store-selectors";
+import { stopProcessMonitorCommand, startProcessMonitorCommand } from "./performance-commands";
 
 interface ProcessStats {
   cpu_percent: number;
@@ -9,11 +9,15 @@ interface ProcessStats {
 }
 
 export function usePerformance() {
-  const activeTaskId = useAppStore((s) => s.activeTaskId);
-  const currentStep = useAppStore((s) => s.currentStep);
-  const activeTask = useAppStore((s) => s.tasks.find((task) => task.id === s.activeTaskId));
+  const { tasks, activeTaskId, currentStep, updateTaskRecord } = usePerformanceStoreState();
+  const activeTask = tasks.find((task) => task.id === activeTaskId);
   const sessionId = activeTask?.sessionId ?? null;
   const activeExecId = activeTask?.activeExecId ?? null;
+  const stateRef = useRef({ tasks, activeTaskId, updateTaskRecord });
+
+  useEffect(() => {
+    stateRef.current = { tasks, activeTaskId, updateTaskRecord };
+  }, [tasks, activeTaskId, updateTaskRecord]);
 
   // Effect 1: Perf Stats Listener (Global, but only updates active task)
   useEffect(() => {
@@ -22,12 +26,11 @@ export function usePerformance() {
     const setupListener = async () => {
       try {
         const unlistenFn = await listen<ProcessStats>("perf://stats", (event) => {
-          const state = useAppStore.getState();
-          const tid = state.activeTaskId;
+          const { activeTaskId: tid, tasks: currentTasks, updateTaskRecord: syncTaskRecord } = stateRef.current;
           if (!tid) return;
-          const task = state.tasks.find((t) => t.id === tid);
+          const task = currentTasks.find((t) => t.id === tid);
           const prev = task?.stats;
-          state.updateTaskRecord(tid, {
+          syncTaskRecord(tid, {
             stats: {
               cpu_percent: event.payload.cpu_percent,
               memory_mb: event.payload.memory_mb,
@@ -47,28 +50,28 @@ export function usePerformance() {
     return () => {
       unlisten?.();
     };
-  }, [activeTaskId]);
+  }, []);
 
   // Effect 2: Monitor Toggle (Depends on sessionId and step)
   useEffect(() => {
     if (currentStep !== "compose") {
-      void invoke("process_stop_monitor").catch(() => {});
+      void stopProcessMonitorCommand().catch(() => {});
       return;
     }
     if (!sessionId) {
       // headless 执行没有 PTY session，可用 exec 但不可用 process monitor
       if (activeExecId) {
-        void invoke("process_stop_monitor").catch(() => {});
+        void stopProcessMonitorCommand().catch(() => {});
       }
       return;
     }
 
-    void invoke("process_start_monitor", { sessionId, intervalMs: 2500 }).catch((err) => {
+    void startProcessMonitorCommand(sessionId).catch((err) => {
       console.error("[usePerformance] Failed to start monitor:", err);
     });
 
     return () => {
-      void invoke("process_stop_monitor").catch(() => {});
+      void stopProcessMonitorCommand().catch(() => {});
     };
   }, [activeExecId, currentStep, sessionId]);
 }

@@ -4,7 +4,7 @@
  * Fallback only for startup window: conservative display (executionMode: cli, isReady: false).
  */
 import { useMemo } from "react";
-import { useAppStore } from "../stores/appStore";
+import { useRuntimeStoreState } from "./use-app-store-selectors";
 import { useActiveTask } from "./useActiveTask";
 import type { AppTask, EngineConfig, EnginePreflightResult, EngineProfile } from "../types";
 
@@ -47,7 +47,8 @@ export function resolveTaskRuntimeContextFromState(
     const executionMode = resolved.executionMode;
     const isHeadless = resolved.supportsHeadless;
 
-    const activePreflight = enginePreflight[engineId];
+    const activePreflightKey = profileId ? `${engineId}::${profileId}` : engineId;
+    const activePreflight = enginePreflight[activePreflightKey] || enginePreflight[engineId];
     const isCliReady = Boolean(activePreflight?.command_exists) && Boolean(activePreflight?.auth_ok);
     const isApiReady = Boolean(resolved.apiProvider && resolved.apiBaseUrl && resolved.model);
     const isReady = executionMode === "api" ? isApiReady : isCliReady;
@@ -96,9 +97,7 @@ export function resolveTaskRuntimeContextFromState(
  */
 export function useTaskRuntimeContext(taskId?: string | null): TaskRuntimeContext {
   const { activeTask } = useActiveTask();
-  const tasks = useAppStore((s) => s.tasks);
-  const engines = useAppStore((s) => s.engines);
-  const enginePreflight = useAppStore((s) => s.enginePreflight);
+  const { tasks, engines, enginePreflight } = useRuntimeStoreState();
 
   const targetTask = useMemo(() => {
     if (taskId != null && taskId !== "") {

@@ -1,11 +1,23 @@
 import { useCallback } from "react";
-import { Channel, invoke } from "@tauri-apps/api/core";
+import {
+  executeChatApiCommand,
+  executeChatCliCommand,
+  loadLastConversationCommand,
+  saveLastConversationCommand,
+  sendChatMessageCommand,
+  spawnChatSessionCommand,
+  stopChatApiCommand,
+  stopChatCliCommand,
+  stopChatSessionCommand,
+  submitChatChoiceCommand,
+} from "./chat-commands";
 import type {
   ChatApiRequest,
   ChatExecuteApiResult,
   ChatExecuteCliRequest,
   ChatExecuteCliResult,
   ChatExecuteStopRequest,
+  ChatSubmitChoiceRequest,
   ChatSendRequest,
   ChatSessionMeta,
   ChatSpawnRequest,
@@ -18,20 +30,17 @@ export function useChatAgent() {
       request: ChatSpawnRequest,
       onChunk: (chunk: string) => void,
     ): Promise<ChatSessionMeta> => {
-      const onData = new Channel<string>();
-      onData.onmessage = (chunk) => onChunk(chunk);
-      const result = await invoke<ChatSessionMeta>("chat_spawn", { request, onData });
-      return result;
+      return spawnChatSessionCommand(request, onChunk);
     },
     [],
   );
 
   const sendMessage = useCallback(async (request: ChatSendRequest) => {
-    await invoke("chat_send", { request });
+    await sendChatMessageCommand(request);
   }, []);
 
   const stopSession = useCallback(async (request: ChatStopRequest) => {
-    await invoke("chat_stop", { request });
+    await stopChatSessionCommand(request);
   }, []);
 
   const executeApi = useCallback(
@@ -39,15 +48,13 @@ export function useChatAgent() {
       request: ChatApiRequest,
       onChunk: (chunk: string) => void,
     ): Promise<ChatExecuteApiResult> => {
-      const onData = new Channel<string>();
-      onData.onmessage = (chunk) => onChunk(chunk);
-      return invoke<ChatExecuteApiResult>("chat_execute_api", { request, onData });
+      return executeChatApiCommand(request, onChunk);
     },
     [],
   );
 
   const stopApi = useCallback(async (request: ChatExecuteStopRequest) => {
-    await invoke("chat_execute_api_stop", { request });
+    await stopChatApiCommand(request);
   }, []);
 
   const executeCli = useCallback(
@@ -55,23 +62,25 @@ export function useChatAgent() {
       request: ChatExecuteCliRequest,
       onChunk: (chunk: string) => void,
     ): Promise<ChatExecuteCliResult> => {
-      const onData = new Channel<string>();
-      onData.onmessage = (chunk) => onChunk(chunk);
-      return invoke<ChatExecuteCliResult>("chat_execute_cli", { request, onData });
+      return executeChatCliCommand(request, onChunk);
     },
     [],
   );
 
   const stopCli = useCallback(async (request: ChatExecuteStopRequest) => {
-    await invoke("chat_execute_cli_stop", { request });
+    await stopChatCliCommand(request);
   }, []);
 
   const saveLastConversation = useCallback(async (payload: unknown) => {
-    await invoke("chat_save_last_conversation", { payload });
+    await saveLastConversationCommand(payload);
   }, []);
 
   const loadLastConversation = useCallback(async () => {
-    return invoke<unknown | null>("chat_load_last_conversation");
+    return loadLastConversationCommand();
+  }, []);
+
+  const submitChoice = useCallback(async (request: ChatSubmitChoiceRequest) => {
+    await submitChatChoiceCommand(request);
   }, []);
 
   return {
@@ -84,5 +93,6 @@ export function useChatAgent() {
     stopCli,
     saveLastConversation,
     loadLastConversation,
+    submitChoice,
   };
 }

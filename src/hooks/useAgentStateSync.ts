@@ -4,17 +4,14 @@
  * Batches execution_output_chunk to reduce store updates during streaming.
  */
 import { useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useAppStore } from "../stores/appStore";
 import { useChatStore } from "../stores/chatStore";
-import type { TaskRecord } from "../types";
-import {
-  applyAgentStateUpdate,
-  type AgentStateUpdate,
-  toTaskViewModel,
-} from "../lib/agentStateReducer";
+import type { AgentStateUpdate } from "../lib/agentStateReducer";
 import { useBatchedAppender } from "./useBatchedAppender";
+import {
+  bootstrapAgentState,
+  createAgentStateUpdateApplier,
+} from "./agent-state-sync-support";
 
 export function useAgentStateSync() {
   const appendRunTranscript = useChatStore((s) => s.appendRunTranscript);
@@ -28,43 +25,16 @@ export function useAgentStateSync() {
     let unlisten: (() => void) | undefined;
     let bootstrapping = true;
     const bufferedUpdates: AgentStateUpdate[] = [];
-
-    const applyUpdate = (payload: AgentStateUpdate) => {
-      if (!payload || typeof payload !== "object") return;
+    const applyUpdate = createAgentStateUpdateApplier(
+      appendTranscriptChunk,
+      appendMessageChunk,
+    );
+    const applyUpdateWithFlush = (payload: AgentStateUpdate) => {
       if (payload.type === "run_finished" || payload.type === "execution_cancelled") {
         flushTranscript();
         flushMessage();
       }
-      const appState = useAppStore.getState();
-      const chatState = useChatStore.getState();
-      applyAgentStateUpdate(payload, {
-        createRun: chatState.createRun,
-        finishRun: chatState.finishRun,
-        appendRunTranscript: (runId, content) => appendTranscriptChunk("", runId, content),
-        setMessages: chatState.setMessages,
-        updateMessage: chatState.updateMessage,
-        appendToMessage: (taskId, msgId, chunk) => appendMessageChunk(taskId, msgId, chunk),
-        setTasks: appState.setTasks,
-        updateTaskRecord: appState.updateTaskRecord,
-        setTaskResolvedRuntimeContext: appState.setTaskResolvedRuntimeContext,
-        updateTaskRuntimeBinding: appState.updateTaskRuntimeBinding,
-        getAppState: () => useAppStore.getState(),
-        setAppState: (next) => useAppStore.setState(next),
-        setEnginePreflight: appState.setEnginePreflight,
-        addWorkspace: appState.addWorkspace,
-        updateWorkspace: (workspace) => appState.updateWorkspace(workspace.id, workspace),
-        removeWorkspace: appState.removeWorkspace,
-
-        setActiveRunId: chatState.setActiveRunId,
-        setActiveAssistantMsgId: chatState.setActiveAssistantMsgId,
-        getChatState: () => ({
-          taskActiveRunId: useChatStore.getState().taskActiveRunId,
-          taskActiveAssistantMsgId: useChatStore.getState().taskActiveAssistantMsgId,
-        }),
-        setTaskRunning: chatState.setTaskRunning,
-        setRunning: chatState.setRunning,
-        setExecutionPhase: chatState.setExecutionPhase,
-      });
+      applyUpdate(payload);
     };
 
     const setup = async () => {
@@ -77,39 +47,15 @@ export function useAgentStateSync() {
             bufferedUpdates.push(payload);
             return;
           }
-          applyUpdate(payload);
+          applyUpdateWithFlush(payload);
         });
 
-        // Load initial state from backend (authoritative source)
-        const [tasks, workspaces] = await Promise.all([
-          invoke<TaskRecord[]>("task_list"),
-          invoke<import("../types").Workspace[]>("workspace_list"),
-        ]);
-        const chatMessages = useChatStore.getState().messages;
-        const taskModels = tasks.map((taskRecord) => {
-          const vm = toTaskViewModel(taskRecord);
-          let input = 0;
-          let output = 0;
-          const msgs = chatMessages[vm.id];
-          if (msgs) {
-            for (const m of msgs) {
-              if (m.tokenEstimate) {
-                input += m.tokenEstimate.approx_input_tokens || 0;
-                output += m.tokenEstimate.approx_output_tokens || 0;
-              }
-            }
-          }
-          vm.stats.approx_input_tokens = input;
-          vm.stats.approx_output_tokens = output;
-          return vm;
-        });
-        useAppStore.getState().setTasks(taskModels);
-        useAppStore.getState().setWorkspaces(workspaces);
+        await bootstrapAgentState();
         bootstrapping = false;
 
         if (bufferedUpdates.length > 0) {
           for (const payload of bufferedUpdates) {
-            applyUpdate(payload);
+            applyUpdateWithFlush(payload);
           }
           bufferedUpdates.length = 0;
         }
