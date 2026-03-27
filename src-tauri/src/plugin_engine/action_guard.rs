@@ -1,3 +1,4 @@
+use super::EngineError;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -10,11 +11,7 @@ pub struct ActionGuardConfig {
 impl Default for ActionGuardConfig {
     fn default() -> Self {
         Self {
-            protected_paths: vec![
-                "/etc".to_string(),
-                "/var".to_string(),
-                "~/.ssh".to_string(),
-            ],
+            protected_paths: vec!["/etc".to_string(), "/var".to_string(), "~/.ssh".to_string()],
             blocked_commands: vec![
                 r"(?i)\brm\s+-rf\s+(/|/etc|/var|~)(\s|$)".to_string(),
                 r"(?i)\bmkfs\b".to_string(),
@@ -30,10 +27,11 @@ pub struct ActionGuard {
 }
 
 impl ActionGuard {
-    pub fn new(config: ActionGuardConfig) -> Result<Self, String> {
+    pub fn new(config: ActionGuardConfig) -> Result<Self, EngineError> {
         let mut regexes = Vec::new();
         for pattern in &config.blocked_commands {
-            let re = Regex::new(pattern).map_err(|e| format!("Invalid regex '{}': {}", pattern, e))?;
+            let re = Regex::new(pattern)
+                .map_err(|e| EngineError::Config(format!("Invalid regex '{pattern}': {e}")))?;
             regexes.push(re);
         }
         Ok(Self { config, regexes })
@@ -43,16 +41,18 @@ impl ActionGuard {
         Self::new(ActionGuardConfig::default()).unwrap()
     }
 
-    /// Checks if a command violates any guard rules.
-    /// Returns `Err(reason)` if blocked, `Ok(())` if safe.
-    pub fn check_command(&self, command: &str) -> Result<(), String> {
+    /// 检查命令是否违反安全策略。
+    /// 被拦截时返回 `Err(EngineError::PermissionDenied)`。
+    pub fn check_command(&self, command: &str) -> Result<(), EngineError> {
         for (i, re) in self.regexes.iter().enumerate() {
             if re.is_match(command) {
-                return Err(format!("Command blocked by rule '{}'", self.config.blocked_commands[i]));
+                return Err(EngineError::PermissionDenied(format!(
+                    "Command blocked by rule '{}'",
+                    self.config.blocked_commands[i]
+                )));
             }
         }
-        
-        // Path check: block commands that reference protected paths with dangerous operations
+
         let lower = command.to_lowercase();
         for path in &self.config.protected_paths {
             let path_lower = path.to_lowercase();
@@ -64,7 +64,9 @@ impl ActionGuard {
             ];
             for prefix in &dangerous {
                 if lower.contains(prefix) {
-                    return Err(format!("Command affects protected path '{}'", path));
+                    return Err(EngineError::PermissionDenied(format!(
+                        "Command affects protected path '{path}'"
+                    )));
                 }
             }
         }
