@@ -13,7 +13,6 @@ import type {
 type ChatStore = {
   messages: Record<string, ChatMessage[]>;
   pendingAttachments: Record<string, ChatAttachment[]>;
-  isRunning: boolean;
   taskRunning: Record<string, boolean>;
   runsById: Record<string, TaskRun>;
   runOrderByTask: Record<string, string[]>;
@@ -36,6 +35,7 @@ type ChatStore = {
   addMessage: (taskId: string, message: ChatMessage) => void;
   setMessages: (taskId: string, messages: ChatMessage[]) => void;
   updateMessage: (taskId: string, id: string, patch: Partial<ChatMessage>) => void;
+  resolveChoice: (taskId: string, messageId: string, optionId: string) => void;
   appendToMessage: (taskId: string, id: string, chunk: string) => void;
   clearMessages: (taskId: string) => void;
 
@@ -44,7 +44,6 @@ type ChatStore = {
   removePendingAttachment: (taskId: string, path: string) => void;
   clearPendingAttachments: (taskId: string) => void;
 
-  setRunning: (running: boolean) => void;
   setTaskRunning: (taskId: string, running: boolean) => void;
   createRun: (run: TaskRun) => void;
   updateRun: (runId: string, patch: Partial<TaskRun>) => void;
@@ -87,7 +86,6 @@ export const useChatStore = create<ChatStore>()(
     (set, get) => ({
       messages: {},
       pendingAttachments: {},
-      isRunning: false,
       taskRunning: {},
       runsById: {},
       runOrderByTask: {},
@@ -146,6 +144,25 @@ export const useChatStore = create<ChatStore>()(
             messages: { ...state.messages, [taskId]: next },
           };
         }),
+      resolveChoice: (taskId, messageId, optionId) =>
+        set((state) => {
+          const list = state.messages[taskId];
+          if (!list) return state;
+          const idx = list.findIndex((m) => m.id === messageId);
+          if (idx === -1) return state;
+          const msg = list[idx];
+          const choice = msg.meta?.choice;
+          if (!choice) return state;
+          const next = list.slice();
+          next[idx] = {
+            ...msg,
+            meta: {
+              ...msg.meta,
+              choice: { ...choice, status: "resolved", selectedOptionId: optionId },
+            },
+          };
+          return { messages: { ...state.messages, [taskId]: next } };
+        }),
       appendToMessage: (taskId, id, chunk) =>
         set((state) => {
           const list = state.messages[taskId];
@@ -192,7 +209,6 @@ export const useChatStore = create<ChatStore>()(
           pendingAttachments: { ...state.pendingAttachments, [taskId]: [] },
         })),
 
-      setRunning: (isRunning) => set({ isRunning }),
       setTaskRunning: (taskId, running) =>
         set((state) => ({
           taskRunning: {

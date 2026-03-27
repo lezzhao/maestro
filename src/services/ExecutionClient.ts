@@ -1,9 +1,12 @@
-import { Channel, invoke } from "@tauri-apps/api/core";
 import {
   decodeTransportEscapes,
   extractReadableTerminalChunk,
   normalizeTerminalChunk,
 } from "../lib/utils/terminal";
+import {
+  startExecutionCommand,
+  stopExecutionCommand,
+} from "./execution-commands";
 import {
   CTRL_DONE,
   CTRL_ERROR,
@@ -39,14 +42,7 @@ export class ExecutionClient {
 
   public async start(request: Record<string, unknown>): Promise<{ exec_id: string; run_id?: string }> {
     this.isStopped = false;
-    const onData = new Channel<string>();
-    onData.onmessage = this.handleChunk.bind(this);
-
-    const command = this.mode === "api" ? "chat_execute_api" : "chat_execute_cli";
-    const result = await invoke<{ exec_id: string; run_id?: string }>(command, {
-      request,
-      onData,
-    });
+    const result = await startExecutionCommand(this.mode, request, this.handleChunk.bind(this));
 
     this.execId = result.exec_id;
     return result;
@@ -55,9 +51,8 @@ export class ExecutionClient {
   public async stop(): Promise<void> {
     this.isStopped = true;
     if (this.execId !== null) {
-      const command = this.mode === "api" ? "chat_execute_api_stop" : "chat_execute_cli_stop";
       try {
-        await invoke(command, { request: { exec_id: this.execId } });
+        await stopExecutionCommand(this.mode, this.execId);
       } catch (e) {
         console.warn("ExecutionClient stop failed", e);
       }

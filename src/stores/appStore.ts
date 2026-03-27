@@ -1,8 +1,8 @@
-import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import { DEFAULT_ENGINE_ID, DEFAULT_PROFILE_ID } from "../constants";
+import { createTaskCommand, deleteTaskCommand } from "../hooks/task-commands";
 import type {
   EngineConfig,
   EnginePreflightResult,
@@ -44,7 +44,8 @@ type AppStore = {
   setLang: (lang: "en" | "zh") => void;
 
   // Task Actions
-  addTask: (name: string) => Promise<AppTask | null>;
+  /** 创建任务（事件驱动：后端 task_created 事件会自动同步到列表，无需返回值） */
+  addTask: (name: string) => Promise<void>;
   setTasks: (tasks: AppTask[]) => void;
   removeTask: (id: string) => void;
   setActiveTaskId: (id: string | null) => void;
@@ -120,6 +121,12 @@ export const useAppStore = create<AppStore>()(
         try {
           // Deterministic default engine: first by sorted key order, fallback to constant.
           const engines = get().engines;
+          const activeWorkspaceId = get().activeWorkspaceId;
+          const activeWorkspace = get().workspaces.find((workspace) => workspace.id === activeWorkspaceId) || null;
+          const workingDirectory = activeWorkspace?.workingDirectory?.trim() || "";
+          const workspaceBoundary = workingDirectory
+            ? JSON.stringify({ root: workingDirectory })
+            : "{}";
           const defaultEngine = Object.keys(engines).sort()[0] || DEFAULT_ENGINE_ID;
           const engine = engines[defaultEngine];
           const defaultProfile =
@@ -129,18 +136,14 @@ export const useAppStore = create<AppStore>()(
                 ? Object.keys(engine.profiles)[0]
                 : DEFAULT_PROFILE_ID;
 
-          await invoke("task_create", {
-            request: {
-              title,
-              description: "",
-              engineId: defaultEngine,
-              workspaceBoundary: "",
-              profileId: defaultProfile,
-              workspaceId: get().activeWorkspaceId,
-            },
+          await createTaskCommand({
+            title,
+            description: "",
+            engineId: defaultEngine,
+            workspaceBoundary,
+            profileId: defaultProfile,
+            workspaceId: activeWorkspaceId,
           });
-          
-          return null;
         } catch (e) {
           console.error("Failed to add task:", e);
           throw e;
@@ -156,7 +159,7 @@ export const useAppStore = create<AppStore>()(
           activeTaskId: prevActive === id ? null : prevActive
         });
 
-        void invoke("task_delete", { taskId: id }).catch((e) => {
+        void deleteTaskCommand(id).catch((e) => {
           console.error("Failed to remove task:", e);
           set({
             tasks: prevTasks,
