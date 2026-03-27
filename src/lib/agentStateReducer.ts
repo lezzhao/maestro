@@ -26,7 +26,10 @@ export type AgentStateUpdate =
   | { type: "run_created"; task_id: string; run: TaskRunPayload }
   | { type: "run_finished"; task_id: string; run_id: string; status: string; error?: string | null }
   | { type: "messages_updated"; task_id: string; messages: PersistedMessagePayload[] }
+  | { type: "message_appended"; task_id: string; message: PersistedMessagePayload }
+  | { type: "choice_resolved"; task_id: string; message_id: string; option_id: string }
   | { type: "task_created"; task: TaskRecord }
+  | { type: "task_updated"; task: TaskRecord }
   | { type: "task_state_changed"; task_id: string; from_state: string; to_state: string }
   | { type: "task_deleted"; task_id: string }
   | { type: "task_runtime_binding_changed"; task_id: string; binding: import("../types").TaskRuntimeBinding }
@@ -44,8 +47,10 @@ type AgentReducerDeps = {
   createRun: (run: TaskRun) => void;
   finishRun: (runId: string, status: "done" | "error" | "stopped", error?: string | null) => void;
   appendRunTranscript: (runId: string, content: string) => void;
+  addMessage: (taskId: string, message: ChatMessage) => void;
   setMessages: (taskId: string, messages: ChatMessage[]) => void;
   updateMessage: (taskId: string, id: string, patch: Partial<ChatMessage>) => void;
+  resolveChoice: (taskId: string, messageId: string, optionId: string) => void;
   appendToMessage: (taskId: string, id: string, chunk: string) => void;
   setTasks: (tasks: TaskViewModel[]) => void;
   updateTaskRecord: (id: string, patch: Partial<import("../types").TaskViewState>) => void;
@@ -66,14 +71,25 @@ type AgentReducerDeps = {
     taskActiveAssistantMsgId: Record<string, string | null>;
   };
   setTaskRunning: (taskId: string, running: boolean) => void;
-  setRunning: (running: boolean) => void;
   setExecutionPhase: (taskId: string, phase: "idle" | "connecting" | "sending" | "streaming" | "completed" | "error") => void;
 };
+
+function toTaskRecordPatch(task: TaskRecord): Partial<import("../types").TaskViewState> {
+  return {
+    name: task.title,
+    engineId: task.engine_id,
+    profileId: task.profile_id ?? null,
+    workspaceId: task.workspace_id ?? null,
+    settings: task.settings ?? null,
+    status: mapTaskStateToStatus(task.current_state),
+    created_at: task.created_at ?? Date.now(),
+    updated_at: task.updated_at ?? Date.now(),
+  };
+}
 
 export function applyAgentStateUpdate(payload: AgentStateUpdate, deps: AgentReducerDeps) {
   switch (payload.type) {
     case "execution_started":
-      deps.setRunning(true);
       deps.setTaskRunning(payload.task_id, true);
       deps.setActiveRunId(payload.task_id, payload.run_id);
       deps.setExecutionPhase(payload.task_id, "streaming");
@@ -99,7 +115,6 @@ export function applyAgentStateUpdate(payload: AgentStateUpdate, deps: AgentRedu
           deps.setActiveAssistantMsgId(payload.task_id, null);
         }
         deps.setTaskRunning(payload.task_id, false);
-        deps.setRunning(false); 
       }
       break;
     }
@@ -114,11 +129,31 @@ export function applyAgentStateUpdate(payload: AgentStateUpdate, deps: AgentRedu
     case "messages_updated":
       deps.setMessages(payload.task_id, toMessages(payload.messages));
       break;
+    case "message_appended": {
+      const [message] = toMessages([payload.message]);
+      if (message) {
+        deps.addMessage(payload.task_id, message);
+      }
+      break;
+    }
+    case "choice_resolved": {
+      deps.resolveChoice(payload.task_id, payload.message_id, payload.option_id);
+      break;
+    }
     case "task_created": {
       const existing = deps.getAppState().tasks;
       if (!existing.some((t) => t.id === payload.task.id)) {
         deps.setTasks([toTaskViewModel(payload.task), ...existing]);
       }
+      break;
+    }
+    case "task_updated": {
+      const existing = deps.getAppState().tasks;
+      if (!existing.some((t) => t.id === payload.task.id)) {
+        deps.setTasks([toTaskViewModel(payload.task), ...existing]);
+        break;
+      }
+      deps.updateTaskRecord(payload.task.id, toTaskRecordPatch(payload.task));
       break;
     }
     case "task_state_changed":

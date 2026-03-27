@@ -150,6 +150,37 @@ export type ChatAttachment = {
   snippet?: string;
 };
 
+export type ChatChoiceAction =
+  | {
+      kind: "open_settings";
+    }
+  | {
+      kind: "switch_execution_mode";
+      mode: "api" | "cli";
+    }
+  | {
+      kind: "open_external_url";
+      url: string;
+    };
+
+export type ChoiceVariant = "default" | "destructive" | "outline" | "secondary" | "ghost" | "link" | "primary-gradient";
+
+export type ChatChoiceOption = {
+  id: string;
+  label: string;
+  description?: string;
+  variant?: ChoiceVariant;
+  action: ChatChoiceAction;
+};
+
+export type ChatChoicePayload = {
+  title: string;
+  description?: string;
+  options: ChatChoiceOption[];
+  status?: "pending" | "resolved";
+  selectedOptionId?: string;
+};
+
 export type ChatMessage = {
   id: string;
   role: "user" | "assistant" | "system" | "plan";
@@ -166,6 +197,7 @@ export type ChatMessage = {
     eventType?: "status" | "tool" | "notice";
     eventStatus?: "pending" | "done" | "error";
     toolName?: string;
+    choice?: ChatChoicePayload;
   };
 };
 
@@ -325,6 +357,13 @@ export type ChatExecuteCliResult = {
 
 export type ChatExecuteStopRequest = {
   exec_id: string;
+};
+
+export type ChatSubmitChoiceRequest = {
+  task_id: string;
+  message_id: string;
+  option_id: string;
+  option_label: string;
 };
 
 export type StepRunRequest = {

@@ -1,4 +1,16 @@
-import type { AppTask, ChatAttachment, ChatMessage, TaskRecord, TaskRun, TaskViewModel } from "../types";
+import type {
+  AppTask,
+  ChatAttachment,
+  ChatMessage,
+  TaskRecord,
+  TaskRun,
+  TaskViewModel,
+} from "../types";
+
+const VALID_ROLES = new Set(["user", "assistant", "system", "plan"]);
+const VALID_RUN_MODES = new Set(["api", "cli"]);
+const VALID_RUN_STATUSES = new Set(["running", "done", "error", "stopped"]);
+const VALID_MESSAGE_STATUSES = new Set(["streaming", "done", "error"]);
 
 export type TaskRunPayload = {
   id: string;
@@ -16,6 +28,10 @@ export type PersistedMessagePayload = {
   id: string;
   role: string;
   content: string;
+  timestamp?: number;
+  status?: ChatMessage["status"];
+  attachments?: ChatAttachment[];
+  meta?: ChatMessage["meta"];
 };
 
 export function mapTaskStateToStatus(currentState: string): AppTask["status"] {
@@ -33,12 +49,18 @@ export function mapTaskStateToStatus(currentState: string): AppTask["status"] {
 }
 
 export function toTaskRun(p: TaskRunPayload): TaskRun {
+  if (!VALID_RUN_MODES.has(p.mode)) {
+    console.warn(`后端返回未知 run mode: "${p.mode}"，降级为 "cli"`);
+  }
+  if (!VALID_RUN_STATUSES.has(p.status)) {
+    console.warn(`后端返回未知 run status: "${p.status}"，降级为 "error"`);
+  }
   return {
     id: p.id,
     taskId: p.task_id,
     engineId: p.engine_id,
-    mode: p.mode as "api" | "cli",
-    status: p.status as TaskRun["status"],
+    mode: VALID_RUN_MODES.has(p.mode) ? (p.mode as "api" | "cli") : "cli",
+    status: VALID_RUN_STATUSES.has(p.status) ? (p.status as TaskRun["status"]) : "error",
     createdAt: p.created_at,
     startedAt: p.started_at,
     endedAt: p.ended_at ?? undefined,
@@ -58,6 +80,7 @@ export function toTaskViewModel(p: TaskRecord): TaskViewModel {
     sessionId: null,
     activeExecId: null,
     activeRunId: null,
+    settings: p.settings ?? null,
     status: mapTaskStateToStatus(p.current_state),
     gitChanges: [],
     stats: {
@@ -72,12 +95,21 @@ export function toTaskViewModel(p: TaskRecord): TaskViewModel {
 }
 
 export function toMessages(messages: PersistedMessagePayload[]): ChatMessage[] {
-  return messages.map((m) => ({
-    id: m.id,
-    role: m.role as "user" | "assistant" | "system" | "plan",
-    content: m.content,
-    timestamp: Date.now(),
-    attachments: [] as ChatAttachment[],
-    status: "done" as const,
-  }));
+  return messages.map((m) => {
+    if (!VALID_ROLES.has(m.role)) {
+      console.warn(`后端返回未知 message role: "${m.role}"，降级为 "system"`);
+    }
+    if (m.status && !VALID_MESSAGE_STATUSES.has(m.status)) {
+      console.warn(`后端返回未知 message status: "${m.status}"，降级为 "done"`);
+    }
+    return {
+      id: m.id,
+      role: VALID_ROLES.has(m.role) ? (m.role as ChatMessage["role"]) : "system",
+      content: m.content,
+      timestamp: m.timestamp ?? Date.now(),
+      attachments: m.attachments ?? ([] as ChatAttachment[]),
+      status: m.status && VALID_MESSAGE_STATUSES.has(m.status) ? m.status : "done",
+      meta: m.meta,
+    };
+  });
 }

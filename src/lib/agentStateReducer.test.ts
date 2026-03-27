@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { applyAgentStateUpdate, toTaskViewModel, type AgentStateUpdate } from "./agentStateReducer";
-import type { ChatMessage, TaskRun, TaskViewModel } from "../types";
+import type { ChatMessage, TaskRecord, TaskRun, TaskViewModel } from "../types";
 
-function mockTaskRecord(id: string, overrides?: Partial<{ profile_id: string | null }>) {
+function mockTaskRecord(id: string, overrides?: Partial<TaskRecord>) {
   return {
     id,
     title: `task-${id}`,
@@ -10,9 +10,12 @@ function mockTaskRecord(id: string, overrides?: Partial<{ profile_id: string | n
     engine_id: "cursor",
     current_state: "BACKLOG",
     workspace_boundary: "{}",
-    profile_id: overrides?.profile_id,
+    profile_id: null,
+    workspace_id: null,
+    settings: null,
     created_at: Date.now(),
     updated_at: Date.now(),
+    ...overrides,
   };
 }
 
@@ -41,6 +44,9 @@ function makeDeps(seedTasks: TaskViewModel[] = [], activeTaskId: string | null =
       appendRunTranscript: vi.fn((runId: string, content: string) => {
         state.transcripts[runId] = [...(state.transcripts[runId] || []), content];
       }),
+      addMessage: vi.fn((taskId: string, message: ChatMessage) => {
+        messagesByTask[taskId] = [...(messagesByTask[taskId] || []), message];
+      }),
       setMessages: vi.fn((taskId: string, messages: ChatMessage[]) => {
         messagesByTask[taskId] = messages;
       }),
@@ -49,6 +55,9 @@ function makeDeps(seedTasks: TaskViewModel[] = [], activeTaskId: string | null =
       }),
       updateTaskRecord: vi.fn((id: string, patch: Partial<import("../types").TaskViewState>) => {
         updatedTaskRecords.push({ id, patch });
+        state.tasks = state.tasks.map((task) =>
+          task.id === id ? { ...task, ...patch } : task,
+        );
       }),
       updateTaskRuntimeBinding: vi.fn(),
       setTaskResolvedRuntimeContext: vi.fn(),
@@ -61,6 +70,17 @@ function makeDeps(seedTasks: TaskViewModel[] = [], activeTaskId: string | null =
       addWorkspace: vi.fn(),
       updateWorkspace: vi.fn(),
       removeWorkspace: vi.fn(),
+      updateMessage: vi.fn(),
+      resolveChoice: vi.fn(),
+      appendToMessage: vi.fn(),
+      setActiveRunId: vi.fn(),
+      setActiveAssistantMsgId: vi.fn(),
+      getChatState: vi.fn(() => ({
+        taskActiveRunId: {},
+        taskActiveAssistantMsgId: {},
+      })),
+      setTaskRunning: vi.fn(),
+      setExecutionPhase: vi.fn(),
     },
   };
 }
@@ -124,13 +144,34 @@ describe("agentStateReducer integration", () => {
       {
         type: "messages_updated",
         task_id: "t2",
-        messages: [{ id: "m1", role: "assistant", content: "ok" }],
+        messages: [
+          {
+            id: "m1",
+            role: "assistant",
+            content: "ok",
+            meta: {
+              choice: {
+                title: "需要选择",
+                description: "请选择下一步操作",
+                status: "pending",
+                options: [
+                  {
+                    id: "open-settings",
+                    label: "打开设置",
+                    action: { kind: "open_settings" },
+                  },
+                ],
+              },
+            },
+          },
+        ],
       },
       h.deps,
     );
     expect(h.messagesByTask.t2).toHaveLength(1);
     expect(h.messagesByTask.t2[0]?.role).toBe("assistant");
     expect(h.messagesByTask.t2[0]?.content).toBe("ok");
+    expect(h.messagesByTask.t2[0]?.meta?.choice?.title).toBe("需要选择");
   });
 
   it("maps execution_cancelled to stopped run status", () => {
@@ -140,6 +181,53 @@ describe("agentStateReducer integration", () => {
       h.deps,
     );
     expect(h.finishedRuns).toEqual([{ runId: "run-3", status: "stopped", error: null }]);
+  });
+
+  it("appends message_appended payload to chat messages", () => {
+    const h = makeDeps();
+    applyAgentStateUpdate(
+      {
+        type: "message_appended",
+        task_id: "t4",
+        message: {
+          id: "m-choice",
+          role: "system",
+          content: "需要操作",
+          meta: {
+            choice: {
+              title: "修复 CLI 问题",
+              status: "pending",
+              options: [
+                {
+                  id: "open-settings",
+                  label: "打开设置",
+                  action: { kind: "open_settings" },
+                },
+              ],
+            },
+          },
+        },
+      },
+      h.deps,
+    );
+    expect(h.messagesByTask.t4).toHaveLength(1);
+    expect(h.messagesByTask.t4[0]?.meta?.choice?.title).toBe("修复 CLI 问题");
+  });
+
+  it("resolves choice_resolved payload via resolveChoice", () => {
+    const h = makeDeps();
+
+    applyAgentStateUpdate(
+      {
+        type: "choice_resolved",
+        task_id: "t5",
+        message_id: "m-resolve",
+        option_id: "open-settings",
+      },
+      h.deps,
+    );
+
+    expect(h.deps.resolveChoice).toHaveBeenCalledWith("t5", "m-resolve", "open-settings");
   });
 
   it("handles task_runtime_binding_changed by updating task engineId, profileId, runtimeSnapshotId", () => {
@@ -173,6 +261,44 @@ describe("agentStateReducer integration", () => {
     const record = mockTaskRecord("p1", { profile_id: "review_profile" });
     const vm = toTaskViewModel(record);
     expect(vm.profileId).toBe("review_profile");
+  });
+
+  it("maps task_created with settings to TaskViewModel settings", () => {
+    const record = mockTaskRecord("p1", { settings: "{\"mode\":\"review\"}" });
+    const vm = toTaskViewModel(record);
+    expect(vm.settings).toBe("{\"mode\":\"review\"}");
+  });
+
+  it("updates existing task when receiving task_updated while preserving runtime fields", () => {
+    const taskA = toTaskViewModel(mockTaskRecord("a"));
+    taskA.sessionId = "sess-a";
+    taskA.activeExecId = "exec-a";
+    taskA.activeRunId = "run-a";
+    taskA.stats.approx_input_tokens = 42;
+    const h = makeDeps([taskA], "a");
+
+    applyAgentStateUpdate(
+      {
+        type: "task_updated",
+        task: {
+          ...mockTaskRecord("a"),
+          title: "task-a-updated",
+          current_state: "DONE",
+          settings: "{\"mode\":\"review\"}",
+        },
+      },
+      h.deps,
+    );
+
+    expect(h.state.tasks).toHaveLength(1);
+    expect(h.state.tasks[0]?.name).toBe("task-a-updated");
+    expect(h.state.tasks[0]?.status).toBe("completed");
+    expect(h.state.tasks[0]?.settings).toBe("{\"mode\":\"review\"}");
+    expect(h.state.tasks[0]?.sessionId).toBe("sess-a");
+    expect(h.state.tasks[0]?.activeExecId).toBe("exec-a");
+    expect(h.state.tasks[0]?.activeRunId).toBe("run-a");
+    expect(h.state.tasks[0]?.stats.approx_input_tokens).toBe(42);
+    expect(h.deps.setTasks).not.toHaveBeenCalled();
   });
 
   it("handles task_state_changed by calling updateTaskRecord with status", () => {
