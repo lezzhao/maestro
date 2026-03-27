@@ -66,6 +66,20 @@ pub async fn engine_list_models(
 }
 
 #[command]
+pub fn engine_check_command(command: String) -> bool {
+    which::which(command).is_ok()
+}
+
+#[command]
+pub fn engine_delete(
+    app: AppHandle,
+    id: String,
+    core_state: State<'_, crate::core::MaestroCore>,
+) -> Result<(), CoreError> {
+    core_state.inner().engine_delete(&app, id)
+}
+
+#[command]
 pub fn engine_switch_session(
     engine_id: String,
     session_id: Option<String>,

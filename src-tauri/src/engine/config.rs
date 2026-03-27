@@ -79,3 +79,22 @@ pub fn engine_upsert_profile_core(
     Ok(())
 }
 
+pub fn engine_delete_core(
+    app: &AppHandle,
+    id: String,
+    config_state: &AppConfigState,
+) -> Result<(), String> {
+    tracing::info!(engine_id = %id, "engine_delete_core: starting deletion");
+    let mut config = config_state.get();
+    
+    if config.engines.remove(&id).is_some() {
+        tracing::info!(engine_id = %id, "engine_delete_core: removed from memory map");
+        write_config_to_disk(app, &config)?;
+        tracing::info!(engine_id = %id, "engine_delete_core: disk config updated");
+        config_state.set(config);
+        Ok(())
+    } else {
+        tracing::warn!(engine_id = %id, "engine_delete_core: engine not found in map");
+        Err(format!("engine not found: {id}"))
+    }
+}

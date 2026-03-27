@@ -60,4 +60,7 @@ impl MaestroCore {
         )
         .map_err(error::CoreError::from)
     }
+    pub fn engine_delete(&self, app: &AppHandle, id: String) -> Result<(), error::CoreError> {
+        crate::engine::engine_delete_core(app, id, &self.config).map_err(error::CoreError::from)
+    }
 }
