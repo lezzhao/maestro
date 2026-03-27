@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { DEFAULT_PROFILE_ID } from "../constants";
 import { useAppStore } from "../stores/appStore";
 import { useActiveTask } from "./useActiveTask";
@@ -52,11 +53,13 @@ export function useEngine() {
   }, []);
 
   const refreshEngines = useCallback(async () => {
+    console.log("[useEngine] Refreshing engines...");
     try {
-      const result = await invoke<Record<string, EngineConfig>>("engine_list");
-      setEngines(result);
+      const next = await invoke<Record<string, EngineConfig>>("engine_list");
+      console.log("[useEngine] Engines from backend:", Object.keys(next));
+      setEngines(next);
     } catch (e) {
-      console.error("Failed to list engines:", e);
+      console.error("[useEngine] Failed to list engines:", e);
     }
   }, [setEngines]);
 
@@ -155,12 +158,29 @@ export function useEngine() {
   );
 
   const upsertEngine = useCallback(
-    async (engineId: string, engine: EngineConfig) => {
-      await invoke("engine_upsert", { id: engineId, engine });
+    async (engine_id: string, engine: EngineConfig) => {
+      await invoke("engine_upsert", { id: engine_id, engine });
       await refreshEngines();
-      await preflightEngine(engineId, { force: true });
+      await preflightEngine(engine_id, { force: true });
     },
     [preflightEngine, refreshEngines],
+  );
+
+  const deleteEngine = useCallback(
+    async (engineId: string) => {
+      console.log(`[useEngine] Deleting engine: ${engineId}`);
+      try {
+        await invoke("engine_delete", { id: engineId });
+        console.log(`[useEngine] Deletion successful for: ${engineId}`);
+        await refreshEngines();
+        toast.success(`提供商 ${engineId} 已成功删除`);
+      } catch (e) {
+        console.error("[useEngine] Failed to delete engine:", e);
+        toast.error(`删除失败: ${String(e)}`);
+        throw e;
+      }
+    },
+    [refreshEngines],
   );
 
   const preflightAll = useCallback(async () => {
@@ -261,9 +281,24 @@ export function useEngine() {
   }, [engines, preflightAll]);
 
   const availableEngines = useMemo(() => {
+    const SHELL_COMMANDS = ["bash", "sh", "zsh", "fish", "powershell.exe", "powershell", "pwsh", "cmd.exe", "cmd"];
+    
     return Object.values(engines).filter((e) => {
       // Always show active engine
       if (e.id === activeTask?.engineId) return true;
+      
+      const activeProfile = e.profiles?.[e.active_profile_id || "default"];
+      const command = activeProfile?.command?.toLowerCase() || "";
+      
+      // Filter out shells (ends with bash, sh, etc.)
+      const isShell = SHELL_COMMANDS.some(sc => 
+        command === sc || command.endsWith(`/${sc}`) || command.endsWith(`\\${sc}`)
+      );
+      
+      if (isShell) {
+        return false;
+      }
+
       // Filter out engines where command explicitly doesn't exist
       const res = enginePreflight?.[e.id];
       return res?.command_exists !== false;
@@ -279,6 +314,7 @@ export function useEngine() {
     preflightAll,
     switchEngine,
     upsertEngine,
+    deleteEngine,
     setActiveProfile,
     updateTaskProfile,
     upsertProfile,
