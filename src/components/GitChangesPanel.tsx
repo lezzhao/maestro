@@ -45,7 +45,7 @@ export function GitChangesPanel({ gitChanges, activeFile, onFileSelect }: Props)
             <button
               key={`${change.status}-${change.path}`}
               className={cn(
-                "w-full text-left px-2 py-1.5 rounded-md border border-transparent transition-all group",
+                "w-full text-left px-2 py-1.5 rounded-sm border border-transparent transition-all group",
                 activeFile === change.path
                   ? "bg-primary-500/10 border-primary-500/30 text-primary-500"
                   : "hover:bg-bg-subtle/50 text-text-muted hover:text-text-main"

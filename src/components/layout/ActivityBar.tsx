@@ -18,7 +18,7 @@ function WorkspaceIcon({ workspace, isActive }: { workspace: Workspace; isActive
   return (
     <div
       className={cn(
-        "relative w-10 h-10 rounded-xl flex items-center justify-center text-white/90 font-bold text-sm cursor-pointer transition-all group overflow-hidden shadow-sm",
+        "relative w-10 h-10 rounded-md flex items-center justify-center text-white/90 font-bold text-sm cursor-pointer transition-all group overflow-hidden shadow-sm",
         isActive
           ? "opacity-100 ring-2 ring-primary/40 shadow-glow scale-105"
           : "opacity-60 hover:opacity-100 hover:scale-[1.05]"
@@ -54,7 +54,7 @@ export function ActivityBar({
   return (
     <div className="w-[64px] h-full flex flex-col items-center py-4 bg-bg-surface/80 backdrop-blur-2xl border-r border-border-muted/10 z-30 shrink-0 relative transition-all shadow-sm">
       {/* Workspace List Area - Scrolls if items exceed height */}
-      <div className="flex flex-col items-center gap-4 flex-1 overflow-y-auto no-scrollbar w-full px-2">
+      <div className="flex flex-col items-center gap-1.5 flex-1 overflow-y-auto no-scrollbar w-full px-2">
         {workspaces.map((ws) => {
           const isActive = ws.id === activeWorkspaceId && !isSettingsOpen;
           return (
@@ -88,7 +88,7 @@ export function ActivityBar({
         {/* Add Workspace Button */}
         <button
           onClick={onCreateWorkspace}
-          className="w-10 h-10 rounded-xl border-2 border-dashed border-border-muted/20 flex items-center justify-center text-text-muted/30 hover:text-primary hover:border-primary/40 hover:bg-primary/5 hover:scale-105 transition-all group"
+          className="w-10 h-10 rounded-md border-2 border-dashed border-border-muted/20 flex items-center justify-center text-text-muted/30 hover:text-primary hover:border-primary/40 hover:bg-primary/5 hover:scale-105 transition-all group"
           title={t("create_workspace") || "New Workspace"}
         >
           <Plus size={20} strokeWidth={2.5} className="group-hover:rotate-90 transition-transform duration-300" />
@@ -100,7 +100,7 @@ export function ActivityBar({
         <button
           onClick={onOpenSettings}
           className={cn(
-            "w-12 h-12 mx-auto flex items-center justify-center rounded-xl transition-all relative group",
+            "w-12 h-12 mx-auto flex items-center justify-center rounded-md transition-all relative group",
             isSettingsOpen
               ? "text-primary bg-primary/10"
               : "text-text-muted/40 hover:text-text-main hover:bg-bg-elevated/80 hover:scale-105 hover:shadow-lg"

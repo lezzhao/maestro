@@ -101,7 +101,7 @@ export const CascadingConfigPanel: React.FC<CascadingConfigPanelProps> = ({
         <textarea
           value={wsSettingsStr}
           onChange={(e) => setWsSettingsStr(e.target.value)}
-          className="w-full h-24 bg-bg-base/40 border border-border-muted/10 rounded-sm p-2 text-xs font-mono text-text-main focus:outline-none focus:border-primary/30 transition-all focus:bg-bg-base/60"
+          className="w-full h-24 bg-bg-base/30 border border-border-muted/10 rounded-sm p-3 text-[11px] font-mono text-text-main focus:outline-none focus:border-primary/30 transition-all focus:bg-bg-base/50 placeholder:text-text-muted/20"
           placeholder='{"BMAD-METHOD": "auto"}'
         />
       </div>
@@ -127,7 +127,7 @@ export const CascadingConfigPanel: React.FC<CascadingConfigPanelProps> = ({
           value={taskSettingsStr}
           onChange={(e) => setTaskSettingsStr(e.target.value)}
           disabled={!taskId}
-          className="w-full h-24 bg-bg-base/40 border border-border-muted/10 rounded-sm p-2 text-xs font-mono text-text-main focus:outline-none focus:border-primary/30 transition-all focus:bg-bg-base/60 disabled:opacity-50"
+          className="w-full h-24 bg-bg-base/30 border border-border-muted/10 rounded-sm p-3 text-[11px] font-mono text-text-main focus:outline-none focus:border-primary/30 transition-all focus:bg-bg-base/50 disabled:opacity-50 placeholder:text-text-muted/20"
           placeholder='{"BMAD-METHOD": "pure-chat"}'
         />
       </div>

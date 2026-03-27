@@ -45,6 +45,7 @@ export function WorkspaceLayout() {
     upsertProfile,
     listModels,
     upsertEngine,
+    deleteEngine,
   } = useEngine();
   const { projectPath, detectAndRecommend, gitDiff } = useProject();
   const { activeTaskId, activeTask } = useActiveTask();
@@ -203,6 +204,7 @@ export function WorkspaceLayout() {
               onUpsertProfile={upsertProfile}
               onFetchModels={listModels}
               onUpsertEngine={upsertEngine}
+              onDeleteEngine={deleteEngine}
               theme={theme}
               onThemeChange={setTheme}
               lang={lang}

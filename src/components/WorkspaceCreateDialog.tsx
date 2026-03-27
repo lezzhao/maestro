@@ -4,7 +4,6 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { FolderOpen, X, MessageSquare, FolderTree } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
 import { Button } from "./ui/button";
-import { toast } from "sonner";
 import { cn } from "../lib/utils";
 import type { Workspace } from "../types";
 
@@ -34,7 +33,8 @@ export function WorkspaceCreateDialog({ open, onClose }: WorkspaceCreateDialogPr
       if (selected && typeof selected === "string") {
         setWorkingDirectory(selected);
         if (!name) {
-          const parts = selected.split(/[\/\\]/);
+          // Normalize to forward slashes for cross-platform split
+          const parts = selected.replace(/\\/g, "/").split("/");
           setName(parts[parts.length - 1] || "");
         }
       }
@@ -69,8 +69,6 @@ export function WorkspaceCreateDialog({ open, onClose }: WorkspaceCreateDialogPr
       onClose();
     } catch (e) {
       console.error("Failed to create workspace:", e);
-      // @ts-expect-error - e is unknown
-      toast.error("Failed to create workspace", { description: e?.message || String(e) });
     } finally {
       setCreating(false);
     }
@@ -81,8 +79,8 @@ export function WorkspaceCreateDialog({ open, onClose }: WorkspaceCreateDialogPr
   const isPureChat = !workingDirectory;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-[400px] bg-bg-surface border border-border-muted rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-bg-base/60 backdrop-blur-xl animate-in fade-in duration-300">
+      <div className="w-[400px] bg-bg-surface border border-border-muted rounded-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
         {/* Simple Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-2">
           <h2 className="text-lg font-bold text-text-main tracking-tight">新建 Workspace</h2>
@@ -95,13 +93,13 @@ export function WorkspaceCreateDialog({ open, onClose }: WorkspaceCreateDialogPr
           <div className="space-y-4 pt-2">
             {/* Project Name */}
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-text-muted/60 uppercase tracking-wider">名称</label>
+              <label className="text-[11px] font-bold text-text-muted/60 uppercase tracking-widest">名称</label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="My Project"
-                className="w-full h-10 px-3 text-sm rounded-lg border border-border-muted bg-bg-base/30 text-text-main placeholder:text-text-muted/30 focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all font-medium"
+                className="w-full h-10 px-3 text-sm rounded-sm border border-border-muted bg-bg-base/30 text-text-main placeholder:text-text-muted/30 focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all font-medium"
                 autoFocus
                 onKeyDown={(e) => e.key === "Enter" && handleCreate()}
               />
@@ -112,17 +110,17 @@ export function WorkspaceCreateDialog({ open, onClose }: WorkspaceCreateDialogPr
               <label className="text-[11px] font-bold text-text-muted/60 uppercase tracking-wider">
                 工作目录 <span className="text-[10px] opacity-40 lowercase italic font-normal">(可选)</span>
               </label>
-              <div className="flex gap-2">
+                  <div className="flex-2 space-y-3">
                 <input
                   type="text"
                   value={workingDirectory}
                   onChange={(e) => setWorkingDirectory(e.target.value)}
                   placeholder="留空为纯对话模式"
-                  className="flex-1 h-10 px-3 text-[12px] font-mono rounded-lg border border-border-muted bg-bg-base/30 text-text-main placeholder:text-text-muted/20 focus:outline-none focus:border-primary/50 transition-all truncate"
+                  className="flex-1 h-10 px-3 text-[12px] font-mono rounded-sm border border-border-muted bg-bg-base/30 text-text-main placeholder:text-text-muted/20 focus:outline-none focus:border-primary/50 transition-all truncate"
                 />
                 <button
                   type="button"
-                  className="p-2 rounded-lg bg-bg-elevated border border-border-muted text-text-muted hover:text-primary transition-all shadow-sm"
+                  className="p-2 rounded-sm bg-bg-elevated border border-border-muted text-text-muted hover:text-primary transition-all shadow-sm"
                   onClick={() => void handlePickDirectory()}
                 >
                   <FolderOpen size={16} />
@@ -132,11 +130,11 @@ export function WorkspaceCreateDialog({ open, onClose }: WorkspaceCreateDialogPr
 
             {/* Mode Select Indicator */}
             <div className={cn(
-              "flex items-center gap-3 p-3 rounded-xl border transition-all",
+              "flex items-center gap-3 p-3 rounded-sm border transition-all",
               isPureChat ? "bg-amber-500/5 border-amber-500/10" : "bg-emerald-500/5 border-emerald-500/10"
             )}>
               <div className={cn(
-                "p-2 rounded-lg",
+                "p-2 rounded-sm",
                 isPureChat ? "bg-amber-500/10 text-amber-600" : "bg-emerald-500/10 text-emerald-600"
               )}>
                 {isPureChat ? <MessageSquare size={16} /> : <FolderTree size={16} />}
@@ -153,7 +151,7 @@ export function WorkspaceCreateDialog({ open, onClose }: WorkspaceCreateDialogPr
 
             {/* Accent Selection */}
             <div className="space-y-2">
-              <label className="text-[11px] font-bold text-text-muted/60 uppercase tracking-wider pl-0.5">颜色标识</label>
+              <label className="text-[11px] font-bold text-text-muted/60 uppercase tracking-widest pl-0.5">颜色标识</label>
               <div className="flex flex-wrap gap-2.5">
                 {WORKSPACE_COLORS.map((c) => (
                   <button
@@ -177,14 +175,14 @@ export function WorkspaceCreateDialog({ open, onClose }: WorkspaceCreateDialogPr
             <Button
               variant="ghost"
               onClick={onClose}
-              className="flex-1 h-10 text-xs font-semibold text-text-muted hover:text-text-main"
+              className="flex-1 h-10 text-xs font-semibold text-text-muted hover:text-text-main rounded-sm"
             >
               取消
             </Button>
             <Button
               disabled={!name.trim() || creating}
               onClick={() => void handleCreate()}
-              className="flex-[2] h-10 bg-primary hover:opacity-90 text-white font-bold text-xs rounded-xl shadow-lg shadow-primary/20 transition-all opacity-100"
+              className="flex-[2] h-10 bg-text-main hover:bg-text-main/90 text-bg-surface font-bold text-xs rounded-sm shadow-sm transition-all uppercase tracking-widest"
             >
               {creating ? "正在初始化..." : "创建并开始"}
             </Button>
