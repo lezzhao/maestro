@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { FileText, RefreshCcw, Trash2 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
+import { useCliSessions } from "../hooks/use-cli-sessions";
 import { useChatStore } from "../stores/chatStore";
 import { useShallow } from "zustand/react/shallow";
-import type { CliPruneResult, CliSessionListItem } from "../types";
 
 interface CliSessionPanelProps {
   activeEngineId: string;
@@ -13,14 +12,21 @@ interface CliSessionPanelProps {
 }
 
 export function CliSessionPanel({ activeEngineId, activeTaskId = null }: CliSessionPanelProps) {
-  const [sessions, setSessions] = useState<CliSessionListItem[]>([]);
-  const [selectedSessionId, setSelectedSessionId] = useState("");
-  const [sessionLogs, setSessionLogs] = useState("");
-  const [loadingSessions, setLoadingSessions] = useState(false);
-  const [loadingLogs, setLoadingLogs] = useState(false);
-  const [pruning, setPruning] = useState(false);
-  const [message, setMessage] = useState("");
   const [scope, setScope] = useState<"task" | "engine">("task");
+  const {
+    sessions,
+    selectedSessionId,
+    setSelectedSessionId,
+    sessionLogs,
+    setSessionLogs,
+    loadingSessions,
+    loadingLogs,
+    pruning,
+    message,
+    loadSessions,
+    loadLogs,
+    pruneStoppedSessions,
+  } = useCliSessions(activeEngineId, { logLimit: 80 });
   const taskRunIds = useChatStore(useShallow((s) => s.getTaskRuns(activeTaskId).map(run => run.id)));
   const taskRunIdSet = useMemo(() => new Set(taskRunIds), [taskRunIds]);
   const visibleSessions = useMemo(() => {
@@ -34,76 +40,6 @@ export function CliSessionPanel({ activeEngineId, activeTaskId = null }: CliSess
     () => visibleSessions.find((item) => item.session_id === selectedSessionId) ?? null,
     [visibleSessions, selectedSessionId],
   );
-
-  const loadSessions = async () => {
-    setLoadingSessions(true);
-    try {
-      const items = await invoke<CliSessionListItem[]>("cli_list_sessions", {
-        engineId: activeEngineId || null,
-      });
-      setSessions(items);
-      if (items.length === 0) {
-        setSelectedSessionId("");
-        setSessionLogs("");
-        return;
-      }
-      setMessage("");
-    } catch (error) {
-      setMessage(`加载会话失败: ${String(error)}`);
-    } finally {
-      setLoadingSessions(false);
-    }
-  };
-
-  const loadLogs = async (sessionId?: string) => {
-    const target = sessionId || selectedSessionId;
-    if (!target) return;
-    setLoadingLogs(true);
-    try {
-      const logs = await invoke<string>("cli_read_session_logs", {
-        engineId: activeEngineId,
-        sessionId: target,
-        limit: 80,
-      });
-      setSessionLogs(logs);
-      setMessage("");
-    } catch (error) {
-      setSessionLogs("");
-      setMessage(`读取日志失败: ${String(error)}`);
-    } finally {
-      setLoadingLogs(false);
-    }
-  };
-
-  const pruneStoppedSessions = async () => {
-    setPruning(true);
-    try {
-      const result = await invoke<CliPruneResult>("cli_prune_sessions", {
-        engineId: activeEngineId || null,
-        status: "stopped",
-        olderThanHours: 0,
-      });
-      setMessage(`已清理会话 ${result.deleted_sessions} 条，日志 ${result.deleted_logs} 个`);
-      await loadSessions();
-      setSessionLogs("");
-    } catch (error) {
-      setMessage(`清理会话失败: ${String(error)}`);
-    } finally {
-      setPruning(false);
-    }
-  };
-
-  useEffect(() => {
-    void loadSessions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在活跃引擎变化时刷新
-  }, [activeEngineId]);
-
-  useEffect(() => {
-    if (!selectedSessionId) return;
-    void loadLogs(selectedSessionId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在选择会话变化时拉取
-  }, [selectedSessionId]);
-
   useEffect(() => {
     if (visibleSessions.length === 0) {
       setSelectedSessionId("");
@@ -113,7 +49,7 @@ export function CliSessionPanel({ activeEngineId, activeTaskId = null }: CliSess
     if (!visibleSessions.some((x) => x.session_id === selectedSessionId)) {
       setSelectedSessionId(visibleSessions[0].session_id);
     }
-  }, [selectedSessionId, visibleSessions]);
+  }, [selectedSessionId, setSelectedSessionId, setSessionLogs, visibleSessions]);
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-bg-surface">

@@ -1,10 +1,11 @@
 import { useMemo } from "react";
 import { MessageSquare, RefreshCcw } from "lucide-react";
-import { useChatStore } from "../stores/chatStore";
-import { useAppStore } from "../stores/appStore";
+import { useAppUiState } from "../hooks/use-app-store-selectors";
 import { useTranslation } from "../i18n";
 import { cn } from "../lib/utils";
 import { useChatSession } from "../hooks/useChatSession";
+import { useChatPanelActions } from "../hooks/use-chat-panel-actions";
+import { useTaskRunning } from "../hooks/use-task-chat-state";
 import { MessageList } from "./chat/MessageList";
 import { ChatInput } from "./chat/ChatInput";
 import { useTaskRuntimeContext } from "../hooks/useTaskRuntimeContext";
@@ -25,10 +26,8 @@ export function ChatPanel({
   
   const { engineId: activeEngineId, engine: activeEngine, profile: activeProfile, executionMode, isReady } = useTaskRuntimeContext();
   const activeTaskId = activeTask?.id || null;
-  const setShowSettings = useAppStore((s) => s.setShowSettings);
-  const isRunning = useChatStore((s) => s.getTaskRunning(activeTaskId));
-  const clearMessages = useChatStore((s) => s.clearMessages);
-  const clearTaskRuns = useChatStore((s) => s.clearTaskRuns);
+  const { setShowSettings } = useAppUiState();
+  const isRunning = useTaskRunning(activeTaskId);
 
   const {
     input,
@@ -45,6 +44,15 @@ export function ChatPanel({
     activeProfileId: activeProfile?.id ?? null,
     activeProfile,
     executionMode,
+  });
+  const {
+    handleChoiceSelect,
+    handleClearChat,
+  } = useChatPanelActions({
+    activeTaskId,
+    isRunning,
+    setShowSettings,
+    onSetExecutionMode,
   });
 
   const chatLabels = useMemo(
@@ -124,9 +132,7 @@ export function ChatPanel({
         <div className="flex items-center gap-2">
           <button
             onClick={() => {
-              if (isRunning) return;
-              clearMessages(activeTaskId);
-              clearTaskRuns(activeTaskId);
+              void handleClearChat();
             }}
             disabled={isRunning}
             className="text-text-muted hover:text-rose-500 p-1.5 rounded-lg hover:bg-rose-500/10 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
@@ -142,6 +148,7 @@ export function ChatPanel({
         chatLabels={chatLabels}
         handleRetry={handleRetry}
         handleCopy={handleCopy}
+        handleChoiceSelect={handleChoiceSelect}
         t={t}
       />
 

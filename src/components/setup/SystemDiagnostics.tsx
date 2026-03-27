@@ -1,12 +1,10 @@
 import { Activity, Database, RefreshCcw, Trash2, FileText } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useMemo, useState } from "react";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Card, CardContent } from "../ui/card";
+import { useCliSessions } from "../../hooks/use-cli-sessions";
+import { useProjectStoreState } from "../../hooks/use-app-store-selectors";
 import { useAppStore } from "../../stores/appStore";
-
-import type { CliPruneResult, CliSessionListItem } from "../../types";
 
 interface SystemDiagnosticsProps {
   activeEngineId: string;
@@ -17,90 +15,21 @@ export function SystemDiagnostics({
   activeEngineId,
   engineCount,
 }: SystemDiagnosticsProps) {
-  const projectPath = useAppStore((s) => s.projectPath);
-  const [sessions, setSessions] = useState<CliSessionListItem[]>([]);
-  const [selectedSessionId, setSelectedSessionId] = useState("");
-  const [sessionLogs, setSessionLogs] = useState("");
-  const [loadingSessions, setLoadingSessions] = useState(false);
-  const [loadingLogs, setLoadingLogs] = useState(false);
-  const [pruning, setPruning] = useState(false);
-  const [cliMessage, setCliMessage] = useState("");
-
-  const selectedSession = useMemo(
-    () => sessions.find((item) => item.session_id === selectedSessionId) ?? null,
-    [sessions, selectedSessionId],
-  );
-
-  const loadSessions = async () => {
-    setLoadingSessions(true);
-    try {
-      const items = await invoke<CliSessionListItem[]>("cli_list_sessions", {
-        engineId: activeEngineId || null,
-      });
-      setSessions(items);
-      if (items.length === 0) {
-        setSelectedSessionId("");
-        setSessionLogs("");
-        return;
-      }
-      if (!selectedSessionId || !items.some((x) => x.session_id === selectedSessionId)) {
-        setSelectedSessionId(items[0].session_id);
-      }
-    } catch (error) {
-      setCliMessage(`加载 CLI 会话失败: ${String(error)}`);
-    } finally {
-      setLoadingSessions(false);
-    }
-  };
-
-  const loadLogs = async (sessionId?: string) => {
-    const target = sessionId || selectedSessionId;
-    if (!target) return;
-    setLoadingLogs(true);
-    try {
-      const logs = await invoke<string>("cli_read_session_logs", {
-        engineId: activeEngineId,
-        sessionId: target,
-        limit: 120,
-      });
-      setSessionLogs(logs);
-      setCliMessage("");
-    } catch (error) {
-      setSessionLogs("");
-      setCliMessage(`读取日志失败: ${String(error)}`);
-    } finally {
-      setLoadingLogs(false);
-    }
-  };
-
-  const pruneStoppedSessions = async () => {
-    setPruning(true);
-    try {
-      const result = await invoke<CliPruneResult>("cli_prune_sessions", {
-        engineId: activeEngineId || null,
-        status: "stopped",
-        olderThanHours: 0,
-      });
-      setCliMessage(`已清理会话 ${result.deleted_sessions} 条，日志 ${result.deleted_logs} 个`);
-      await loadSessions();
-      setSessionLogs("");
-    } catch (error) {
-      setCliMessage(`清理会话失败: ${String(error)}`);
-    } finally {
-      setPruning(false);
-    }
-  };
-
-  useEffect(() => {
-    void loadSessions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在活跃引擎切换时刷新列表
-  }, [activeEngineId]);
-
-  useEffect(() => {
-    if (!selectedSessionId) return;
-    void loadLogs(selectedSessionId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 根据选择会话加载日志
-  }, [selectedSessionId]);
+  const { projectPath } = useProjectStoreState();
+  const {
+    sessions,
+    selectedSessionId,
+    setSelectedSessionId,
+    sessionLogs,
+    loadingSessions,
+    loadingLogs,
+    pruning,
+    message: cliMessage,
+    selectedSession,
+    loadSessions,
+    loadLogs,
+    pruneStoppedSessions,
+  } = useCliSessions(activeEngineId);
 
   return (
     <section className="space-y-6 px-4">

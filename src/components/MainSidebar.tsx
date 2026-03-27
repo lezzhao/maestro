@@ -1,7 +1,7 @@
 import { Panel, type PanelImperativeHandle } from "react-resizable-panels";
 import { TaskSidebar } from "./TaskSidebar";
 import { useTranslation } from "../i18n";
-import { useAppStore } from "../stores/appStore";
+import { useActiveWorkspace } from "../hooks/use-app-store-selectors";
 import type { RefObject } from "react";
 
 interface MainSidebarProps {
@@ -12,11 +12,7 @@ export function MainSidebar({
   panelRef,
 }: MainSidebarProps) {
   const { t } = useTranslation();
-  
-  const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId);
-  const workspaces = useAppStore((s) => s.workspaces);
-  
-  const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
+  const activeWorkspace = useActiveWorkspace();
 
   return (
     <Panel

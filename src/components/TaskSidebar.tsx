@@ -1,22 +1,13 @@
 import { Plus, MessageSquare, Trash2 } from "lucide-react";
-import { useAppStore } from "../stores/appStore";
-import { useShallow } from "zustand/react/shallow";
+import { useTaskStoreState } from "../hooks/use-app-store-selectors";
 import { useTranslation } from "../i18n";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 
 export function TaskSidebar() {
   const { t } = useTranslation();
-  const { tasks: allTasks, activeWorkspaceId, activeTaskId, addTask, removeTask, setActiveTaskId } = useAppStore(
-    useShallow((s) => ({
-      tasks: s.tasks,
-      activeWorkspaceId: s.activeWorkspaceId,
-      activeTaskId: s.activeTaskId,
-      addTask: s.addTask,
-      removeTask: s.removeTask,
-      setActiveTaskId: s.setActiveTaskId,
-    }))
-  );
+  const { tasks: allTasks, activeWorkspaceId, activeTaskId, addTask, removeTask, setActiveTaskId } =
+    useTaskStoreState();
 
   const tasks = allTasks.filter(t => (t.workspaceId || null) === (activeWorkspaceId || null));
 

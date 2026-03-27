@@ -6,6 +6,7 @@ import {
   Plus
 } from "lucide-react";
 import { Button } from "../ui/button";
+import { ChoiceDialog } from "../ui/choice-dialog";
 import { useTranslation } from "../../i18n";
 import { cn } from "../../lib/utils";
 import { EngineCard } from "./EngineCard";
@@ -68,6 +69,7 @@ export function SettingsView(props: SettingsViewProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showCreateProvider, setShowCreateProvider] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  const [cleanupCandidateIds, setCleanupCandidateIds] = useState<string[]>([]);
 
   const engineList = useMemo(() => {
     const list = Object.values(engines);
@@ -230,12 +232,7 @@ export function SettingsView(props: SettingsViewProps) {
                         });
                         
                         if (toDelete.length === 0) return;
-                        
-                        if (window.confirm(`确认要彻底删除全部 ${toDelete.length} 个无效或非 AI 提供商吗？此操作不可撤销。`)) {
-                          // Wait for all to finish
-                          await Promise.all(toDelete.map(e => onDeleteEngine(e.id)));
-                          setShowAll(false);
-                        }
+                        setCleanupCandidateIds(toDelete.map((engine) => engine.id));
                       }}
                       className="text-[10px] font-bold text-red-500/40 hover:text-red-500 uppercase tracking-widest transition-colors"
                     >
@@ -253,6 +250,27 @@ export function SettingsView(props: SettingsViewProps) {
               onUpsertEngine={onUpsertEngine}
             />
           )}
+
+          <ChoiceDialog
+            open={cleanupCandidateIds.length > 0}
+            title="清理无效提供商"
+            description={`将删除 ${cleanupCandidateIds.length} 个不可用或明显不是 AI 提供商的配置。此操作不可撤销。`}
+            options={[
+              {
+                id: "cleanup-invalid-providers",
+                label: "确认清理",
+                description: "批量删除当前识别出的无效项，并收起完整列表。",
+                variant: "destructive",
+                onSelect: async () => {
+                  await Promise.all(cleanupCandidateIds.map((engineId) => onDeleteEngine(engineId)));
+                  setShowAll(false);
+                  setCleanupCandidateIds([]);
+                },
+              },
+            ]}
+            cancelLabel="暂不清理"
+            onClose={() => setCleanupCandidateIds([])}
+          />
 
           {/* Section: System Diagnostics (Hidden by default) */}
           <div className="pt-12 border-t border-border-muted/10">

@@ -1,7 +1,6 @@
 import { memo, useRef } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence } from "framer-motion";
 import { SendHorizontal, Square, X, Paperclip, AlertCircle } from "lucide-react";
-import { Badge } from "../ui/badge";
 import { cn } from "../../lib/utils";
 
 export interface ChatInputProps {

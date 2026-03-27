@@ -1,11 +1,11 @@
 import { useState, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { FolderOpen, X, MessageSquare, FolderTree } from "lucide-react";
-import { useAppStore } from "../stores/appStore";
+import { useProjectStoreState, useTaskStoreState, useWorkspaceStoreState } from "../hooks/use-app-store-selectors";
+import { setCurrentProjectCommand } from "../hooks/project-commands";
+import { createWorkspaceCommand } from "../hooks/workspace-commands";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
-import type { Workspace } from "../types";
 
 const WORKSPACE_COLORS = [
   "#3b82f6", "#0ea5e9", "#10b981", "#6366f1", 
@@ -19,9 +19,9 @@ interface WorkspaceCreateDialogProps {
 }
 
 export function WorkspaceCreateDialog({ open, onClose }: WorkspaceCreateDialogProps) {
-  const addWorkspace = useAppStore((s) => s.addWorkspace);
-  const setActiveWorkspaceId = useAppStore((s) => s.setActiveWorkspaceId);
-  const addTask = useAppStore((s) => s.addTask);
+  const { addWorkspace, setActiveWorkspaceId } = useWorkspaceStoreState();
+  const { setProjectPath } = useProjectStoreState();
+  const { addTask } = useTaskStoreState();
   const [name, setName] = useState("");
   const [workingDirectory, setWorkingDirectory] = useState("");
   const [color, setColor] = useState(WORKSPACE_COLORS[0]);
@@ -47,22 +47,22 @@ export function WorkspaceCreateDialog({ open, onClose }: WorkspaceCreateDialogPr
     if (!name.trim()) return;
     setCreating(true);
     try {
-      const ws = await invoke<Workspace>("workspace_create", {
-        request: {
-          name: name.trim(),
-          workingDirectory: workingDirectory || null,
-          icon: null,
-          color,
-          preferredEngineId: null,
-          preferredProfileId: null,
-          specProvider: null,
-          specMode: null,
-          specTargetIde: null,
-          settings: null,
-        },
+      const ws = await createWorkspaceCommand({
+        name: name.trim(),
+        workingDirectory: workingDirectory || null,
+        icon: null,
+        color,
+        preferredEngineId: null,
+        preferredProfileId: null,
+        specProvider: null,
+        specMode: null,
+        specTargetIde: null,
+        settings: null,
       });
       addWorkspace(ws);
       setActiveWorkspaceId(ws.id);
+      await setCurrentProjectCommand(workingDirectory.trim() || "");
+      setProjectPath(workingDirectory.trim());
       void addTask("Initial Task").catch(console.error);
       setName("");
       setWorkingDirectory("");
@@ -72,7 +72,7 @@ export function WorkspaceCreateDialog({ open, onClose }: WorkspaceCreateDialogPr
     } finally {
       setCreating(false);
     }
-  }, [name, workingDirectory, color, addWorkspace, setActiveWorkspaceId, addTask, onClose]);
+  }, [name, workingDirectory, color, addWorkspace, setActiveWorkspaceId, setProjectPath, addTask, onClose]);
 
   if (!open) return null;
 
@@ -182,7 +182,7 @@ export function WorkspaceCreateDialog({ open, onClose }: WorkspaceCreateDialogPr
             <Button
               disabled={!name.trim() || creating}
               onClick={() => void handleCreate()}
-              className="flex-[2] h-10 bg-text-main hover:bg-text-main/90 text-bg-surface font-bold text-xs rounded-sm shadow-sm transition-all uppercase tracking-widest"
+              className="flex-2 h-10 bg-text-main hover:bg-text-main/90 text-bg-surface font-bold text-xs rounded-sm shadow-sm transition-all uppercase tracking-widest"
             >
               {creating ? "正在初始化..." : "创建并开始"}
             </Button>

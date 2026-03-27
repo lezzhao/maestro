@@ -1,8 +1,12 @@
 import { Suspense, useMemo, useState, useCallback, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "./stores/appStore";
 import { useTranslation } from "./i18n";
+import {
+  useActiveWorkspace,
+  useAppUiState,
+  useProjectStoreState,
+  useWorkspaceStoreState,
+} from "./hooks/use-app-store-selectors";
 import { useProject } from "./hooks/useProject";
 import { useAppDragDrop } from "./hooks/useAppDragDrop";
 import { useAppShortcuts } from "./hooks/useAppShortcuts";
@@ -11,42 +15,64 @@ import { AppProviders } from "./components/providers/AppProviders";
 import { WorkspaceLayout } from "./components/layout/WorkspaceLayout";
 import { CommandPalette } from "./components/CommandPalette";
 import { Toaster, toast } from "sonner";
+import {
+  cleanupDeadPtySessionsCommand,
+  reconcileActiveCliSessionsCommand,
+} from "./hooks/app-runtime-commands";
+import { setCurrentProjectCommand } from "./hooks/project-commands";
+import { updateWorkspaceCommand } from "./hooks/workspace-commands";
 
 function App() {
   const { t } = useTranslation();
   const { detectAndRecommend } = useProject();
-
-  const {
-    showSettings, setShowSettings,
-    theme
-  } = useAppStore(useShallow((s) => ({
-    showSettings: s.showSettings,
-    setShowSettings: s.setShowSettings,
-    theme: s.theme,
-  })));
+  const { showSettings, setShowSettings, theme } = useAppUiState();
+  const { activeWorkspaceId, workspaces } = useWorkspaceStoreState();
+  const { setProjectPath } = useProjectStoreState();
+  const activeWorkspace = useActiveWorkspace();
 
   const [commandOpen, setCommandOpen] = useState(false);
 
-  const { projectPath } = useAppStore(useShallow((s) => ({
-    projectPath: s.projectPath,
-  })));
+  useEffect(() => {
+    reconcileActiveCliSessionsCommand().catch(console.error);
+    cleanupDeadPtySessionsCommand().catch(console.error);
+  }, []);
 
   useEffect(() => {
-    invoke("cli_reconcile_active_sessions").catch(console.error);
-    invoke("pty_cleanup_dead_sessions").catch(console.error);
-    
-    // Auto-sync backend project state if we have a persisted projectPath
-    if (projectPath) {
-      invoke("project_set_current", { projectPath }).catch(err => {
-        console.error("Failed to sync project path:", err);
-      });
-    }
-  }, [projectPath]);
+    if (activeWorkspaceId && workspaces.length === 0) return;
+
+    const nextProjectPath = activeWorkspace?.workingDirectory?.trim() || "";
+
+    const syncWorkspaceProject = async () => {
+      try {
+        await setCurrentProjectCommand(nextProjectPath);
+        setProjectPath(nextProjectPath);
+      } catch (error) {
+        console.error("Failed to sync workspace project path:", error);
+        setProjectPath("");
+        await setCurrentProjectCommand("").catch(() => undefined);
+        if (nextProjectPath) {
+          toast.error(`工作区目录不可用: ${String(error)}`);
+        }
+      }
+    };
+
+    void syncWorkspaceProject();
+  }, [activeWorkspace, activeWorkspaceId, setProjectPath, workspaces.length]);
 
   const handleImport = useCallback(
     async (path: string) => {
       try {
         const result = await detectAndRecommend(path);
+        const currentWorkspaceId = useAppStore.getState().activeWorkspaceId;
+        if (currentWorkspaceId) {
+          await updateWorkspaceCommand({
+            id: currentWorkspaceId,
+            workingDirectory: path,
+          });
+          useAppStore.getState().updateWorkspace(currentWorkspaceId, {
+            workingDirectory: path,
+          });
+        }
         setShowSettings(false);
         toast.success("Project imported successfully");
         return result;

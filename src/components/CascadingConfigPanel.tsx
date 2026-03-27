@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { Settings, Save, AlertCircle } from "lucide-react";
-import { useAppStore } from "../stores/appStore";
-import { invoke } from "@tauri-apps/api/core";
+import {
+  useTaskStoreState,
+  useWorkspaceStoreState,
+} from "../hooks/use-app-store-selectors";
+import { updateTaskCommand } from "../hooks/task-commands";
+import { updateWorkspaceCommand } from "../hooks/workspace-commands";
 import { Button } from "./ui/button";
 
 interface CascadingConfigPanelProps {
@@ -13,10 +17,8 @@ export const CascadingConfigPanel: React.FC<CascadingConfigPanelProps> = ({
   taskId,
   workspaceId,
 }) => {
-  const tasks = useAppStore((s) => s.tasks);
-  const workspaces = useAppStore((s) => s.workspaces);
-  const updateTaskRecord = useAppStore((s) => s.updateTaskRecord);
-  const updateWorkspace = useAppStore((s) => s.updateWorkspace);
+  const { tasks, updateTaskRecord } = useTaskStoreState();
+  const { workspaces, updateWorkspace } = useWorkspaceStoreState();
 
   const activeTask = tasks.find((t) => t.id === taskId);
   const activeWs = workspaces.find((w) => w.id === workspaceId);
@@ -33,13 +35,10 @@ export const CascadingConfigPanel: React.FC<CascadingConfigPanelProps> = ({
   const handleSaveTask = async () => {
     if (!taskId) return;
     try {
-      // Validate JSON
       JSON.parse(taskSettingsStr);
-      await invoke("task_update", {
-        request: {
-          id: taskId,
-          settings: taskSettingsStr,
-        },
+      await updateTaskCommand({
+        id: taskId,
+        settings: taskSettingsStr,
       });
       updateTaskRecord(taskId, { settings: taskSettingsStr });
       setError(null);
@@ -52,13 +51,10 @@ export const CascadingConfigPanel: React.FC<CascadingConfigPanelProps> = ({
   const handleSaveWorkspace = async () => {
     if (!workspaceId) return;
     try {
-      // Validate JSON
       JSON.parse(wsSettingsStr);
-      await invoke("workspace_update", {
-        request: {
-          id: workspaceId,
-          settings: wsSettingsStr,
-        },
+      await updateWorkspaceCommand({
+        id: workspaceId,
+        settings: wsSettingsStr,
       });
       updateWorkspace(workspaceId, { settings: wsSettingsStr });
       setError(null);

@@ -8,7 +8,7 @@ import { cn } from "../../lib/utils";
 import { useEngine } from "../../hooks/useEngine";
 import { useTaskRuntimeContext } from "../../hooks/useTaskRuntimeContext";
 import { useActiveTask } from "../../hooks/useActiveTask";
-import { useChatStore } from "../../stores/chatStore";
+import { useTaskAssistantTokenTotals } from "../../hooks/use-task-chat-state";
 import { Select } from "../ui/select";
 import type { EngineModelListState } from "../../types";
 
@@ -56,19 +56,7 @@ export function AppHeader() {
     [models]
   );
 
-  const activeTaskMessages = useChatStore((s) => s.getTaskMessages(activeTaskId));
-  const totalTokens = useMemo(() => {
-    return activeTaskMessages.reduce(
-      (acc, msg) => {
-        if (msg.role === "assistant" && msg.tokenEstimate) {
-          acc.input += msg.tokenEstimate.approx_input_tokens;
-          acc.output += msg.tokenEstimate.approx_output_tokens;
-        }
-        return acc;
-      },
-      { input: 0, output: 0 },
-    );
-  }, [activeTaskMessages]);
+  const totalTokens = useTaskAssistantTokenTotals(activeTaskId);
 
   return (
     <header className="h-14 flex items-center justify-between px-6 bg-bg-surface/40 backdrop-blur-2xl border-b border-border-muted/5 z-30 relative shrink-0">

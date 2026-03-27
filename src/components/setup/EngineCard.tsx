@@ -11,6 +11,7 @@ import {
 import { Button } from "../ui/button";
 import { Select } from "../ui/select";
 import { Input } from "../ui/input";
+import { ChoiceDialog } from "../ui/choice-dialog";
 import { cn } from "../../lib/utils";
 import type {
   EngineConfig,
@@ -86,6 +87,7 @@ export function EngineCard({
   const [switching, setSwitching] = useState(false);
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const ok = preflight ? preflight.command_exists && preflight.auth_ok : false;
   const profileMap = engine.profiles || {};
@@ -194,9 +196,7 @@ export function EngineCard({
            </button>
             <button 
                 onClick={() => {
-                  if (window.confirm(`确定要删除提供商 "${engine.display_name}" 吗？`)) {
-                    void onDelete?.(id);
-                  }
+                  setShowDeleteDialog(true);
                 }}
                 className="p-1.5 rounded-sm hover:bg-red-500/10 hover:text-red-500 transition-all ml-1"
                 title="Delete Provider"
@@ -286,6 +286,25 @@ export function EngineCard({
            </div>
         </div>
       )}
+
+      <ChoiceDialog
+        open={showDeleteDialog}
+        title="删除提供商"
+        description={`将删除提供商“${engine.display_name}”。如果有任务正在使用它，建议先切换到其他提供商。`}
+        options={[
+          {
+            id: "delete-provider",
+            label: "确认删除",
+            description: "立即移除该提供商配置。",
+            variant: "destructive",
+            onSelect: async () => {
+              await onDelete?.(id);
+            },
+          },
+        ]}
+        cancelLabel="保留提供商"
+        onClose={() => setShowDeleteDialog(false)}
+      />
     </div>
   );
 }

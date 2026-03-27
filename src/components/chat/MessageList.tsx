@@ -3,9 +3,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { RefreshCcw } from "lucide-react";
 import { Virtuoso, VirtuosoHandle } from "react-virtuoso";
 import { ChatMessageItem } from "../ChatMessageItem";
-import { useChatStore } from "../../stores/chatStore";
+import { useTaskChatState } from "../../hooks/use-task-chat-state";
 import { recordPerf } from "../../lib/utils/perf";
 import type { TranslationFn } from "../../i18n";
+import type { ChatChoiceOption, ChatMessage } from "../../types";
 
 export interface ChatLabels {
   inputPlaceholder: string;
@@ -25,6 +26,7 @@ export interface MessageListProps {
   chatLabels: ChatLabels;
   handleRetry: (id: string) => void;
   handleCopy: (content: string) => void;
+  handleChoiceSelect?: (message: ChatMessage, option: ChatChoiceOption) => void | Promise<void>;
   t: TranslationFn;
 }
 
@@ -33,13 +35,10 @@ export const MessageList = memo(function MessageList({
   chatLabels,
   handleRetry,
   handleCopy,
+  handleChoiceSelect,
   t,
 }: MessageListProps) {
-  const messages = useChatStore((s) => s.getTaskMessages(taskId));
-  const isRunning = useChatStore((s) => s.getTaskRunning(taskId));
-  const latestRun = useChatStore((s) => s.getLatestRun(taskId));
-  const latestRunEvents = useChatStore((s) => s.getRunEvents(latestRun?.id || null));
-  const latestTranscript = useChatStore((s) => s.getRunTranscript(latestRun?.id || null));
+  const { messages, isRunning, latestRun, latestRunEvents, latestTranscript } = useTaskChatState(taskId);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const autoScrollEnabledRef = useRef(true);
   const [autoScrollAllowed, setAutoScrollAllowed] = useState(true);
@@ -121,6 +120,7 @@ export const MessageList = memo(function MessageList({
                 isRunning={isRunning}
                 onRetry={handleRetry}
                 onCopy={handleCopy}
+                onChoiceSelect={handleChoiceSelect}
                 liveTranscript={
                     index === messages.length - 1 ? liveTranscriptText : undefined
                 }

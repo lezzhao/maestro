@@ -8,7 +8,7 @@ import {
 import { ChatMessageContent } from "./ChatMessageContent";
 import { cn } from "../lib/utils";
 import { stripAnsi } from "../lib/utils/terminal";
-import type { ChatMessage } from "../types";
+import type { ChatChoiceOption, ChatMessage } from "../types";
 
 type Labels = {
   roleUser: string;
@@ -25,8 +25,12 @@ type Labels = {
 type Props = {
   message: ChatMessage;
   labels: Labels;
+  minimalMode?: boolean;
   isRunning?: boolean;
+  onRetry?: (id: string) => void;
+  onCopy?: (content: string) => void;
   liveTranscript?: string;
+  onChoiceSelect?: (message: ChatMessage, option: ChatChoiceOption) => void | Promise<void>;
 };
 
 type ThoughtExtractResult = {
@@ -89,14 +93,14 @@ function extractThoughtBlock(content: string, isStreaming: boolean): ThoughtExtr
   return { thought, main };
 }
 
-function ChatMessageItemBase({ message, labels, liveTranscript }: Props) {
+function ChatMessageItemBase({ message, labels, liveTranscript, onChoiceSelect }: Props) {
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
   const isSystem = message.role === "system";
 
   const cleanContent = useMemo(() => stripAnsi(message.content || ""), [message.content]);
   const isCollapsible = isAssistant && message.status !== "streaming" && cleanContent.length > 2000;
-  const [expanded] = useState(!isCollapsible);
+  const [expanded, setExpanded] = useState(!isCollapsible);
   const [showThought, setShowThought] = useState(false);
 
   const renderedAssistantContent = useMemo(() => {
@@ -111,6 +115,84 @@ function ChatMessageItemBase({ message, labels, liveTranscript }: Props) {
   );
 
   if (isSystem) {
+    const choice = message.meta?.choice;
+    if (choice) {
+      return (
+        <div className="flex justify-center p-2">
+          <div className="w-full max-w-[760px] rounded-2xl border border-border-muted/20 bg-bg-surface px-4 py-4 shadow-sm">
+            <div className="flex items-center gap-2 text-[10px] uppercase font-bold text-text-muted/60 tracking-wider">
+              <Sparkles size={12} className="opacity-60" />
+              <span>需要你的选择</span>
+              <span
+                className={cn(
+                  "ml-auto rounded-full border px-2 py-0.5 text-[9px]",
+                  choice.status === "resolved"
+                    ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-500"
+                    : "border-amber-500/30 bg-amber-500/5 text-amber-500",
+                )}
+              >
+                {choice.status === "resolved" ? "resolved" : "pending"}
+              </span>
+            </div>
+
+            <div className="mt-3">
+              <div className="text-sm font-bold text-text-main">{choice.title}</div>
+              {choice.description && (
+                <div className="mt-1 text-[12px] leading-relaxed text-text-main/75">
+                  {choice.description}
+                </div>
+              )}
+              {message.content && (
+                <div className="mt-2 text-[12px] leading-relaxed text-text-muted/70">
+                  {message.content}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 grid gap-2">
+              {choice.options.map((option) => {
+                const isSelected = choice.selectedOptionId === option.id;
+                const isResolved = choice.status === "resolved";
+                const isDestructive = option.variant === "destructive";
+
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    disabled={isResolved}
+                    onClick={() => void onChoiceSelect?.(message, option)}
+                    className={cn(
+                      "rounded-xl border px-3 py-3 text-left transition-all",
+                      "disabled:cursor-not-allowed disabled:opacity-90",
+                      isSelected
+                        ? "border-primary/40 bg-primary/8"
+                        : isDestructive
+                          ? "border-rose-500/20 bg-rose-500/5 hover:border-rose-500/35"
+                          : "border-border-muted/20 bg-bg-base/40 hover:border-primary/30 hover:bg-primary/5",
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        "text-[12px] font-bold",
+                        isDestructive ? "text-rose-500" : "text-text-main",
+                      )}
+                    >
+                      {option.label}
+                    </div>
+                    {option.description && (
+                      <div className="mt-1 text-[11px] leading-relaxed text-text-muted/70">
+                        {option.description}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     const isTool = message.meta?.eventType === "tool";
     const isError = message.meta?.eventStatus === "error";
     const isDone = message.meta?.eventStatus === "done";
@@ -215,6 +297,15 @@ function ChatMessageItemBase({ message, labels, liveTranscript }: Props) {
                     isStreaming={message.status === "streaming"}
                   />
                 )}
+                {isCollapsible && (
+                  <button
+                    type="button"
+                    className="mt-2 text-[10px] font-bold uppercase tracking-wider text-primary/60 hover:text-primary transition-colors"
+                    onClick={() => setExpanded((v) => !v)}
+                  >
+                    {expanded ? labels.collapseResult : labels.expandResult}
+                  </button>
+                )}
               </>
             ) : (
               <div className="whitespace-pre-wrap wrap-break-word font-medium text-[13px]">{message.content}</div>
@@ -241,5 +332,6 @@ export const ChatMessageItem = memo(
     prev.message === next.message &&
     prev.labels === next.labels &&
     prev.isRunning === next.isRunning &&
-    prev.liveTranscript === next.liveTranscript,
+    prev.liveTranscript === next.liveTranscript &&
+    prev.onChoiceSelect === next.onChoiceSelect,
 );

@@ -1,12 +1,8 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useShallow } from "zustand/react/shallow";
-import { invoke } from "@tauri-apps/api/core";
 import { useActiveTask } from "../../hooks/useActiveTask";
-import { useAppStore } from "../../stores/appStore";
-import { useChatStore } from "../../stores/chatStore";
+import { useAppUiState } from "../../hooks/use-app-store-selectors";
 import { useTranslation } from "../../i18n";
 import {
-  Rocket,
   Plus,
 } from "lucide-react";
 import { Group, Panel, Separator } from "react-resizable-panels";
@@ -23,13 +19,13 @@ import { DiffDialog } from "../DiffDialog";
 import { useEngine } from "../../hooks/useEngine";
 import { useProject } from "../../hooks/useProject";
 import { useAppLifecycle } from "../../hooks/useAppLifecycle";
-import { useWorkspaceFlow } from "../../hooks/useWorkspaceFlow";
+import { useTaskMessages } from "../../hooks/use-task-chat-state";
 import { useTaskSwitchEffects } from "../../hooks/useTaskSwitchEffects";
 import { useTaskRuntimeContext } from "../../hooks/useTaskRuntimeContext";
 import { PanelFallback } from "../ui/PanelFallback";
 import { toast } from "sonner";
 import { parseTaskFileChanges } from "../../lib/fileChangeParser";
-import type { Workspace } from "../../types";
+
 
 export function WorkspaceLayout() {
   const { t } = useTranslation();
@@ -47,7 +43,7 @@ export function WorkspaceLayout() {
     upsertEngine,
     deleteEngine,
   } = useEngine();
-  const { projectPath, detectAndRecommend, gitDiff } = useProject();
+  const { projectPath, gitDiff } = useProject();
   const { activeTaskId, activeTask } = useActiveTask();
   const { 
     engineId: activeEngineId, 
@@ -57,21 +53,11 @@ export function WorkspaceLayout() {
   } = useTaskRuntimeContext();
   const {
     showSettings, setShowSettings,
-    setCurrentStep, setSidebarCollapsed,
+    setSidebarCollapsed,
     theme, setTheme,
     lang, setLang,
     activeWorkspaceId,
-  } = useAppStore(useShallow((s) => ({
-    showSettings: s.showSettings,
-    setShowSettings: s.setShowSettings,
-    setCurrentStep: s.setCurrentStep,
-    setSidebarCollapsed: s.setSidebarCollapsed,
-    theme: s.theme,
-    setTheme: s.setTheme,
-    lang: s.lang,
-    setLang: s.setLang,
-    activeWorkspaceId: s.activeWorkspaceId,
-  })));
+  } = useAppUiState();
 
   const [activeFile, setActiveFile] = useState("");
   const [activeDiff, setActiveDiff] = useState("");
@@ -94,19 +80,11 @@ export function WorkspaceLayout() {
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false);
   const sidebarPanelRef = useRef<import("react-resizable-panels").PanelImperativeHandle>(null);
 
-  const activeTaskMessages = useChatStore((s) => s.getTaskMessages(activeTaskId));
+  const activeTaskMessages = useTaskMessages(activeTaskId);
 
 
 
-  useAppLifecycle(activeExecutionMode, activeEngineId);
-
-  const { handleOpenProjectPicker } = useWorkspaceFlow({
-    projectPath,
-    showSettings,
-    detectAndRecommend,
-    setShowSettings,
-    setCurrentStep,
-  });
+  useAppLifecycle(activeExecutionMode, activeEngineId, activeTaskId);
 
   const taskFileChanges = useMemo(
     () => parseTaskFileChanges(activeTaskMessages),
@@ -153,8 +131,8 @@ export function WorkspaceLayout() {
   useTaskSwitchEffects({
     activeTaskId,
     activeTaskMessagesLength: activeTaskMessages.length,
-    setActiveFile: () => {},
-    setActiveDiff: () => {},
+    setActiveFile,
+    setActiveDiff,
   });
 
   useEffect(() => {
@@ -170,17 +148,7 @@ export function WorkspaceLayout() {
     }
   }, [projectPath, setSidebarCollapsed, showSettings]);
 
-  // Load workspaces from backend on mount
-  const setWorkspaces = useAppStore((s) => s.setWorkspaces);
-  useEffect(() => {
-    void invoke<Workspace[]>("workspace_list").then(setWorkspaces).catch(console.error);
-  }, [setWorkspaces]);
-
-
-
-
-  const trimmedProjectPath = projectPath?.trim();
-
+  // 工作区列表已在 useAgentStateSync bootstrap 中加载，此处仅订阅 store
   return (
     <div className="flex-1 h-full min-h-0 overflow-hidden relative flex">
       {/* Column 1: Workspace Bar */}
@@ -253,43 +221,19 @@ export function WorkspaceLayout() {
             />
 
             <Panel id="panel-main" defaultSize={800} minSize={400} className="flex flex-col min-h-0 bg-bg-surface">
-              {!trimmedProjectPath ? (
-                  <div className="h-full flex flex-col items-center justify-center space-y-6">
-                    <div className="relative group">
-                      <div className="relative w-20 h-20 rounded-md bg-primary flex items-center justify-center text-bg-base shadow-sm">
-                        <Rocket size={40} />
-                      </div>
-                    </div>
-                    <div className="text-center space-y-1">
-                      <h2 className="text-xl font-bold tracking-tight">{t("welcome_ready")}</h2>
-                      <p className="text-[13px] text-text-muted/80 max-w-sm leading-relaxed">
-                        {t("welcome_desc")}
-                      </p>
-                    </div>
-                    <Button 
-                      size="lg" 
-                      className="rounded-sm px-10 h-11 text-[13px] font-bold tracking-wider uppercase"
-                      onClick={() => void handleOpenProjectPicker()}
-                    >
-                      <Plus size={16} className="mr-2" />
-                      {t("cmd_import_project")}
-                    </Button>
-                </div>
-              ) : (
-                <div className="h-full flex flex-col min-h-0 relative">
-                  <AppHeader />
+              <div className="h-full flex flex-col min-h-0 relative">
+                <AppHeader />
 
-                  <div className="flex-1 min-h-0 bg-bg-base">
-                    <Suspense fallback={<PanelFallback label="Workspace" />}>
-                      <TaskWorkspace
-                        projectPath={projectPath}
-                        activeTask={activeTask || null}
-                        onSetExecutionMode={handleSetExecutionMode}
-                      />
-                    </Suspense>
-                  </div>
+                <div className="flex-1 min-h-0 bg-bg-base">
+                  <Suspense fallback={<PanelFallback label="Workspace" />}>
+                    <TaskWorkspace
+                      projectPath={projectPath}
+                      activeTask={activeTask || null}
+                      onSetExecutionMode={handleSetExecutionMode}
+                    />
+                  </Suspense>
                 </div>
-              )}
+              </div>
             </Panel>
 
             {activeTask && taskFileChanges.length > 0 && (

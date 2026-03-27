@@ -1,9 +1,12 @@
+import { useState } from "react";
 import { Plus, Settings2 } from "lucide-react";
-import { useAppStore } from "../../stores/appStore";
-import { useShallow } from "zustand/react/shallow";
+import { useAppUiState, useWorkspaceStoreState } from "../../hooks/use-app-store-selectors";
+import { deleteWorkspaceCommand } from "../../hooks/workspace-commands";
 import { cn } from "../../lib/utils";
 import { useTranslation } from "../../i18n";
 import type { Workspace } from "../../types";
+import { ChoiceDialog } from "../ui/choice-dialog";
+import { toast } from "sonner";
 
 interface ActivityBarProps {
   onOpenSettings: () => void;
@@ -41,15 +44,9 @@ export function ActivityBar({
   onCreateWorkspace,
 }: ActivityBarProps) {
   const { t } = useTranslation();
-  const { workspaces, activeWorkspaceId, setActiveWorkspaceId, setShowSettings, removeWorkspace } = useAppStore(
-    useShallow((s) => ({
-      workspaces: s.workspaces,
-      activeWorkspaceId: s.activeWorkspaceId,
-      setActiveWorkspaceId: s.setActiveWorkspaceId,
-      setShowSettings: s.setShowSettings,
-      removeWorkspace: s.removeWorkspace,
-    }))
-  );
+  const [pendingDeleteWorkspace, setPendingDeleteWorkspace] = useState<Workspace | null>(null);
+  const { workspaces, activeWorkspaceId, setActiveWorkspaceId } = useWorkspaceStoreState();
+  const { setShowSettings } = useAppUiState();
 
   return (
     <div className="w-[64px] h-full flex flex-col items-center py-4 bg-bg-surface/80 backdrop-blur-2xl border-r border-border-muted/10 z-30 shrink-0 relative transition-all shadow-sm">
@@ -63,9 +60,7 @@ export function ActivityBar({
               className="relative flex items-center justify-center w-full group/ws" 
               onContextMenu={(e) => {
                 e.preventDefault();
-                if (confirm(`确定要彻底删除 Workspace "${ws.name}" 吗？`)) {
-                  removeWorkspace(ws.id);
-                }
+                setPendingDeleteWorkspace(ws);
               }}
             >
               <div 
@@ -113,6 +108,35 @@ export function ActivityBar({
           )}
         </button>
       </div>
+
+      <ChoiceDialog
+        open={Boolean(pendingDeleteWorkspace)}
+        title="删除 Workspace"
+        description={
+          pendingDeleteWorkspace
+            ? `将删除工作区“${pendingDeleteWorkspace.name}”。此操作会移除该工作区入口。`
+            : undefined
+        }
+        options={[
+          {
+            id: "delete-workspace",
+            label: "确认删除",
+            description: "立即删除当前工作区。",
+            variant: "destructive",
+            onSelect: async () => {
+              if (!pendingDeleteWorkspace) return;
+              try {
+                await deleteWorkspaceCommand(pendingDeleteWorkspace.id);
+              } catch (error) {
+                toast.error(`删除工作区失败: ${String(error)}`);
+                throw error;
+              }
+            },
+          },
+        ]}
+        cancelLabel="保留工作区"
+        onClose={() => setPendingDeleteWorkspace(null)}
+      />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { useAppStore } from "./stores/appStore";
+import { useLanguageState } from "./hooks/use-app-store-selectors";
 
 export const translations = {
   zh: {
@@ -644,7 +644,7 @@ export type TranslationFn = (
 ) => string;
 
 export function useTranslation() {
-  const lang = useAppStore((s) => s.lang);
+  const lang = useLanguageState();
   const t = useCallback(
     (key: keyof typeof translations.en, params?: Record<string, string | number>) => {
       let text = translations[lang][key] || translations.en[key] || key;
