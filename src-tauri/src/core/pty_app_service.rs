@@ -1,7 +1,7 @@
 use super::error;
 use super::MaestroCore;
-use tauri::ipc::Channel;
 use crate::pty::{PtySessionInfo, PtySpawnOptions};
+use tauri::ipc::Channel;
 
 impl MaestroCore {
     pub fn pty_spawn(
@@ -9,7 +9,11 @@ impl MaestroCore {
         options: PtySpawnOptions,
         on_data: Channel<String>,
     ) -> Result<PtySessionInfo, error::CoreError> {
-        super::pty_spawn_guard::validate_pty_spawn(&self.config.get(), &options.file, &options.args)?;
+        super::pty_spawn_guard::validate_pty_spawn(
+            &self.config.get(),
+            &options.file,
+            &options.args,
+        )?;
         self.pty_state
             .spawn_session(options, on_data)
             .map_err(error::CoreError::from)
@@ -21,7 +25,12 @@ impl MaestroCore {
             .map_err(error::CoreError::from)
     }
 
-    pub fn pty_resize(&self, session_id: String, cols: u16, rows: u16) -> Result<(), error::CoreError> {
+    pub fn pty_resize(
+        &self,
+        session_id: String,
+        cols: u16,
+        rows: u16,
+    ) -> Result<(), error::CoreError> {
         self.pty_state
             .resize_session(&session_id, cols, rows)
             .map_err(error::CoreError::from)

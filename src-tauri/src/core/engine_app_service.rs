@@ -1,17 +1,23 @@
 use super::error;
 use super::MaestroCore;
-use std::collections::BTreeMap;
-use tauri::AppHandle;
 use crate::config::{EngineConfig, EngineProfile};
 use crate::engine::{EngineModelListResult, EnginePreflightResult};
+use std::collections::BTreeMap;
+use tauri::AppHandle;
 
 impl MaestroCore {
     pub fn engine_list(&self) -> BTreeMap<String, EngineConfig> {
         crate::engine::engine_list_core(&self.config)
     }
 
-    pub fn engine_upsert(&self, app: &AppHandle, id: String, engine: EngineConfig) -> Result<(), error::CoreError> {
-        crate::engine::engine_upsert_core(app, id, engine, &self.config).map_err(error::CoreError::from)
+    pub fn engine_upsert(
+        &self,
+        app: &AppHandle,
+        id: String,
+        engine: EngineConfig,
+    ) -> Result<(), error::CoreError> {
+        crate::engine::engine_upsert_core(app, id, engine, &self.config)
+            .map_err(error::CoreError::from)
     }
 
     pub fn engine_set_active_profile(
@@ -35,13 +41,20 @@ impl MaestroCore {
             .map_err(error::CoreError::from)
     }
 
-    pub async fn engine_preflight(&self, engine_id: String) -> Result<EnginePreflightResult, error::CoreError> {
-        crate::engine::engine_preflight_core(engine_id, self.config.get())
+    pub async fn engine_preflight(
+        &self,
+        engine_id: String,
+        profile_id: Option<String>,
+    ) -> Result<EnginePreflightResult, error::CoreError> {
+        crate::engine::engine_preflight_core(engine_id, profile_id, self.config.get())
             .await
             .map_err(error::CoreError::from)
     }
 
-    pub async fn engine_list_models(&self, engine_id: String) -> Result<EngineModelListResult, error::CoreError> {
+    pub async fn engine_list_models(
+        &self,
+        engine_id: String,
+    ) -> Result<EngineModelListResult, error::CoreError> {
         crate::engine::engine_list_models_core(engine_id, self.config.get())
             .await
             .map_err(error::CoreError::from)

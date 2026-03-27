@@ -46,16 +46,34 @@ impl Serialize for CoreError {
         S: Serializer,
     {
         let (code, message) = match self {
-            CoreError::NotFound { resource, id } => ("ERR_NOT_FOUND", format!("{} not found: {}", resource, id)),
-            CoreError::EngineUnavailable { engine_id, reason } => ("ERR_ENGINE_UNAVAILABLE", format!("Engine {} unavailable: {}", engine_id, reason)),
+            CoreError::NotFound { resource, id } => {
+                ("ERR_NOT_FOUND", format!("{} not found: {}", resource, id))
+            }
+            CoreError::EngineUnavailable { engine_id, reason } => (
+                "ERR_ENGINE_UNAVAILABLE",
+                format!("Engine {} unavailable: {}", engine_id, reason),
+            ),
             CoreError::SystemError { message } => ("ERR_SYSTEM", message.clone()),
-            CoreError::ValidationError { field, message } => ("ERR_VALIDATION", format!("Invalid {}: {}", field, message)),
-            CoreError::AuthFailed { engine_id, reason } => ("ERR_AUTH_FAILED", format!("Auth failed for {}: {}", engine_id, reason)),
-            CoreError::ExecutionFailed { id, reason } => ("ERR_EXECUTION_FAILED", format!("Execution {} failed: {}", id, reason)),
-            CoreError::CancelFailed { id, reason } => ("ERR_CANCEL_FAILED", format!("Cancel failed for {}: {}", id, reason)),
+            CoreError::ValidationError { field, message } => {
+                ("ERR_VALIDATION", format!("Invalid {}: {}", field, message))
+            }
+            CoreError::AuthFailed { engine_id, reason } => (
+                "ERR_AUTH_FAILED",
+                format!("Auth failed for {}: {}", engine_id, reason),
+            ),
+            CoreError::ExecutionFailed { id, reason } => (
+                "ERR_EXECUTION_FAILED",
+                format!("Execution {} failed: {}", id, reason),
+            ),
+            CoreError::CancelFailed { id, reason } => (
+                "ERR_CANCEL_FAILED",
+                format!("Cancel failed for {}: {}", id, reason),
+            ),
             CoreError::Io { message } => ("ERR_IO", message.clone()),
             CoreError::Serialization { message } => ("ERR_SERIALIZATION", message.clone()),
-            CoreError::Unsupported { feature } => ("ERR_UNSUPPORTED", format!("Unsupported: {}", feature)),
+            CoreError::Unsupported { feature } => {
+                ("ERR_UNSUPPORTED", format!("Unsupported: {}", feature))
+            }
             CoreError::PermissionDenied { reason } => ("ERR_PERMISSION_DENIED", reason.clone()),
             CoreError::Db { message } => ("ERR_DB", message.clone()),
         };
@@ -68,7 +86,9 @@ impl Serialize for CoreError {
 
 impl From<std::io::Error> for CoreError {
     fn from(err: std::io::Error) -> Self {
-        CoreError::SystemError { message: err.to_string() }
+        CoreError::SystemError {
+            message: err.to_string(),
+        }
     }
 }
 
@@ -80,6 +100,8 @@ impl From<String> for CoreError {
 
 impl From<&str> for CoreError {
     fn from(s: &str) -> Self {
-        CoreError::SystemError { message: s.to_string() }
+        CoreError::SystemError {
+            message: s.to_string(),
+        }
     }
 }

@@ -14,17 +14,15 @@ impl MaestroCore {
         mode: String,
         target_ide: String,
     ) -> Result<(), error::CoreError> {
-        crate::spec::spec_inject_core(
-            &self.config.get(),
-            provider,
-            project_path,
-            mode,
-            target_ide,
-        )
-        .map_err(error::CoreError::from)
+        crate::spec::spec_inject_core(&self.config.get(), provider, project_path, mode, target_ide)
+            .map_err(error::CoreError::from)
     }
 
-    pub fn spec_remove(&self, provider: String, project_path: String) -> Result<(), error::CoreError> {
+    pub fn spec_remove(
+        &self,
+        provider: String,
+        project_path: String,
+    ) -> Result<(), error::CoreError> {
         crate::spec::spec_remove_core(&self.config.get(), provider, project_path)
             .map_err(error::CoreError::from)
     }

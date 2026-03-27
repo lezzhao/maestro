@@ -1,10 +1,10 @@
 //! Fetches model lists from engines. Read-only.
 
+use crate::config::AppConfig;
+use crate::engine::utils::run_capture_shell;
 use regex::Regex;
 use serde::Serialize;
 use std::collections::HashSet;
-use crate::config::AppConfig;
-use crate::engine::utils::run_capture_shell;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct EngineModelListResult {

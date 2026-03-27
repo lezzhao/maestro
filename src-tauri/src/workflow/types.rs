@@ -286,3 +286,11 @@ pub struct ChatExecuteCliResult {
 pub struct ChatExecuteStopRequest {
     pub exec_id: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatSubmitChoiceRequest {
+    pub task_id: String,
+    pub message_id: String,
+    pub option_id: String,
+    pub option_label: String,
+}

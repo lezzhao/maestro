@@ -1,12 +1,14 @@
-use super::MaestroCore;
 use super::error;
-use std::sync::Arc;
-use tauri::AppHandle;
-use tauri::ipc::Channel;
+use super::MaestroCore;
 use crate::core::events::{EventStream, StringStream};
-use crate::workflow::types::{ChatApiRequest, ChatExecuteCliRequest, StepRunRequest, WorkflowRunRequest};
 use crate::workflow::chat::{chat_execute_api_core, chat_execute_cli_core};
 use crate::workflow::run::{workflow_run_core, workflow_run_step_core};
+use crate::workflow::types::{
+    ChatApiRequest, ChatExecuteCliRequest, StepRunRequest, WorkflowRunRequest,
+};
+use std::sync::Arc;
+use tauri::ipc::Channel;
+use tauri::AppHandle;
 
 impl MaestroCore {
     /// Workflow run - creates Execution at start, persists at end.
@@ -17,14 +19,7 @@ impl MaestroCore {
         emitter: Arc<dyn EventStream>,
         request: WorkflowRunRequest,
     ) -> Result<crate::workflow::types::WorkflowRunResult, error::CoreError> {
-        workflow_run_core(
-            app,
-            emitter,
-            request,
-            &self.config.get(),
-            &self.pty_state,
-        )
-        .await
+        workflow_run_core(app, emitter, request, &self.config.get(), &self.pty_state).await
     }
 
     /// Workflow run single step. StepRunRequest has no task_id; binding not required.
@@ -34,13 +29,7 @@ impl MaestroCore {
         emitter: Arc<dyn EventStream>,
         request: StepRunRequest,
     ) -> Result<crate::workflow::types::StepRunResult, error::CoreError> {
-        workflow_run_step_core(
-            emitter,
-            request,
-            &self.config.get(),
-            &self.pty_state,
-        )
-        .await
+        workflow_run_step_core(emitter, request, &self.config.get(), &self.pty_state).await
     }
 
     /// Chat execute via API - creates Execution, registers with headless, spawns
@@ -50,7 +39,14 @@ impl MaestroCore {
         request: ChatApiRequest,
         on_data: Arc<dyn StringStream>,
     ) -> Result<crate::workflow::types::ChatExecuteApiResult, error::CoreError> {
-        chat_execute_api_core(app, request, self.config.get(), &self.headless_state, on_data).await
+        chat_execute_api_core(
+            app,
+            request,
+            self.config.get(),
+            &self.headless_state,
+            on_data,
+        )
+        .await
     }
 
     /// Chat execute via CLI - creates Execution, registers with headless, spawns
@@ -60,7 +56,14 @@ impl MaestroCore {
         request: ChatExecuteCliRequest,
         on_data: Arc<dyn StringStream>,
     ) -> Result<crate::workflow::types::ChatExecuteCliResult, error::CoreError> {
-        chat_execute_cli_core(app, request, self.config.get(), &self.headless_state, on_data).await
+        chat_execute_cli_core(
+            app,
+            request,
+            self.config.get(),
+            &self.headless_state,
+            on_data,
+        )
+        .await
     }
 
     /// Use-Case: Chat spawn - creates a raw pseudo-terminal session for CLI chat
@@ -70,7 +73,13 @@ impl MaestroCore {
         request: crate::workflow::types::ChatSpawnRequest,
         on_data: Channel<String>,
     ) -> Result<crate::workflow::types::ChatSessionMeta, error::CoreError> {
-        crate::workflow::chat::chat_spawn_core(app.as_ref(), request, &self.config.get(), &self.pty_state, on_data)
+        crate::workflow::chat::chat_spawn_core(
+            app.as_ref(),
+            request,
+            &self.config.get(),
+            &self.pty_state,
+            on_data,
+        )
     }
 
     /// Use-Case: Save last conversation state

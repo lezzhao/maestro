@@ -81,7 +81,12 @@ impl PtyManagerState {
         {
             let sessions = self.sessions.read().unwrap_or_else(|e| e.into_inner());
             for (id, session) in sessions.iter() {
-                if let Ok(Some(_)) = session.child.lock().unwrap_or_else(|e| e.into_inner()).try_wait() {
+                if let Ok(Some(_)) = session
+                    .child
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .try_wait()
+                {
                     dead_ids.push(id.clone());
                 }
             }
@@ -104,12 +109,7 @@ impl PtyManagerState {
         Ok(())
     }
 
-    pub fn resize_session(
-        &self,
-        session_id: &str,
-        cols: u16,
-        rows: u16,
-    ) -> Result<(), String> {
+    pub fn resize_session(&self, session_id: &str, cols: u16, rows: u16) -> Result<(), String> {
         let session = self.get_session(session_id)?;
         session
             .master
@@ -124,8 +124,6 @@ impl PtyManagerState {
             .map_err(|e| format!("resize failed: {e}"))?;
         Ok(())
     }
-
-
 
     pub fn list_sessions(&self) -> Vec<PtySessionInfo> {
         self.sessions
@@ -297,9 +295,7 @@ pub fn pty_spawn(
     on_data: Channel<String>,
     core_state: tauri::State<'_, crate::core::MaestroCore>,
 ) -> Result<PtySessionInfo, crate::core::error::CoreError> {
-    core_state
-        .inner()
-        .pty_spawn(options, on_data)
+    core_state.inner().pty_spawn(options, on_data)
 }
 
 #[command]
@@ -322,7 +318,10 @@ pub fn pty_resize(
 }
 
 #[command]
-pub fn pty_kill(session_id: String, core_state: tauri::State<'_, crate::core::MaestroCore>) -> Result<(), crate::core::error::CoreError> {
+pub fn pty_kill(
+    session_id: String,
+    core_state: tauri::State<'_, crate::core::MaestroCore>,
+) -> Result<(), crate::core::error::CoreError> {
     core_state.inner().pty_kill(session_id)
 }
 

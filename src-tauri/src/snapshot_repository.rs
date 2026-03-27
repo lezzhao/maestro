@@ -36,13 +36,11 @@ pub fn get_runtime_snapshot_payload(
     let mut stmt = conn
         .prepare("SELECT payload_json FROM runtime_snapshots WHERE id = ?1")
         .map_err(db_err)?;
-    let mut rows = stmt
-        .query(rusqlite::params![snapshot_id])
-        .map_err(db_err)?;
+    let mut rows = stmt.query(rusqlite::params![snapshot_id]).map_err(db_err)?;
     if let Some(row) = rows.next().map_err(db_err)? {
         let json: String = row.get(0).map_err(db_err)?;
-        let payload: crate::task_runtime::RuntimeSnapshotPayload =
-            serde_json::from_str(&json).map_err(|e| CoreError::Serialization {
+        let payload: crate::task_runtime::RuntimeSnapshotPayload = serde_json::from_str(&json)
+            .map_err(|e| CoreError::Serialization {
                 message: e.to_string(),
             })?;
         Ok(Some(payload))

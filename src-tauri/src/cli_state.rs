@@ -1,13 +1,11 @@
-use crate::core::MaestroCore;
 use crate::core::execution::{Execution, ExecutionStatus};
+use crate::core::MaestroCore;
 use crate::run_persistence::{read_run_records, rewrite_run_records};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 use tauri::{command, State};
-
-
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CliSessionListItem {
@@ -39,7 +37,8 @@ fn resolve_workspace_io(core: &MaestroCore) -> Result<crate::workspace_io::Works
 }
 
 fn cli_log_dir(io: &crate::workspace_io::WorkspaceIo) -> PathBuf {
-    io.resolve(".maestro-cli/logs").unwrap_or_else(|_| PathBuf::from(".maestro-cli/logs"))
+    io.resolve(".maestro-cli/logs")
+        .unwrap_or_else(|_| PathBuf::from(".maestro-cli/logs"))
 }
 
 fn session_log_path(log_dir: &std::path::Path, session_id: &str) -> PathBuf {
@@ -130,7 +129,7 @@ pub fn cli_read_session_logs(
 ) -> Result<String, String> {
     let io = resolve_workspace_io(core_state.inner())?;
     let run_records = read_run_records(&io).unwrap_or_default();
-    
+
     let target = if let Some(id) = session_id {
         id
     } else {
@@ -149,10 +148,13 @@ pub fn cli_read_session_logs(
         }
         return Ok(format!(
             "run_id: {}\nengine: {}\nstatus: {}\nmode: {}\n暂无日志预览。",
-            item.id, item.engine_id, item.status.as_str(), item.mode.as_str()
+            item.id,
+            item.engine_id,
+            item.status.as_str(),
+            item.mode.as_str()
         ));
     }
-    
+
     Err(format!("log file not found for session: {target}"))
 }
 
@@ -166,7 +168,7 @@ pub fn cli_prune_sessions(
     let io = resolve_workspace_io(core_state.inner())?;
     let log_dir = cli_log_dir(&io);
     let run_records = read_run_records(&io).unwrap_or_default();
-    
+
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| format!("read system time failed: {e}"))?
@@ -207,9 +209,7 @@ pub fn cli_prune_sessions(
 }
 
 #[command]
-pub fn cli_reconcile_active_sessions(
-    core_state: State<'_, MaestroCore>,
-) -> Result<usize, String> {
+pub fn cli_reconcile_active_sessions(core_state: State<'_, MaestroCore>) -> Result<usize, String> {
     let io = resolve_workspace_io(core_state.inner())?;
     let mut reconciled = 0;
 
@@ -221,7 +221,9 @@ pub fn cli_reconcile_active_sessions(
             .as_millis() as i64;
         let mut updated = Vec::new();
         for mut item in run_records {
-            if item.status == ExecutionStatus::Running && now_ms - item.updated_at > 12 * 60 * 60 * 1000 {
+            if item.status == ExecutionStatus::Running
+                && now_ms - item.updated_at > 12 * 60 * 60 * 1000
+            {
                 item.status = ExecutionStatus::Failed;
                 item.updated_at = now_ms;
                 reconciled += 1;
@@ -235,4 +237,3 @@ pub fn cli_reconcile_active_sessions(
 
     Ok(reconciled)
 }
-

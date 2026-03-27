@@ -49,12 +49,14 @@ impl EventStream for MpscEventStream {
             "event": event_name,
             "payload": payload,
         });
-        self.tx.try_send(IpcResponse {
-            id: self.msg_id.clone(),
-            result: Some(msg),
-            error: None,
-            is_stream: true,
-        }).map_err(|e| format!("Channel full/closed: {e}"))?;
+        self.tx
+            .try_send(IpcResponse {
+                id: self.msg_id.clone(),
+                result: Some(msg),
+                error: None,
+                is_stream: true,
+            })
+            .map_err(|e| format!("Channel full/closed: {e}"))?;
         Ok(())
     }
 }
@@ -71,12 +73,14 @@ impl StringStream for MpscStringStream {
         }
         for part in data.as_bytes().chunks(MAX_STREAM_CHUNK_BYTES) {
             let chunk = String::from_utf8_lossy(part).to_string();
-            self.tx.try_send(IpcResponse {
-                id: self.msg_id.clone(),
-                result: Some(serde_json::Value::String(chunk)),
-                error: None,
-                is_stream: true,
-            }).map_err(|e| format!("Channel full/closed: {e}"))?;
+            self.tx
+                .try_send(IpcResponse {
+                    id: self.msg_id.clone(),
+                    result: Some(serde_json::Value::String(chunk)),
+                    error: None,
+                    is_stream: true,
+                })
+                .map_err(|e| format!("Channel full/closed: {e}"))?;
         }
         Ok(())
     }
@@ -96,23 +100,31 @@ impl StringStream for StateUpdateStream {
             if data.starts_with('\u{0}') {
                 // Parsing token usage from control chunk if present
                 if data.to_uppercase().contains("TOKEN_USAGE") {
-                     if let Some(json_start) = data.find('{') {
-                         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&data[json_start..]) {
-                             let input = v.pointer("/approx_input_tokens").and_then(|i| i.as_u64()).unwrap_or(0);
-                             let output = v.pointer("/approx_output_tokens").and_then(|o| o.as_u64()).unwrap_or(0);
-                             if let Some(app) = &self.app {
-                                 crate::agent_state::emit_state_update(
-                                     Some(app),
-                                     crate::agent_state::AgentStateUpdate::ExecutionTokenUsage {
-                                         task_id: self.task_id.clone(),
-                                         run_id: self.run_id.clone(),
-                                         input_tokens: input,
-                                         output_tokens: output,
-                                     },
-                                 );
-                             }
-                         }
-                     }
+                    if let Some(json_start) = data.find('{') {
+                        if let Ok(v) =
+                            serde_json::from_str::<serde_json::Value>(&data[json_start..])
+                        {
+                            let input = v
+                                .pointer("/approx_input_tokens")
+                                .and_then(|i| i.as_u64())
+                                .unwrap_or(0);
+                            let output = v
+                                .pointer("/approx_output_tokens")
+                                .and_then(|o| o.as_u64())
+                                .unwrap_or(0);
+                            if let Some(app) = &self.app {
+                                crate::agent_state::emit_state_update(
+                                    Some(app),
+                                    crate::agent_state::AgentStateUpdate::ExecutionTokenUsage {
+                                        task_id: self.task_id.clone(),
+                                        run_id: self.run_id.clone(),
+                                        input_tokens: input,
+                                        output_tokens: output,
+                                    },
+                                );
+                            }
+                        }
+                    }
                 }
             } else if let Some(app) = &self.app {
                 crate::agent_state::emit_state_update(

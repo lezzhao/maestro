@@ -5,7 +5,10 @@ use crate::task_state::{self, TaskCreateRequest, TaskCreateResult, TaskRuntimeBi
 use tauri::Manager;
 
 #[tauri::command]
-pub async fn task_create(app: tauri::AppHandle, request: TaskCreateRequest) -> Result<TaskCreateResult, CoreError> {
+pub async fn task_create(
+    app: tauri::AppHandle,
+    request: TaskCreateRequest,
+) -> Result<TaskCreateResult, CoreError> {
     let core = app.state::<crate::core::MaestroCore>();
     core.task_create(&app, request)
 }
@@ -44,8 +47,11 @@ pub async fn task_get_runtime_context(
 ) -> Result<crate::task_runtime::ResolvedRuntimeContext, CoreError> {
     let core = app.state::<crate::core::MaestroCore>();
     let cfg = core.config.get();
-    crate::task_runtime::resolve_task_runtime_context_for_app(&app, &request.task_id, &cfg)
-        .map_err(|e| CoreError::SystemError { message: format!("resolve context failed: {:?}", e) })
+    crate::task_runtime::resolve_task_runtime_context_for_app(&app, &request.task_id, &cfg).map_err(
+        |e| CoreError::SystemError {
+            message: format!("resolve context failed: {:?}", e),
+        },
+    )
 }
 
 #[tauri::command]
@@ -67,7 +73,9 @@ pub async fn task_refresh_runtime_snapshot(
     let core = app.state::<crate::core::MaestroCore>();
     let cfg = core.config.get();
     let _ = crate::execution_binding::ensure_runtime_snapshot(&app, &request.task_id, &cfg)
-        .map_err(|e| CoreError::SystemError { message: format!("refresh snapshot failed: {:?}", e) })?;
+        .map_err(|e| CoreError::SystemError {
+            message: format!("refresh snapshot failed: {:?}", e),
+        })?;
 
     let db_path = task_state::bmad_db_path(&app)?;
     if let Ok(Some(binding)) = task_state::get_task_runtime_binding(&db_path, &request.task_id) {
@@ -118,7 +126,9 @@ pub async fn task_delete(app: tauri::AppHandle, task_id: String) -> Result<(), C
 }
 
 #[tauri::command]
-pub async fn task_list(app: tauri::AppHandle) -> Result<Vec<crate::agent_state::TaskRecordPayload>, CoreError> {
+pub async fn task_list(
+    app: tauri::AppHandle,
+) -> Result<Vec<crate::agent_state::TaskRecordPayload>, CoreError> {
     let core = app.state::<crate::core::MaestroCore>();
     core.task_list(&app)
 }

@@ -6,7 +6,7 @@ use crate::core::error::CoreError;
 use std::path::Path;
 use tauri::Manager;
 
-pub use crate::task_lifecycle::{TaskEvent, TaskState, transition};
+pub use crate::task_lifecycle::{transition, TaskEvent, TaskState};
 pub use crate::task_repository::{CreateTaskResult, TaskRuntimeBinding};
 
 // Request/result types for core and task_commands
@@ -159,16 +159,19 @@ pub fn update_task(db_path: &Path, req: &TaskUpdateRequest) -> Result<(), CoreEr
 /// Resolve bmad_state.db path.
 pub(crate) fn bmad_db_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, CoreError> {
     let path_resolver = app.path();
-    let dir = path_resolver.app_data_dir().or_else(|_| path_resolver.app_config_dir()).map_err(|e| CoreError::Io {
-        message: format!("app dir: {e}"),
-    })?;
-    
+    let dir = path_resolver
+        .app_data_dir()
+        .or_else(|_| path_resolver.app_config_dir())
+        .map_err(|e| CoreError::Io {
+            message: format!("app dir: {e}"),
+        })?;
+
     if !dir.exists() {
         std::fs::create_dir_all(&dir).map_err(|e| CoreError::Io {
             message: format!("create app dir: {e}"),
         })?;
     }
-    
+
     Ok(dir.join("bmad_state.db"))
 }
 
@@ -206,7 +209,8 @@ mod tests {
     #[test]
     fn test_task_create_persists_engine_id() {
         let (_dir, db_path) = temp_db_path();
-        let created = create_task(&db_path, "Test Task", "", "cursor", "{}", None, None, None).expect("create_task");
+        let created = create_task(&db_path, "Test Task", "", "cursor", "{}", None, None, None)
+            .expect("create_task");
         let id = created.id;
         let tasks = list_tasks(&db_path).expect("list_tasks");
         assert_eq!(tasks.len(), 1);
@@ -217,7 +221,8 @@ mod tests {
     #[test]
     fn test_task_update_runtime_binding_persists() {
         let (_dir, db_path) = temp_db_path();
-        let created = create_task(&db_path, "Task", "", "cursor", "{}", None, None, None).expect("create_task");
+        let created = create_task(&db_path, "Task", "", "cursor", "{}", None, None, None)
+            .expect("create_task");
         let id = created.id;
         update_task_engine(&db_path, &id, "claude", Some("haiku")).expect("update_task_engine");
         let tasks = list_tasks(&db_path).expect("list_tasks");
@@ -251,8 +256,17 @@ mod tests {
     #[test]
     fn test_task_create_persists_profile_id() {
         let (_dir, db_path) = temp_db_path();
-        let _created = create_task(&db_path, "Task", "", "cursor", "{}", Some("default"), None, None)
-            .expect("create_task");
+        let _created = create_task(
+            &db_path,
+            "Task",
+            "",
+            "cursor",
+            "{}",
+            Some("default"),
+            None,
+            None,
+        )
+        .expect("create_task");
         let tasks = list_tasks(&db_path).expect("list_tasks");
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].profile_id.as_deref(), Some("default"));
@@ -261,15 +275,24 @@ mod tests {
     #[test]
     fn test_update_task_engine_clears_runtime_snapshot_id() {
         let (_dir, db_path) = temp_db_path();
-        let created = create_task(&db_path, "Task", "", "cursor", "{}", None, None, None).expect("create_task");
+        let created = create_task(&db_path, "Task", "", "cursor", "{}", None, None, None)
+            .expect("create_task");
         let id = created.id;
         update_task_runtime_snapshot(&db_path, &id, Some("snap-123")).expect("set snapshot");
         let binding = get_task_runtime_binding(&db_path, &id).expect("get binding");
-        assert_eq!(binding.as_ref().and_then(|b| b.runtime_snapshot_id.as_deref()), Some("snap-123"));
+        assert_eq!(
+            binding
+                .as_ref()
+                .and_then(|b| b.runtime_snapshot_id.as_deref()),
+            Some("snap-123")
+        );
 
         update_task_engine(&db_path, &id, "claude", Some("haiku")).expect("update_engine");
         let binding = get_task_runtime_binding(&db_path, &id).expect("get binding");
-        assert!(binding.as_ref().and_then(|b| b.runtime_snapshot_id.as_ref()).is_none());
+        assert!(binding
+            .as_ref()
+            .and_then(|b| b.runtime_snapshot_id.as_ref())
+            .is_none());
     }
 
     #[test]

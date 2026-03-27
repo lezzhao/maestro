@@ -134,27 +134,35 @@ pub mod unix {
             .await
             .map_err(|e| format!("failed to connect to daemon: {}", e))?;
 
-        let payload = serde_json::to_string(&msg).unwrap() + "\n";
-        stream.write_all(payload.as_bytes()).await.unwrap();
+        let payload = serde_json::to_string(&msg)
+            .map_err(|e| format!("serialize IPC message failed: {e}"))?
+            + "\n";
+        stream
+            .write_all(payload.as_bytes())
+            .await
+            .map_err(|e| format!("write to daemon socket failed: {e}"))?;
 
         let mut reader = BufReader::new(stream);
-        // Since it's not a streaming call, we loop until we get a non-stream response
         loop {
             let mut line = String::new();
             match reader.read_line(&mut line).await {
-                 Ok(0) => return Err("Unexpected EOF from daemon".to_string()),
-                 Ok(_) => {
-                     let resp: IpcResponse = serde_json::from_str(&line).map_err(|e| format!("parse response failed: {}", e))?;
-                     if !resp.is_stream {
-                         return Ok(resp);
-                     }
-                 }
-                 Err(e) => return Err(e.to_string()),
+                Ok(0) => return Err("Unexpected EOF from daemon".to_string()),
+                Ok(_) => {
+                    let resp: IpcResponse = serde_json::from_str(&line)
+                        .map_err(|e| format!("parse response failed: {}", e))?;
+                    if !resp.is_stream {
+                        return Ok(resp);
+                    }
+                }
+                Err(e) => return Err(e.to_string()),
             }
         }
     }
 
-    pub async fn send_request_stream<F>(msg: IpcMessage, mut on_chunk: F) -> Result<IpcResponse, String>
+    pub async fn send_request_stream<F>(
+        msg: IpcMessage,
+        mut on_chunk: F,
+    ) -> Result<IpcResponse, String>
     where
         F: FnMut(IpcResponse),
     {
@@ -163,8 +171,13 @@ pub mod unix {
             .await
             .map_err(|e| format!("failed to connect to daemon: {}", e))?;
 
-        let payload = serde_json::to_string(&msg).unwrap() + "\n";
-        stream.write_all(payload.as_bytes()).await.unwrap();
+        let payload = serde_json::to_string(&msg)
+            .map_err(|e| format!("serialize IPC message failed: {e}"))?
+            + "\n";
+        stream
+            .write_all(payload.as_bytes())
+            .await
+            .map_err(|e| format!("write to daemon socket failed: {e}"))?;
 
         let mut reader = BufReader::new(stream);
         loop {
@@ -172,7 +185,8 @@ pub mod unix {
             match reader.read_line(&mut line).await {
                 Ok(0) => return Err("Unexpected EOF from daemon stream".to_string()),
                 Ok(_) => {
-                    let resp: IpcResponse = serde_json::from_str(&line).map_err(|e| format!("parse response failed: {}", e))?;
+                    let resp: IpcResponse = serde_json::from_str(&line)
+                        .map_err(|e| format!("parse response failed: {}", e))?;
                     if !resp.is_stream {
                         return Ok(resp);
                     } else {

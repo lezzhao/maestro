@@ -34,9 +34,7 @@ async fn history_detail_dir() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-async fn resolve_history_detail_path(
-    detail_path: &str,
-) -> Result<PathBuf, String> {
+async fn resolve_history_detail_path(detail_path: &str) -> Result<PathBuf, String> {
     let root = history_root_dir().await?;
     let base = tokio::fs::canonicalize(&root)
         .await

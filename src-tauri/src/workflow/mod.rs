@@ -13,6 +13,7 @@ pub use archive::{
 pub use chat::{
     chat_execute_api, chat_execute_api_stop, chat_execute_cli, chat_execute_cli_stop,
     chat_load_last_conversation, chat_save_last_conversation, chat_send, chat_spawn, chat_stop,
+    chat_submit_choice,
 };
 pub use history::{workflow_get_engine_history_detail, workflow_list_engine_history};
 pub use run::{workflow_run, workflow_run_step};

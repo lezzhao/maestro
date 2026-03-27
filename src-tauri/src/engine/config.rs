@@ -86,7 +86,7 @@ pub fn engine_delete_core(
 ) -> Result<(), String> {
     tracing::info!(engine_id = %id, "engine_delete_core: starting deletion");
     let mut config = config_state.get();
-    
+
     if config.engines.remove(&id).is_some() {
         tracing::info!(engine_id = %id, "engine_delete_core: removed from memory map");
         write_config_to_disk(app, &config)?;

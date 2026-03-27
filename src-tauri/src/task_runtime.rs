@@ -51,8 +51,6 @@ pub struct ResolvedExecutionConfig {
     pub settings: Option<String>,
 }
 
-
-
 /// Layer 3: Event/frontend projection. Composed from metadata + execution.
 /// ResolvedRuntimeContext is the flat backward-compat form; do not add new fields here.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,7 +78,6 @@ pub struct ResolvedRuntimeContext {
 }
 
 impl ResolvedRuntimeContext {
-
     /// Extract execution config. Note: includes api_key here; the snapshot freeze
     /// (to_snapshot_payload) is responsible for excluding api_key.
     pub fn to_execution_config(&self) -> ResolvedExecutionConfig {
@@ -105,7 +102,11 @@ impl ResolvedRuntimeContext {
 
 impl ResolvedExecutionConfig {
     /// Convert to RuntimeSnapshotPayload for freeze. api_key is excluded (runtime-injected only).
-    pub fn to_snapshot_payload(&self, engine_id: &str, profile_id: Option<&str>) -> RuntimeSnapshotPayload {
+    pub fn to_snapshot_payload(
+        &self,
+        engine_id: &str,
+        profile_id: Option<&str>,
+    ) -> RuntimeSnapshotPayload {
         RuntimeSnapshotPayload {
             engine_id: engine_id.to_string(),
             profile_id: profile_id.map(|s| s.to_string()),
@@ -197,18 +198,19 @@ fn resolve_task_runtime_context_inner(
     task_id: &str,
     cfg: &AppConfig,
 ) -> Result<ResolvedRuntimeContext, CoreError> {
-    let task = crate::task_repository::get_task_record(db_path, task_id)?
-        .ok_or_else(|| CoreError::NotFound {
+    let task = crate::task_repository::get_task_record(db_path, task_id)?.ok_or_else(|| {
+        CoreError::NotFound {
             resource: "task".to_string(),
             id: task_id.to_string(),
-        })?;
+        }
+    })?;
 
     let mut merged_settings: serde_json::Value = serde_json::json!({});
 
     // 1. Global Settings (from AppConfig)
-    // Assuming AppConfig has some global settings we want to cascade. 
+    // Assuming AppConfig has some global settings we want to cascade.
     // For now, let's look for a 'settings' field in AppConfig or AppSection if it exists.
-    // Maestro doesn't have a dedicated global 'settings' object yet in AppConfig, 
+    // Maestro doesn't have a dedicated global 'settings' object yet in AppConfig,
     // but we can add one if needed. Let's assume it's empty for now or comes from elsewhere.
 
     // 2. Workspace Settings
@@ -237,11 +239,12 @@ fn resolve_task_runtime_context_inner(
         }
     }
 
-    let final_settings_str = if merged_settings.is_object() && !merged_settings.as_object().unwrap().is_empty() {
-        Some(merged_settings.to_string())
-    } else {
-        None
-    };
+    let final_settings_str =
+        if merged_settings.is_object() && !merged_settings.as_object().unwrap().is_empty() {
+            Some(merged_settings.to_string())
+        } else {
+            None
+        };
 
     let binding = TaskRuntimeBinding {
         engine_id: task.engine_id.clone(),
@@ -252,7 +255,9 @@ fn resolve_task_runtime_context_inner(
     // Prefer snapshot when available (reproducibility)
     if let Some(ref snapshot_id) = binding.runtime_snapshot_id {
         if !snapshot_id.trim().is_empty() {
-            if let Ok(Some(payload)) = crate::snapshot_repository::get_runtime_snapshot_payload(db_path, snapshot_id) {
+            if let Ok(Some(payload)) =
+                crate::snapshot_repository::get_runtime_snapshot_payload(db_path, snapshot_id)
+            {
                 return Ok(ResolvedRuntimeContext {
                     task_id: task_id.to_string(),
                     engine_id: binding.engine_id.clone(),
@@ -265,8 +270,13 @@ fn resolve_task_runtime_context_inner(
                     model: payload.model,
                     api_provider: payload.api_provider,
                     api_base_url: payload.api_base_url,
-                    api_key: cfg.engines.get(&binding.engine_id)
-                        .and_then(|e| e.profiles.get(binding.profile_id.as_deref().unwrap_or("default")))
+                    api_key: cfg
+                        .engines
+                        .get(&binding.engine_id)
+                        .and_then(|e| {
+                            e.profiles
+                                .get(binding.profile_id.as_deref().unwrap_or("default"))
+                        })
                         .and_then(|p| p.api_key()),
                     supports_headless: payload.supports_headless,
                     headless_args: payload.headless_args,
@@ -319,7 +329,10 @@ fn resolve_task_runtime_context_inner(
         command: profile.command(),
         args: profile.args(),
         env: profile.env(),
-        execution_mode: profile.execution_mode.clone().unwrap_or_else(|| "cli".to_string()),
+        execution_mode: profile
+            .execution_mode
+            .clone()
+            .unwrap_or_else(|| "cli".to_string()),
         model: Some(profile.model()),
         api_provider: profile.api_provider(),
         api_base_url: profile.api_base_url(),
@@ -352,7 +365,10 @@ pub fn create_snapshot_and_pin_task(
         command: profile.command(),
         args: profile.args(),
         env: profile.env(),
-        execution_mode: profile.execution_mode.clone().unwrap_or_else(|| "cli".to_string()),
+        execution_mode: profile
+            .execution_mode
+            .clone()
+            .unwrap_or_else(|| "cli".to_string()),
         model: Some(profile.model()),
         api_provider: profile.api_provider(),
         api_base_url: profile.api_base_url(),
@@ -427,8 +443,8 @@ mod tests {
             None,
             None,
         )
-            .expect("create_task")
-            .id;
+        .expect("create_task")
+        .id;
 
         let mut profiles = BTreeMap::new();
         profiles.insert("profile_a".to_string(), mock_profile("profile_a"));
@@ -486,9 +502,18 @@ mod tests {
     #[test]
     fn resolve_uses_snapshot_when_task_has_runtime_snapshot_id() {
         let (_dir, db_path) = temp_db_path();
-        let task_id = task_state::create_task(&db_path, "Task", "", "eng1", "{}", Some("profile_a"), None, None)
-            .expect("create_task")
-            .id;
+        let task_id = task_state::create_task(
+            &db_path,
+            "Task",
+            "",
+            "eng1",
+            "{}",
+            Some("profile_a"),
+            None,
+            None,
+        )
+        .expect("create_task")
+        .id;
 
         // Create runtime snapshot (not profile_snapshot) - the authoritative execution config
         let snapshot_id = uuid::Uuid::new_v4().to_string();
@@ -508,8 +533,7 @@ mod tests {
             exit_command: None,
             exit_timeout_ms: None,
         };
-        let payload_json =
-            serde_json::to_string(&payload).expect("serialize payload");
+        let payload_json = serde_json::to_string(&payload).expect("serialize payload");
         let snapshot = RuntimeSnapshot {
             id: snapshot_id.clone(),
             task_id: task_id.clone(),
@@ -546,7 +570,10 @@ mod tests {
         assert_eq!(resolved.profile_id.as_deref(), Some("profile_a"));
         assert_eq!(resolved.command, "snap-cmd");
         assert_eq!(resolved.model, Some("snapshot-model".to_string()));
-        assert!(matches!(resolved.resolved_from, RuntimeResolvedFrom::Snapshot));
+        assert!(matches!(
+            resolved.resolved_from,
+            RuntimeResolvedFrom::Snapshot
+        ));
     }
 
     #[test]

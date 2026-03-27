@@ -110,15 +110,18 @@ impl ScopedWorkspace {
             Ok(canonical)
         } else {
             // For new files: reject paths that could escape (contain "..")
-            if candidate.components().any(|c| c == std::path::Component::ParentDir) {
+            if candidate
+                .components()
+                .any(|c| c == std::path::Component::ParentDir)
+            {
                 return Err("file path is outside current project".to_string());
             }
             // For non-existing targets: anchor scope check on nearest existing parent.
             let mut ancestor = candidate.as_path();
             while !ancestor.exists() {
-                ancestor = ancestor.parent().ok_or_else(|| {
-                    "file path is outside current project".to_string()
-                })?;
+                ancestor = ancestor
+                    .parent()
+                    .ok_or_else(|| "file path is outside current project".to_string())?;
             }
             let canonical_ancestor = ancestor
                 .canonicalize()

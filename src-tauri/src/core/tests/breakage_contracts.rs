@@ -1,6 +1,8 @@
 use crate::config::{AppConfig, EngineConfig, EngineProfile};
 use crate::execution_binding::prepare_execution_binding_with_path;
-use crate::task_runtime::{resolve_task_runtime_context, ResolvedRuntimeContext, RuntimeResolvedFrom};
+use crate::task_runtime::{
+    resolve_task_runtime_context, ResolvedRuntimeContext, RuntimeResolvedFrom,
+};
 use crate::task_state;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -75,24 +77,33 @@ fn breakage_contract_task_without_profile_id_uses_first_profile() {
 fn breakage_contract_binding_tamper_invalidates_snapshot() {
     let (_dir, db_path) = temp_db_path();
     let cfg = create_test_config();
-    
-    let task_id = task_state::create_task(&db_path, "Task", "", "eng1", "{}", Some("default"), None, None)
-        .expect("create_task")
-        .id;
 
-    let ctx1 = prepare_execution_binding_with_path(&db_path, "exec-1", &task_id, &cfg)
-        .expect("prepare 1");
+    let task_id = task_state::create_task(
+        &db_path,
+        "Task",
+        "",
+        "eng1",
+        "{}",
+        Some("default"),
+        None,
+        None,
+    )
+    .expect("create_task")
+    .id;
+
+    let ctx1 =
+        prepare_execution_binding_with_path(&db_path, "exec-1", &task_id, &cfg).expect("prepare 1");
     let snap_id_1 = ctx1.snapshot_id.clone().unwrap();
 
     // Update binding, simulating task_runtime_service::update_task_runtime_context
     crate::task_repository::update_task_engine(&db_path, &task_id, "eng1", Some("custom")).unwrap();
     task_state::update_task_runtime_snapshot(&db_path, &task_id, None).unwrap();
 
-    let ctx2 = prepare_execution_binding_with_path(&db_path, "exec-2", &task_id, &cfg)
-        .expect("prepare 2");
-    
+    let ctx2 =
+        prepare_execution_binding_with_path(&db_path, "exec-2", &task_id, &cfg).expect("prepare 2");
+
     let snap_id_2 = ctx2.snapshot_id.clone().unwrap();
-    
+
     assert_ne!(snap_id_1, snap_id_2, "A new snapshot must be generated");
     assert_eq!(ctx2.profile_id.as_deref(), Some("custom"));
 }
@@ -102,22 +113,39 @@ fn breakage_contract_binding_tamper_invalidates_snapshot() {
 fn breakage_contract_old_snapshot_will_not_leak_to_new_binding() {
     let (_dir, db_path) = temp_db_path();
     let cfg = create_test_config();
-    
-    let task_id = task_state::create_task(&db_path, "Task", "", "eng1", "{}", Some("default"), None, None)
-        .expect("create_task")
-        .id;
+
+    let task_id = task_state::create_task(
+        &db_path,
+        "Task",
+        "",
+        "eng1",
+        "{}",
+        Some("default"),
+        None,
+        None,
+    )
+    .expect("create_task")
+    .id;
 
     let _ctx1 = prepare_execution_binding_with_path(&db_path, "exec-1", &task_id, &cfg).unwrap();
-    
+
     crate::task_repository::update_task_engine(&db_path, &task_id, "eng1", Some("custom")).unwrap();
     crate::task_state::update_task_runtime_snapshot(&db_path, &task_id, None).unwrap();
 
-    let binding = crate::task_state::get_task_runtime_binding(&db_path, &task_id).unwrap().unwrap();
-    assert!(binding.runtime_snapshot_id.is_none(), "Snapshot must be entirely detached");
-    
+    let binding = crate::task_state::get_task_runtime_binding(&db_path, &task_id)
+        .unwrap()
+        .unwrap();
+    assert!(
+        binding.runtime_snapshot_id.is_none(),
+        "Snapshot must be entirely detached"
+    );
+
     let raw_ctx = resolve_task_runtime_context(&db_path, &task_id, &cfg).unwrap();
     assert_eq!(raw_ctx.profile_id.as_deref(), Some("custom"));
-    assert!(matches!(raw_ctx.resolved_from, RuntimeResolvedFrom::LiveProfile));
+    assert!(matches!(
+        raw_ctx.resolved_from,
+        RuntimeResolvedFrom::LiveProfile
+    ));
 }
 
 // 4. JSON contract: RuntimeResolvedFrom serializes to snake_case; ResolvedRuntimeContext has all execution fields
@@ -145,8 +173,14 @@ fn breakage_contract_resolved_from_json_snake_case() {
         resolved_from: RuntimeResolvedFrom::ConfigFallback,
     };
     let json = serde_json::to_value(&ctx).expect("serialize");
-    let resolved_from = json.get("resolvedFrom").and_then(|v| v.as_str()).expect("resolvedFrom");
-    assert_eq!(resolved_from, "config_fallback", "RuntimeResolvedFrom must serialize to snake_case");
+    let resolved_from = json
+        .get("resolvedFrom")
+        .and_then(|v| v.as_str())
+        .expect("resolvedFrom");
+    assert_eq!(
+        resolved_from, "config_fallback",
+        "RuntimeResolvedFrom must serialize to snake_case"
+    );
 }
 
 #[test]
@@ -180,6 +214,12 @@ fn breakage_contract_resolved_runtime_context_json_has_execution_fields() {
     assert!(json.get("model").is_some());
     assert!(json.get("apiProvider").is_some());
     assert!(json.get("apiBaseUrl").is_some());
-    assert!(json.get("headlessArgs").and_then(|v| v.as_array()).is_some());
-    assert_eq!(json.get("resolvedFrom").and_then(|v| v.as_str()), Some("snapshot"));
+    assert!(json
+        .get("headlessArgs")
+        .and_then(|v| v.as_array())
+        .is_some());
+    assert_eq!(
+        json.get("resolvedFrom").and_then(|v| v.as_str()),
+        Some("snapshot")
+    );
 }

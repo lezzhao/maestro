@@ -132,16 +132,14 @@ pub fn transition(
     event: &TaskEvent,
     take_snapshot: bool,
 ) -> Result<String, CoreError> {
-    let from = TaskState::from_str(from_state)
-        .ok_or_else(|| CoreError::ValidationError {
-            field: "from_state".to_string(),
-            message: format!("invalid from_state: {from_state}"),
-        })?;
-    let to = valid_transition(from, event)
-        .ok_or_else(|| CoreError::ValidationError {
-            field: "transition".to_string(),
-            message: format!("invalid transition: {} + {:?}", from_state, event),
-        })?;
+    let from = TaskState::from_str(from_state).ok_or_else(|| CoreError::ValidationError {
+        field: "from_state".to_string(),
+        message: format!("invalid from_state: {from_state}"),
+    })?;
+    let to = valid_transition(from, event).ok_or_else(|| CoreError::ValidationError {
+        field: "transition".to_string(),
+        message: format!("invalid transition: {} + {:?}", from_state, event),
+    })?;
     let to_str = to.as_str();
 
     let git_hash = if take_snapshot {

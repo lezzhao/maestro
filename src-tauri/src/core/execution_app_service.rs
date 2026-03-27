@@ -1,5 +1,5 @@
-use super::MaestroCore;
 use super::error;
+use super::MaestroCore;
 
 /// Explicit target for cancel. Avoids ambiguous id (session vs execution).
 #[derive(Debug, Clone)]
@@ -14,24 +14,29 @@ impl MaestroCore {
     /// Use-Case: Cancel an active execution. Caller must specify target type.
     pub fn cancel_execution(&self, target: CancelTarget) -> Result<(), error::CoreError> {
         match target {
-            CancelTarget::SessionId(id) => self.pty_state.kill_session(&id).map_err(|e| {
-                error::CoreError::CancelFailed {
-                    id: id.clone(),
-                    reason: e,
-                }
-            }),
-            CancelTarget::ExecutionId(id) => self
-                .headless_state
-                .cancel(&id)
-                .map_err(|e| error::CoreError::CancelFailed {
-                    id: id.clone(),
-                    reason: e,
-                }),
+            CancelTarget::SessionId(id) => {
+                self.pty_state
+                    .kill_session(&id)
+                    .map_err(|e| error::CoreError::CancelFailed {
+                        id: id.clone(),
+                        reason: e,
+                    })
+            }
+            CancelTarget::ExecutionId(id) => {
+                self.headless_state
+                    .cancel(&id)
+                    .map_err(|e| error::CoreError::CancelFailed {
+                        id: id.clone(),
+                        reason: e,
+                    })
+            }
         }
     }
 
     /// Use-Case: List all executions
-    pub fn list_executions(&self) -> Result<Vec<crate::core::execution::Execution>, error::CoreError> {
+    pub fn list_executions(
+        &self,
+    ) -> Result<Vec<crate::core::execution::Execution>, error::CoreError> {
         let io = self.workspace_io()?;
         let records = crate::run_persistence::read_run_records(&io).unwrap_or_default();
         Ok(records)
@@ -61,11 +66,10 @@ impl MaestroCore {
     /// Use-Case: Reconcile active executions against running OS processes
     pub fn reconcile(&self) -> Result<(), error::CoreError> {
         let io = self.workspace_io()?;
-        let mut records = crate::run_persistence::read_run_records(&io).map_err(|e| {
-            error::CoreError::Io {
+        let mut records =
+            crate::run_persistence::read_run_records(&io).map_err(|e| error::CoreError::Io {
                 message: format!("read run records failed: {e}"),
-            }
-        })?;
+            })?;
         let mut changed = false;
         for item in &mut records {
             if item.status != crate::core::execution::ExecutionStatus::Running {

@@ -10,9 +10,9 @@
 
 use crate::agent_state::{emit_state_update, AgentStateUpdate};
 use crate::config::AppConfig;
+use crate::engine;
 use crate::task_runtime_service::{update_task_runtime_context, UpdateTaskRuntimeContextResult};
 use crate::task_state::TaskSwitchRuntimeBindingRequest;
-use crate::engine;
 use tauri::AppHandle;
 
 /// Execute task switch runtime binding as an atomic transaction.

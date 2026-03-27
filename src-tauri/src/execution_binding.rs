@@ -13,10 +13,7 @@
 
 use crate::config::AppConfig;
 use crate::core::error::CoreError;
-use crate::task_runtime::{
-    resolve_task_runtime_context, ResolvedRuntimeContext,
-    RuntimeSnapshot,
-};
+use crate::task_runtime::{resolve_task_runtime_context, ResolvedRuntimeContext, RuntimeSnapshot};
 use crate::task_state::{self, bmad_db_path};
 use tauri::AppHandle;
 
@@ -38,11 +35,12 @@ pub fn ensure_runtime_snapshot(
 ) -> Result<String, CoreError> {
     let db_path = bmad_db_path(app)?;
 
-    let binding = task_state::get_task_runtime_binding(&db_path, task_id)?
-        .ok_or_else(|| CoreError::NotFound {
+    let binding = task_state::get_task_runtime_binding(&db_path, task_id)?.ok_or_else(|| {
+        CoreError::NotFound {
             resource: "task".to_string(),
             id: task_id.to_string(),
-        })?;
+        }
+    })?;
 
     if let Some(snapshot_id) = binding.runtime_snapshot_id {
         if !snapshot_id.is_empty() {
@@ -142,14 +140,20 @@ pub(crate) fn resolve_execution_from_config(
     let engine = config
         .engines
         .get(engine_id)
-        .ok_or_else(|| CoreError::NotFound { resource: "engine".to_string(), id: engine_id.to_string() })?
+        .ok_or_else(|| CoreError::NotFound {
+            resource: "engine".to_string(),
+            id: engine_id.to_string(),
+        })?
         .clone();
     let p = if let Some(pid) = profile_id {
         engine
             .profiles
             .get(pid)
             .cloned()
-            .ok_or_else(|| CoreError::NotFound { resource: "profile".to_string(), id: pid.to_string() })?
+            .ok_or_else(|| CoreError::NotFound {
+                resource: "profile".to_string(),
+                id: pid.to_string(),
+            })?
     } else {
         engine.active_profile()
     };
@@ -189,11 +193,12 @@ fn ensure_runtime_snapshot_with_path(
     task_id: &str,
     config: &AppConfig,
 ) -> Result<String, CoreError> {
-    let binding = task_state::get_task_runtime_binding(db_path, task_id)?
-        .ok_or_else(|| CoreError::NotFound {
+    let binding = task_state::get_task_runtime_binding(db_path, task_id)?.ok_or_else(|| {
+        CoreError::NotFound {
             resource: "task".to_string(),
             id: task_id.to_string(),
-        })?;
+        }
+    })?;
 
     if let Some(snapshot_id) = binding.runtime_snapshot_id {
         if !snapshot_id.is_empty() {
@@ -274,9 +279,10 @@ mod tests {
     fn prepare_execution_binding_creates_snapshot_and_binding() {
         let (_dir, db_path) = temp_db_path();
         let cfg = AppConfig::default();
-        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None, None, None)
-            .expect("create_task")
-            .id;
+        let task_id =
+            crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None, None, None)
+                .expect("create_task")
+                .id;
 
         let ctx = prepare_execution_binding_with_path(&db_path, "exec-1", &task_id, &cfg)
             .expect("prepare_execution_binding");
@@ -297,24 +303,34 @@ mod tests {
     fn prepare_execution_binding_resolved_context_from_snapshot() {
         let (_dir, db_path) = temp_db_path();
         let mut cfg = AppConfig::default();
-        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None, None, None)
-            .expect("create_task")
-            .id;
+        let task_id =
+            crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None, None, None)
+                .expect("create_task")
+                .id;
 
-        let profile = cfg.engines.get_mut("cursor").unwrap().profiles.get_mut("default").unwrap();
+        let profile = cfg
+            .engines
+            .get_mut("cursor")
+            .unwrap()
+            .profiles
+            .get_mut("default")
+            .unwrap();
         profile.command = "original-cmd".to_string();
 
-        let ctx1 =
-            prepare_execution_binding_with_path(&db_path, "exec-1", &task_id, &cfg)
-                .expect("first prepare");
+        let ctx1 = prepare_execution_binding_with_path(&db_path, "exec-1", &task_id, &cfg)
+            .expect("first prepare");
         let snapshot_id = ctx1.snapshot_id.clone().expect("has snapshot");
 
-        cfg.engines.get_mut("cursor").unwrap().profiles.get_mut("default").unwrap().command =
-            "changed-cmd".to_string();
+        cfg.engines
+            .get_mut("cursor")
+            .unwrap()
+            .profiles
+            .get_mut("default")
+            .unwrap()
+            .command = "changed-cmd".to_string();
 
-        let ctx2 =
-            prepare_execution_binding_with_path(&db_path, "exec-2", &task_id, &cfg)
-                .expect("second prepare");
+        let ctx2 = prepare_execution_binding_with_path(&db_path, "exec-2", &task_id, &cfg)
+            .expect("second prepare");
 
         assert_eq!(
             ctx2.command, ctx1.command,
@@ -327,9 +343,10 @@ mod tests {
     fn contract_prepare_creates_binding() {
         let (_dir, db_path) = temp_db_path();
         let cfg = AppConfig::default();
-        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None, None, None)
-            .expect("create_task")
-            .id;
+        let task_id =
+            crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None, None, None)
+                .expect("create_task")
+                .id;
 
         let ctx = prepare_execution_binding_with_path(&db_path, "exec-1", &task_id, &cfg)
             .expect("prepare");
@@ -346,22 +363,32 @@ mod tests {
     fn contract_resolved_context_matches_snapshot() {
         let (_dir, db_path) = temp_db_path();
         let mut cfg = AppConfig::default();
-        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None, None, None)
-            .expect("create_task")
-            .id;
+        let task_id =
+            crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None, None, None)
+                .expect("create_task")
+                .id;
 
-        let profile = cfg.engines.get_mut("cursor").unwrap().profiles.get_mut("default").unwrap();
+        let profile = cfg
+            .engines
+            .get_mut("cursor")
+            .unwrap()
+            .profiles
+            .get_mut("default")
+            .unwrap();
         profile.command = "frozen-cmd".to_string();
         profile.headless_args = vec!["agent".to_string(), "--print".to_string()];
-        profile.env.insert("FROZEN_ENV".to_string(), "frozen".to_string());
+        profile
+            .env
+            .insert("FROZEN_ENV".to_string(), "frozen".to_string());
 
         let ctx = prepare_execution_binding_with_path(&db_path, "exec-1", &task_id, &cfg)
             .expect("prepare");
         let snapshot_id = ctx.snapshot_id.as_ref().expect("has snapshot");
 
-        let payload = crate::snapshot_repository::get_runtime_snapshot_payload(&db_path, snapshot_id)
-            .expect("get payload")
-            .expect("payload exists");
+        let payload =
+            crate::snapshot_repository::get_runtime_snapshot_payload(&db_path, snapshot_id)
+                .expect("get payload")
+                .expect("payload exists");
 
         // Executor input must equal snapshot frozen content for reproducible execution
         assert_eq!(ctx.command, payload.command);
@@ -375,9 +402,10 @@ mod tests {
     fn contract_binding_change_invalidates_snapshot() {
         let (_dir, db_path) = temp_db_path();
         let cfg = AppConfig::default();
-        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None, None, None)
-            .expect("create_task")
-            .id;
+        let task_id =
+            crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None, None, None)
+                .expect("create_task")
+                .id;
 
         let _ = prepare_execution_binding_with_path(&db_path, "exec-1", &task_id, &cfg)
             .expect("first prepare");
@@ -416,7 +444,9 @@ mod tests {
         let nonexistent_id = "nonexistent-task-id";
 
         let err = ensure_runtime_snapshot_with_path(&db_path, nonexistent_id, &cfg).unwrap_err();
-        assert!(matches!(err, crate::core::error::CoreError::NotFound { resource, .. } if resource == "task"));
+        assert!(
+            matches!(err, crate::core::error::CoreError::NotFound { resource, .. } if resource == "task")
+        );
     }
 
     #[test]
@@ -427,20 +457,22 @@ mod tests {
 
         let err = prepare_execution_binding_with_path(&db_path, "exec-1", nonexistent_id, &cfg)
             .unwrap_err();
-        assert!(matches!(err, crate::core::error::CoreError::NotFound { resource, .. } if resource == "task"));
+        assert!(
+            matches!(err, crate::core::error::CoreError::NotFound { resource, .. } if resource == "task")
+        );
     }
 
     #[test]
     fn prepare_execution_returns_valid_execution_id_and_creates_binding() {
         let (_dir, db_path) = temp_db_path();
         let cfg = AppConfig::default();
-        let task_id = crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None, None, None)
-            .expect("create_task")
-            .id;
+        let task_id =
+            crate::task_state::create_task(&db_path, "Task", "", "cursor", "{}", None, None, None)
+                .expect("create_task")
+                .id;
 
-        let binding =
-            prepare_execution_binding_with_path(&db_path, "chat_api-123", &task_id, &cfg)
-                .expect("prepare_execution");
+        let binding = prepare_execution_binding_with_path(&db_path, "chat_api-123", &task_id, &cfg)
+            .expect("prepare_execution");
 
         assert_eq!(binding.engine_id, "cursor");
         assert!(matches!(

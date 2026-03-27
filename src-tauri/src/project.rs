@@ -296,6 +296,18 @@ pub fn project_set_current(
     project_path: String,
     core_state: State<'_, crate::core::MaestroCore>,
 ) -> Result<ProjectSetResult, String> {
+    if project_path.trim().is_empty() {
+        let mut config = core_state.inner().config.get();
+        config.project.path.clear();
+        config.project.detected_stack.clear();
+        write_config_to_disk(&app, &config)?;
+        core_state.inner().config.set(config);
+        return Ok(ProjectSetResult {
+            path: String::new(),
+            stacks: Vec::new(),
+        });
+    }
+
     let scoped = ScopedWorkspace::new(&project_path)?;
     let path = scoped.root().to_path_buf();
     let stacks = detect_stack(&path);

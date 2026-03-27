@@ -40,8 +40,8 @@ pub fn append_run_record(workspace_io: &WorkspaceIo, record: &Execution) -> Resu
         .open(&path)
         .map_err(|e| format!("open run record file failed: {e}"))?;
     let redacted = redact_execution(record);
-    let text =
-        serde_json::to_string(&redacted).map_err(|e| format!("serialize run record failed: {e}"))?;
+    let text = serde_json::to_string(&redacted)
+        .map_err(|e| format!("serialize run record failed: {e}"))?;
     file.write_all(format!("{text}\n").as_bytes())
         .map_err(|e| format!("write run record failed: {e}"))?;
     Ok(())
@@ -79,7 +79,10 @@ pub fn read_run_records(workspace_io: &WorkspaceIo) -> Result<Vec<Execution>, St
     Ok(records)
 }
 
-pub fn rewrite_run_records(workspace_io: &WorkspaceIo, records: &[Execution]) -> Result<(), String> {
+pub fn rewrite_run_records(
+    workspace_io: &WorkspaceIo,
+    records: &[Execution],
+) -> Result<(), String> {
     let _guard = RUN_RECORDS_LOCK
         .lock()
         .map_err(|_| "lock run records failed".to_string())?;
@@ -104,7 +107,10 @@ pub fn rewrite_run_records(workspace_io: &WorkspaceIo, records: &[Execution]) ->
     Ok(())
 }
 
-pub fn remove_records_by_task_id(workspace_io: &WorkspaceIo, task_id: &str) -> Result<usize, String> {
+pub fn remove_records_by_task_id(
+    workspace_io: &WorkspaceIo,
+    task_id: &str,
+) -> Result<usize, String> {
     if task_id.trim().is_empty() {
         return Ok(0);
     }

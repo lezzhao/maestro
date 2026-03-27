@@ -1,10 +1,12 @@
 use clap::{Parser, Subcommand};
-use tauri_app_lib::ipc::{IpcMessage, IpcResponse};
 use std::sync::Arc;
-use tauri_app_lib::workflow::types::{ChatApiRequest, ChatExecuteCliRequest, StepRunRequest, WorkflowRunRequest};
+use tauri_app_lib::core::events::{MpscEventStream, MpscStringStream};
+use tauri_app_lib::ipc::{IpcMessage, IpcResponse};
 use tauri_app_lib::workflow::chat::{chat_execute_api_core, chat_execute_cli_core};
 use tauri_app_lib::workflow::run::{workflow_run_core, workflow_run_step_core};
-use tauri_app_lib::core::events::{MpscEventStream, MpscStringStream};
+use tauri_app_lib::workflow::types::{
+    ChatApiRequest, ChatExecuteCliRequest, StepRunRequest, WorkflowRunRequest,
+};
 
 #[derive(Parser, Debug)]
 #[command(name = "maestro", about = "CLI orchestrator for Maestro Daemon")]
@@ -28,185 +30,267 @@ pub async fn run_cli_mode(args: Vec<String>) {
             println!("Starting Maestro Daemon...");
             let config = tauri_app_lib::config::load_or_create_config_headless().unwrap();
             let core = Arc::new(tauri_app_lib::core::MaestroCore::new(config));
-            
-            let handler = Arc::new(move |msg: IpcMessage, tx: tokio::sync::mpsc::Sender<IpcResponse>| {
-                let core_clone = Arc::clone(&core);
-                Box::pin(async move {
-                    if msg.method == "ping" {
-                        let _ = tx.send(IpcResponse {
-                            id: msg.id,
-                            result: Some(serde_json::Value::String("pong".to_string())),
-                            error: None,
-                            is_stream: false,
-                        }).await;
-                        return;
-                    } else if msg.method == "list_sessions" {
-                        let sessions = core_clone.pty_state.list_sessions();
-                        let _ = tx.send(IpcResponse {
-                            id: msg.id,
-                            result: Some(serde_json::to_value(&sessions).unwrap_or(serde_json::Value::Null)),
-                            error: None,
-                            is_stream: false,
-                        }).await;
-                        return;
-                    } else if msg.method == "workflow_run" {
-                        if let Ok(req) = serde_json::from_value::<WorkflowRunRequest>(msg.payload) {
-                            let stream = Arc::new(MpscEventStream { tx: tx.clone(), msg_id: msg.id.clone() });
-                            let result = workflow_run_core(
-                                None,
-                                stream,
-                                req,
-                                &core_clone.config.get(),
-                                &core_clone.pty_state,
-                            ).await;
-                            
-                            match result {
-                                Ok(res) => {
-                                    let _ = tx.send(IpcResponse {
-                                        id: msg.id,
-                                        result: Some(serde_json::to_value(&res).unwrap_or_default()),
-                                        error: None,
-                                        is_stream: false,
-                                    }).await;
+
+            let handler = Arc::new(
+                move |msg: IpcMessage, tx: tokio::sync::mpsc::Sender<IpcResponse>| {
+                    let core_clone = Arc::clone(&core);
+                    Box::pin(async move {
+                        if msg.method == "ping" {
+                            let _ = tx
+                                .send(IpcResponse {
+                                    id: msg.id,
+                                    result: Some(serde_json::Value::String("pong".to_string())),
+                                    error: None,
+                                    is_stream: false,
+                                })
+                                .await;
+                            return;
+                        } else if msg.method == "list_sessions" {
+                            let sessions = core_clone.pty_state.list_sessions();
+                            let _ = tx
+                                .send(IpcResponse {
+                                    id: msg.id,
+                                    result: Some(
+                                        serde_json::to_value(&sessions)
+                                            .unwrap_or(serde_json::Value::Null),
+                                    ),
+                                    error: None,
+                                    is_stream: false,
+                                })
+                                .await;
+                            return;
+                        } else if msg.method == "workflow_run" {
+                            if let Ok(req) =
+                                serde_json::from_value::<WorkflowRunRequest>(msg.payload)
+                            {
+                                let stream = Arc::new(MpscEventStream {
+                                    tx: tx.clone(),
+                                    msg_id: msg.id.clone(),
+                                });
+                                let result = workflow_run_core(
+                                    None,
+                                    stream,
+                                    req,
+                                    &core_clone.config.get(),
+                                    &core_clone.pty_state,
+                                )
+                                .await;
+
+                                match result {
+                                    Ok(res) => {
+                                        let _ = tx
+                                            .send(IpcResponse {
+                                                id: msg.id,
+                                                result: Some(
+                                                    serde_json::to_value(&res).unwrap_or_default(),
+                                                ),
+                                                error: None,
+                                                is_stream: false,
+                                            })
+                                            .await;
+                                    }
+                                    Err(err) => {
+                                        let _ = tx
+                                            .send(IpcResponse {
+                                                id: msg.id,
+                                                result: None,
+                                                error: Some(
+                                                    serde_json::to_string(&err)
+                                                        .unwrap_or_else(|_| err.to_string()),
+                                                ),
+                                                is_stream: false,
+                                            })
+                                            .await;
+                                    }
                                 }
-                                Err(err) => {
-                                    let _ = tx.send(IpcResponse {
-                                        id: msg.id,
-                                        result: None,
-                                        error: Some(serde_json::to_string(&err).unwrap_or_else(|_| err.to_string())),
-                                        is_stream: false,
-                                    }).await;
-                                }
-                            }
-                        } else {
-                            let _ = tx.send(IpcResponse {
-                                id: msg.id,
-                                result: None,
-                                error: Some("Invalid payload for workflow_run".to_string()),
-                                is_stream: false,
-                            }).await;
-                        }
-                        return;
-                    } else if msg.method == "workflow_run_step" {
-                        if let Ok(req) = serde_json::from_value::<StepRunRequest>(msg.payload) {
-                            let stream = Arc::new(MpscEventStream { tx: tx.clone(), msg_id: msg.id.clone() });
-                            let result = workflow_run_step_core(
-                                stream,
-                                req,
-                                &core_clone.config.get(),
-                                &core_clone.pty_state,
-                            ).await;
-                            
-                            match result {
-                                Ok(res) => {
-                                    let _ = tx.send(IpcResponse {
-                                        id: msg.id,
-                                        result: Some(serde_json::to_value(&res).unwrap_or_default()),
-                                        error: None,
-                                        is_stream: false,
-                                    }).await;
-                                }
-                                Err(err) => {
-                                    let _ = tx.send(IpcResponse {
+                            } else {
+                                let _ = tx
+                                    .send(IpcResponse {
                                         id: msg.id,
                                         result: None,
-                                        error: Some(serde_json::to_string(&err).unwrap_or_else(|_| err.to_string())),
+                                        error: Some("Invalid payload for workflow_run".to_string()),
                                         is_stream: false,
-                                    }).await;
-                                }
+                                    })
+                                    .await;
                             }
-                        } else {
-                            let _ = tx.send(IpcResponse {
-                                id: msg.id,
-                                result: None,
-                                error: Some("Invalid payload for workflow_run_step".to_string()),
-                                is_stream: false,
-                            }).await;
-                        }
-                        return;
-                    } else if msg.method == "chat_execute_api" {
-                        if let Ok(req) = serde_json::from_value::<ChatApiRequest>(msg.payload) {
-                            let stream = Arc::new(MpscStringStream { tx: tx.clone(), msg_id: msg.id.clone() });
-                            let result = chat_execute_api_core(
-                                None,
-                                req,
-                                core_clone.config.get(),
-                                &core_clone.headless_state,
-                                stream,
-                            ).await;
-                            match result {
-                                Ok(res) => {
-                                    let _ = tx.send(IpcResponse {
-                                        id: msg.id,
-                                        result: Some(serde_json::to_value(&res).unwrap_or_default()),
-                                        error: None,
-                                        is_stream: false,
-                                    }).await;
+                            return;
+                        } else if msg.method == "workflow_run_step" {
+                            if let Ok(req) = serde_json::from_value::<StepRunRequest>(msg.payload) {
+                                let stream = Arc::new(MpscEventStream {
+                                    tx: tx.clone(),
+                                    msg_id: msg.id.clone(),
+                                });
+                                let result = workflow_run_step_core(
+                                    stream,
+                                    req,
+                                    &core_clone.config.get(),
+                                    &core_clone.pty_state,
+                                )
+                                .await;
+
+                                match result {
+                                    Ok(res) => {
+                                        let _ = tx
+                                            .send(IpcResponse {
+                                                id: msg.id,
+                                                result: Some(
+                                                    serde_json::to_value(&res).unwrap_or_default(),
+                                                ),
+                                                error: None,
+                                                is_stream: false,
+                                            })
+                                            .await;
+                                    }
+                                    Err(err) => {
+                                        let _ = tx
+                                            .send(IpcResponse {
+                                                id: msg.id,
+                                                result: None,
+                                                error: Some(
+                                                    serde_json::to_string(&err)
+                                                        .unwrap_or_else(|_| err.to_string()),
+                                                ),
+                                                is_stream: false,
+                                            })
+                                            .await;
+                                    }
                                 }
-                                Err(err) => {
-                                    let _ = tx.send(IpcResponse {
+                            } else {
+                                let _ = tx
+                                    .send(IpcResponse {
                                         id: msg.id,
                                         result: None,
-                                        error: Some(serde_json::to_string(&err).unwrap_or_else(|_| err.to_string())),
+                                        error: Some(
+                                            "Invalid payload for workflow_run_step".to_string(),
+                                        ),
                                         is_stream: false,
-                                    }).await;
-                                }
+                                    })
+                                    .await;
                             }
-                        } else {
-                            let _ = tx.send(IpcResponse {
-                                id: msg.id,
-                                result: None,
-                                error: Some("Invalid payload for chat_execute_api".to_string()),
-                                is_stream: false,
-                            }).await;
-                        }
-                        return;
-                    } else if msg.method == "chat_execute_cli" {
-                        if let Ok(req) = serde_json::from_value::<ChatExecuteCliRequest>(msg.payload) {
-                            let stream = Arc::new(MpscStringStream { tx: tx.clone(), msg_id: msg.id.clone() });
-                            let result = chat_execute_cli_core(
-                                None,
-                                req,
-                                core_clone.config.get(),
-                                &core_clone.headless_state,
-                                stream,
-                            ).await;
-                            match result {
-                                Ok(res) => {
-                                    let _ = tx.send(IpcResponse {
-                                        id: msg.id,
-                                        result: Some(serde_json::to_value(&res).unwrap_or_default()),
-                                        error: None,
-                                        is_stream: false,
-                                    }).await;
+                            return;
+                        } else if msg.method == "chat_execute_api" {
+                            if let Ok(req) = serde_json::from_value::<ChatApiRequest>(msg.payload) {
+                                let stream = Arc::new(MpscStringStream {
+                                    tx: tx.clone(),
+                                    msg_id: msg.id.clone(),
+                                });
+                                let result = chat_execute_api_core(
+                                    None,
+                                    req,
+                                    core_clone.config.get(),
+                                    &core_clone.headless_state,
+                                    stream,
+                                )
+                                .await;
+                                match result {
+                                    Ok(res) => {
+                                        let _ = tx
+                                            .send(IpcResponse {
+                                                id: msg.id,
+                                                result: Some(
+                                                    serde_json::to_value(&res).unwrap_or_default(),
+                                                ),
+                                                error: None,
+                                                is_stream: false,
+                                            })
+                                            .await;
+                                    }
+                                    Err(err) => {
+                                        let _ = tx
+                                            .send(IpcResponse {
+                                                id: msg.id,
+                                                result: None,
+                                                error: Some(
+                                                    serde_json::to_string(&err)
+                                                        .unwrap_or_else(|_| err.to_string()),
+                                                ),
+                                                is_stream: false,
+                                            })
+                                            .await;
+                                    }
                                 }
-                                Err(err) => {
-                                    let _ = tx.send(IpcResponse {
+                            } else {
+                                let _ = tx
+                                    .send(IpcResponse {
                                         id: msg.id,
                                         result: None,
-                                        error: Some(serde_json::to_string(&err).unwrap_or_else(|_| err.to_string())),
+                                        error: Some(
+                                            "Invalid payload for chat_execute_api".to_string(),
+                                        ),
                                         is_stream: false,
-                                    }).await;
-                                }
+                                    })
+                                    .await;
                             }
-                        } else {
-                            let _ = tx.send(IpcResponse {
+                            return;
+                        } else if msg.method == "chat_execute_cli" {
+                            if let Ok(req) =
+                                serde_json::from_value::<ChatExecuteCliRequest>(msg.payload)
+                            {
+                                let stream = Arc::new(MpscStringStream {
+                                    tx: tx.clone(),
+                                    msg_id: msg.id.clone(),
+                                });
+                                let result = chat_execute_cli_core(
+                                    None,
+                                    req,
+                                    core_clone.config.get(),
+                                    &core_clone.headless_state,
+                                    stream,
+                                )
+                                .await;
+                                match result {
+                                    Ok(res) => {
+                                        let _ = tx
+                                            .send(IpcResponse {
+                                                id: msg.id,
+                                                result: Some(
+                                                    serde_json::to_value(&res).unwrap_or_default(),
+                                                ),
+                                                error: None,
+                                                is_stream: false,
+                                            })
+                                            .await;
+                                    }
+                                    Err(err) => {
+                                        let _ = tx
+                                            .send(IpcResponse {
+                                                id: msg.id,
+                                                result: None,
+                                                error: Some(
+                                                    serde_json::to_string(&err)
+                                                        .unwrap_or_else(|_| err.to_string()),
+                                                ),
+                                                is_stream: false,
+                                            })
+                                            .await;
+                                    }
+                                }
+                            } else {
+                                let _ = tx
+                                    .send(IpcResponse {
+                                        id: msg.id,
+                                        result: None,
+                                        error: Some(
+                                            "Invalid payload for chat_execute_cli".to_string(),
+                                        ),
+                                        is_stream: false,
+                                    })
+                                    .await;
+                            }
+                            return;
+                        }
+                        let _ = tx
+                            .send(IpcResponse {
                                 id: msg.id,
                                 result: None,
-                                error: Some("Invalid payload for chat_execute_cli".to_string()),
+                                error: Some(format!("Unknown method: {}", msg.method)),
                                 is_stream: false,
-                            }).await;
-                        }
-                        return;
-                    }
-                    let _ = tx.send(IpcResponse {
-                        id: msg.id,
-                        result: None,
-                        error: Some(format!("Unknown method: {}", msg.method)),
-                        is_stream: false,
-                    }).await;
-                }) as std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
-            });
+                            })
+                            .await;
+                    })
+                        as std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+                },
+            );
 
             #[cfg(unix)]
             if let Err(e) = tauri_app_lib::ipc::unix::start_server(handler).await {

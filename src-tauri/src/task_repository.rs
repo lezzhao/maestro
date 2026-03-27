@@ -268,8 +268,11 @@ pub fn update_task_engine(
 pub fn delete_task(db_path: &Path, task_id: &str) -> Result<(), CoreError> {
     let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
     ensure_tables(&conn)?;
-    conn.execute("DELETE FROM tasks WHERE id = ?1", rusqlite::params![task_id])
-        .map_err(db_err)?;
+    conn.execute(
+        "DELETE FROM tasks WHERE id = ?1",
+        rusqlite::params![task_id],
+    )
+    .map_err(db_err)?;
     if conn.changes() == 0 {
         return Err(CoreError::NotFound {
             resource: "task".to_string(),
@@ -287,13 +290,9 @@ pub fn get_task_runtime_binding(
     let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
     ensure_tables(&conn)?;
     let mut stmt = conn
-        .prepare(
-            "SELECT engine_id, profile_id, runtime_snapshot_id FROM tasks WHERE id = ?1",
-        )
+        .prepare("SELECT engine_id, profile_id, runtime_snapshot_id FROM tasks WHERE id = ?1")
         .map_err(db_err)?;
-    let mut rows = stmt
-        .query(rusqlite::params![task_id])
-        .map_err(db_err)?;
+    let mut rows = stmt.query(rusqlite::params![task_id]).map_err(db_err)?;
     if let Some(row) = rows.next().map_err(db_err)? {
         let engine_id: String = row.get(0).map_err(db_err)?;
         let profile_id: Option<String> = row.get::<_, Option<String>>(1).ok().flatten();
@@ -375,9 +374,7 @@ pub fn get_task_state(db_path: &Path, task_id: &str) -> Result<Option<String>, C
     let mut stmt = conn
         .prepare("SELECT current_state FROM tasks WHERE id = ?1")
         .map_err(db_err)?;
-    let mut rows = stmt
-        .query(rusqlite::params![task_id])
-        .map_err(db_err)?;
+    let mut rows = stmt.query(rusqlite::params![task_id]).map_err(db_err)?;
     if let Some(row) = rows.next().map_err(db_err)? {
         let s: String = row.get(0).map_err(db_err)?;
         Ok(Some(s))
@@ -400,25 +397,24 @@ pub fn get_task_record(
         )
         .map_err(db_err)?;
 
-    let row = stmt
-        .query_row(rusqlite::params![task_id], |row| {
-            let created_at_str: String = row.get(10).unwrap_or_default();
-            let updated_at_str: String = row.get(11).unwrap_or_default();
-            Ok(TaskRecordPayload {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                description: row.get(2)?,
-                engine_id: row.get(3)?,
-                current_state: row.get(4)?,
-                workspace_boundary: row.get(5)?,
-                profile_id: row.get(6)?,
-                workspace_id: row.get(7)?,
-                settings: row.get(8)?,
-                runtime_snapshot_id: row.get(9)?,
-                created_at: sqlite_datetime_to_ms(&created_at_str),
-                updated_at: sqlite_datetime_to_ms(&updated_at_str),
-            })
-        });
+    let row = stmt.query_row(rusqlite::params![task_id], |row| {
+        let created_at_str: String = row.get(10).unwrap_or_default();
+        let updated_at_str: String = row.get(11).unwrap_or_default();
+        Ok(TaskRecordPayload {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            description: row.get(2)?,
+            engine_id: row.get(3)?,
+            current_state: row.get(4)?,
+            workspace_boundary: row.get(5)?,
+            profile_id: row.get(6)?,
+            workspace_id: row.get(7)?,
+            settings: row.get(8)?,
+            runtime_snapshot_id: row.get(9)?,
+            created_at: sqlite_datetime_to_ms(&created_at_str),
+            updated_at: sqlite_datetime_to_ms(&updated_at_str),
+        })
+    });
 
     match row {
         Ok(t) => Ok(Some(t)),
@@ -475,4 +471,3 @@ pub fn update_task(
     conn.execute(&sql, params_refs.as_slice()).map_err(db_err)?;
     Ok(())
 }
-

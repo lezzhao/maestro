@@ -131,8 +131,6 @@ impl Default for AppSection {
     }
 }
 
-
-
 fn default_plugin_type() -> String {
     "cli".to_string()
 }
@@ -149,7 +147,14 @@ impl Default for AppConfig {
                 crate::constants::DEFAULT_ENGINE_ID,
                 "ctrl-c",
                 true,
-                vec!["agent".to_string(), "--yolo".to_string(), "--print".to_string(), "--output-format".to_string(), "stream-json".to_string(), "--stream-partial-output".to_string()],
+                vec![
+                    "agent".to_string(),
+                    "--yolo".to_string(),
+                    "--print".to_string(),
+                    "--output-format".to_string(),
+                    "stream-json".to_string(),
+                    "--stream-partial-output".to_string(),
+                ],
                 ">",
                 "terminal-square",
                 "cli",
@@ -263,12 +268,18 @@ impl AppConfigState {
     pub fn get(&self) -> AppConfig {
         self.inner
             .read()
-            .expect("config read lock poisoned")
+            .unwrap_or_else(|e| {
+                tracing::warn!("config read lock was poisoned, recovering");
+                e.into_inner()
+            })
             .clone()
     }
 
     pub fn set(&self, next: AppConfig) {
-        *self.inner.write().expect("config write lock poisoned") = next;
+        *self.inner.write().unwrap_or_else(|e| {
+            tracing::warn!("config write lock was poisoned, recovering");
+            e.into_inner()
+        }) = next;
     }
 }
 
@@ -326,7 +337,10 @@ impl EngineConfig {
     }
 
     pub fn exit_command(&self) -> String {
-        self.active_profile().exit_command.clone().unwrap_or_else(|| "ctrl-c".to_string())
+        self.active_profile()
+            .exit_command
+            .clone()
+            .unwrap_or_else(|| "ctrl-c".to_string())
     }
 
     pub fn exit_timeout_ms(&self) -> u64 {
@@ -399,12 +413,20 @@ pub(crate) fn migrate_engine_profiles(config: &mut AppConfig) {
         }
         // Migration: automatically upgrade old `cursor` engine headless_args to enable JSON stream reasoning extraction
         if engine.id == "cursor" {
-            let old_args: Vec<String> = vec!["agent".to_string(), "--yolo".to_string(), "--print".to_string()];
-            let new_args: Vec<String> = vec![
-                "agent".to_string(), "--yolo".to_string(), "--print".to_string(),
-                "--output-format".to_string(), "stream-json".to_string(), "--stream-partial-output".to_string()
+            let old_args: Vec<String> = vec![
+                "agent".to_string(),
+                "--yolo".to_string(),
+                "--print".to_string(),
             ];
-            
+            let new_args: Vec<String> = vec![
+                "agent".to_string(),
+                "--yolo".to_string(),
+                "--print".to_string(),
+                "--output-format".to_string(),
+                "stream-json".to_string(),
+                "--stream-partial-output".to_string(),
+            ];
+
             if engine.legacy_profile.headless_args == old_args {
                 engine.legacy_profile.headless_args = new_args.clone();
             }
@@ -521,8 +543,7 @@ fn config_path(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
 /// Internal: load or create config from the given path.
 fn load_or_create_config_from_path(path: &PathBuf) -> Result<AppConfig, String> {
     if path.exists() {
-        let raw = fs::read_to_string(path)
-            .map_err(|e| format!("failed to read config: {}", e))?;
+        let raw = fs::read_to_string(path).map_err(|e| format!("failed to read config: {}", e))?;
         let mut config = toml::from_str::<AppConfig>(&raw)
             .map_err(|e| format!("failed to parse config.toml: {}", e))?;
         migrate_engine_profiles(&mut config);
@@ -561,8 +582,8 @@ pub fn write_config_to_disk_core(config: &AppConfig) -> Result<(), String> {
             profile.api_key = None;
         }
     }
-    let content =
-        toml::to_string_pretty(&safe_config).map_err(|e| format!("toml serialize failed: {}", e))?;
+    let content = toml::to_string_pretty(&safe_config)
+        .map_err(|e| format!("toml serialize failed: {}", e))?;
     fs::write(path, content).map_err(|e| format!("failed to save config: {}", e))?;
     Ok(())
 }

@@ -4,13 +4,11 @@
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-static SK_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"sk-[a-zA-Z0-9\-_]{20,}").expect("redact sk- pattern")
-});
+static SK_PATTERN: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"sk-[a-zA-Z0-9\-_]{20,}").expect("redact sk- pattern"));
 
-static BEARER_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"Bearer\s+[a-zA-Z0-9\-_.]+").expect("redact Bearer pattern")
-});
+static BEARER_PATTERN: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"Bearer\s+[a-zA-Z0-9\-_.]+").expect("redact Bearer pattern"));
 
 /// Redact sensitive patterns in text. Replaces matches with [REDACTED].
 pub fn redact_sensitive(text: &str) -> String {

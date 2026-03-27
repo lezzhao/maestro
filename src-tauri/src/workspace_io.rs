@@ -71,7 +71,6 @@ impl WorkspaceIo {
         fs::remove_file(&backup).map_err(|e| format!("remove backup failed: {e}"))?;
         Ok(Some(dst))
     }
-
 }
 
 fn copy_dir_all(src: &Path, dst: &Path) -> Result<(), String> {

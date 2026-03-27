@@ -1,16 +1,16 @@
 use crate::config::{EngineConfig, EngineProfile};
 use crate::core::error::CoreError;
 use std::collections::BTreeMap;
-use tauri::{command, State, AppHandle};
+use tauri::{command, AppHandle, State};
 
 use super::{
-    models::EngineModelListResult,
-    preflight::EnginePreflightResult,
-    runtime::EngineSwitchResult,
+    models::EngineModelListResult, preflight::EnginePreflightResult, runtime::EngineSwitchResult,
 };
 
 #[command]
-pub fn engine_list(core_state: State<'_, crate::core::MaestroCore>) -> Result<BTreeMap<String, EngineConfig>, CoreError> {
+pub fn engine_list(
+    core_state: State<'_, crate::core::MaestroCore>,
+) -> Result<BTreeMap<String, EngineConfig>, CoreError> {
     Ok(core_state.inner().engine_list())
 }
 
@@ -52,9 +52,13 @@ pub fn engine_upsert_profile(
 #[command]
 pub async fn engine_preflight(
     engine_id: String,
+    profile_id: Option<String>,
     core_state: State<'_, crate::core::MaestroCore>,
 ) -> Result<EnginePreflightResult, CoreError> {
-    core_state.inner().engine_preflight(engine_id).await
+    core_state
+        .inner()
+        .engine_preflight(engine_id, profile_id)
+        .await
 }
 
 #[command]
@@ -85,5 +89,7 @@ pub fn engine_switch_session(
     session_id: Option<String>,
     core_state: State<'_, crate::core::MaestroCore>,
 ) -> Result<EngineSwitchResult, CoreError> {
-    core_state.inner().engine_switch_session(engine_id, session_id)
+    core_state
+        .inner()
+        .engine_switch_session(engine_id, session_id)
 }

@@ -3,13 +3,12 @@ use super::history::persist_engine_history;
 use super::types::*;
 use super::util::*;
 use crate::core::error::CoreError;
+use crate::core::events::EventStream;
+use crate::core::execution::{Execution, ExecutionMode};
 use crate::core::MaestroCore;
 use crate::execution_binding::prepare_execution_binding;
 use crate::pty::PtyManagerState;
-use crate::core::execution::{Execution, ExecutionMode};
-use crate::run_persistence::{
-    append_run_record, current_time_ms,
-};
+use crate::run_persistence::{append_run_record, current_time_ms};
 use crate::workspace_io::WorkspaceIo;
 use regex::Regex;
 use std::process::Stdio;
@@ -20,7 +19,6 @@ use tauri::{
     ipc::{Channel, InvokeResponseBody},
     AppHandle, State,
 };
-use crate::core::events::EventStream;
 
 fn parse_case_counts(output: &str) -> (usize, usize, usize, usize) {
     let passed_re = Regex::new(r"(?i)\b(\d+)\s+passed\b").expect("regex must compile");
@@ -229,38 +227,50 @@ async fn execute_workflow_step(
     )?;
     let resolved = prepared.context;
 
-    emitter.send_event(
-        "workflow://progress",
-        serde_json::to_value(WorkflowProgressEvent {
-            workflow_name: workflow_name.to_string(),
-            step_index,
-            total_steps,
-            engine: step.engine.clone(),
-            status: "starting".to_string(),
-            message: "starting step".to_string(),
-            token_estimate: None,
-        }).map_err(|e| CoreError::Serialization { message: e.to_string() })?,
-    )
-    .map_err(|e| CoreError::SystemError { message: format!("emit workflow progress failed: {e}") })?;
+    emitter
+        .send_event(
+            "workflow://progress",
+            serde_json::to_value(WorkflowProgressEvent {
+                workflow_name: workflow_name.to_string(),
+                step_index,
+                total_steps,
+                engine: step.engine.clone(),
+                status: "starting".to_string(),
+                message: "starting step".to_string(),
+                token_estimate: None,
+            })
+            .map_err(|e| CoreError::Serialization {
+                message: e.to_string(),
+            })?,
+        )
+        .map_err(|e| CoreError::SystemError {
+            message: format!("emit workflow progress failed: {e}"),
+        })?;
 
     let _mode_hint = if resolved.supports_headless {
         "headless"
     } else {
         "pty-fallback"
     };
-    emitter.send_event(
-        "workflow://progress",
-        serde_json::to_value(WorkflowProgressEvent {
-            workflow_name: workflow_name.to_string(),
-            step_index,
-            total_steps,
-            engine: step.engine.clone(),
-            status: "running".to_string(),
-            message: format!("starting step {} with {}", step_index + 1, step.engine),
-            token_estimate: None,
-        }).map_err(|e| CoreError::Serialization { message: e.to_string() })?,
-    )
-    .map_err(|e| CoreError::SystemError { message: format!("emit workflow progress failed: {e}") })?;
+    emitter
+        .send_event(
+            "workflow://progress",
+            serde_json::to_value(WorkflowProgressEvent {
+                workflow_name: workflow_name.to_string(),
+                step_index,
+                total_steps,
+                engine: step.engine.clone(),
+                status: "running".to_string(),
+                message: format!("starting step {} with {}", step_index + 1, step.engine),
+                token_estimate: None,
+            })
+            .map_err(|e| CoreError::Serialization {
+                message: e.to_string(),
+            })?,
+        )
+        .map_err(|e| CoreError::SystemError {
+            message: format!("emit workflow progress failed: {e}"),
+        })?;
 
     let result = if resolved.supports_headless {
         let mut args = if resolved.headless_args.is_empty() {
@@ -268,23 +278,32 @@ async fn execute_workflow_step(
         } else {
             resolved.headless_args.clone()
         };
-        args = with_model_args(args, &step.engine, &resolved.model.clone().unwrap_or_default());
+        args = with_model_args(
+            args,
+            &step.engine,
+            &resolved.model.clone().unwrap_or_default(),
+        );
         args.push(step.prompt.clone());
 
         let full_command_str = format!("{} {}", resolved.command, args.join(" "));
-        if let Err(reason) = crate::plugin_engine::action_guard::ActionGuard::unwrap_default().check_command(&full_command_str) {
-            return Ok((WorkflowStepResult {
-                engine: step.engine.clone(),
-                mode: "headless".to_string(),
-                status: "error".to_string(),
-                fallback: false,
-                success: false,
-                completion_matched: false,
-                failure_reason: Some("action-guard".to_string()),
-                duration_ms: step_started.elapsed().as_millis(),
-                output: format!("Blocked by ActionGuard: {reason}"),
-                verification: None,
-            }, resolved.profile_id.unwrap_or_else(|| "default".to_string())));
+        if let Err(reason) = crate::plugin_engine::action_guard::ActionGuard::unwrap_default()
+            .check_command(&full_command_str)
+        {
+            return Ok((
+                WorkflowStepResult {
+                    engine: step.engine.clone(),
+                    mode: "headless".to_string(),
+                    status: "error".to_string(),
+                    fallback: false,
+                    success: false,
+                    completion_matched: false,
+                    failure_reason: Some("action-guard".to_string()),
+                    duration_ms: step_started.elapsed().as_millis(),
+                    output: format!("Blocked by ActionGuard: {reason}"),
+                    verification: None,
+                },
+                resolved.profile_id.unwrap_or_else(|| "default".to_string()),
+            ));
         }
 
         let mut command = tokio::process::Command::new(&resolved.command);
@@ -322,10 +341,14 @@ async fn execute_workflow_step(
                     }
                 };
 
-                let output = child
-                    .wait_with_output()
-                    .await
-                    .map_err(|e| CoreError::ExecutionFailed { id: step.engine.clone(), reason: format!("wait child failed: {e}") })?;
+                let output =
+                    child
+                        .wait_with_output()
+                        .await
+                        .map_err(|e| CoreError::ExecutionFailed {
+                            id: step.engine.clone(),
+                            reason: format!("wait child failed: {e}"),
+                        })?;
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
@@ -348,7 +371,11 @@ async fn execute_workflow_step(
                 WorkflowStepResult {
                     engine: step.engine.clone(),
                     mode: "headless".to_string(),
-                    status: if success && matched { "done".to_string() } else { "error".to_string() },
+                    status: if success && matched {
+                        "done".to_string()
+                    } else {
+                        "error".to_string()
+                    },
                     fallback: false,
                     success,
                     completion_matched: matched,
@@ -380,21 +407,38 @@ async fn execute_workflow_step(
             },
         }
     } else {
-        let args_for_pty = with_model_args(resolved.args.clone(), &step.engine, &resolved.model.clone().unwrap_or_default());
-        let full_command_str = format!("{} {} {}", resolved.command, args_for_pty.join(" "), step.prompt);
-        if let Err(reason) = crate::plugin_engine::action_guard::ActionGuard::unwrap_default().check_command(&full_command_str) {
-            return Ok((WorkflowStepResult {
-                engine: step.engine.clone(),
-                mode: "pty-fallback".to_string(),
-                status: "error".to_string(),
-                fallback: true,
-                success: false,
-                completion_matched: false,
-                failure_reason: Some("action-guard".to_string()),
-                duration_ms: step_started.elapsed().as_millis(),
-                output: format!("Blocked by ActionGuard: {reason}"),
-                verification: None,
-            }, resolved.profile_id.clone().unwrap_or_else(|| "default".to_string())));
+        let args_for_pty = with_model_args(
+            resolved.args.clone(),
+            &step.engine,
+            &resolved.model.clone().unwrap_or_default(),
+        );
+        let full_command_str = format!(
+            "{} {} {}",
+            resolved.command,
+            args_for_pty.join(" "),
+            step.prompt
+        );
+        if let Err(reason) = crate::plugin_engine::action_guard::ActionGuard::unwrap_default()
+            .check_command(&full_command_str)
+        {
+            return Ok((
+                WorkflowStepResult {
+                    engine: step.engine.clone(),
+                    mode: "pty-fallback".to_string(),
+                    status: "error".to_string(),
+                    fallback: true,
+                    success: false,
+                    completion_matched: false,
+                    failure_reason: Some("action-guard".to_string()),
+                    duration_ms: step_started.elapsed().as_millis(),
+                    output: format!("Blocked by ActionGuard: {reason}"),
+                    verification: None,
+                },
+                resolved
+                    .profile_id
+                    .clone()
+                    .unwrap_or_else(|| "default".to_string()),
+            ));
         }
 
         let output_buf = Arc::new(Mutex::new(String::new()));
@@ -414,32 +458,31 @@ async fn execute_workflow_step(
         });
 
         let session_id = uuid::Uuid::new_v4().to_string();
-        let spawn = pty_state.spawn_session(
-            crate::pty::PtySpawnOptions {
-                session_id,
-                task_id: None,
-                file: resolved.command.clone(),
-                args: args_for_pty,
-                cwd: if cfg.project.path.trim().is_empty() {
-                    None
-                } else {
-                    Some(cfg.project.path.clone())
+        let spawn = pty_state
+            .spawn_session(
+                crate::pty::PtySpawnOptions {
+                    session_id,
+                    task_id: None,
+                    file: resolved.command.clone(),
+                    args: args_for_pty,
+                    cwd: if cfg.project.path.trim().is_empty() {
+                        None
+                    } else {
+                        Some(cfg.project.path.clone())
+                    },
+                    env: resolved.env.clone().into_iter().collect(),
+                    cols: 120,
+                    rows: 36,
                 },
-                env: resolved.env.clone().into_iter().collect(),
-                cols: 120,
-                rows: 36,
-            },
-            on_data,
-        ).map_err(CoreError::from)?;
+                on_data,
+            )
+            .map_err(CoreError::from)?;
 
         if let Some(ready_signal) = resolved.ready_signal.as_deref() {
             let ready_deadline =
                 Instant::now() + Duration::from_millis(step.timeout_ms.unwrap_or(15_000) / 3);
             while Instant::now() < ready_deadline {
-                let snap = output_buf
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .clone();
+                let snap = output_buf.lock().unwrap_or_else(|e| e.into_inner()).clone();
                 if completion_matched(Some(ready_signal), &snap) {
                     break;
                 }
@@ -447,17 +490,16 @@ async fn execute_workflow_step(
             }
         }
 
-        pty_state.write_to_session(&spawn.session_id, &format!("{}\n", step.prompt)).map_err(CoreError::from)?;
+        pty_state
+            .write_to_session(&spawn.session_id, &format!("{}\n", step.prompt))
+            .map_err(CoreError::from)?;
 
         let timeout = step.timeout_ms.unwrap_or(30_000).max(500);
         let deadline = Instant::now() + Duration::from_millis(timeout);
         let mut matched = false;
         let mut timed_out = false;
         while Instant::now() < deadline {
-            let snap = output_buf
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .clone();
+            let snap = output_buf.lock().unwrap_or_else(|e| e.into_inner()).clone();
             if completion_matched(step.completion_signal.as_deref(), &snap) {
                 matched = true;
                 break;
@@ -472,15 +514,16 @@ async fn execute_workflow_step(
         }
 
         let _ = pty_state.kill_session(&spawn.session_id);
-        let final_output = output_buf
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone();
+        let final_output = output_buf.lock().unwrap_or_else(|e| e.into_inner()).clone();
 
         WorkflowStepResult {
             engine: step.engine.clone(),
             mode: "pty-fallback".to_string(),
-            status: if matched { "done".to_string() } else { "error".to_string() },
+            status: if matched {
+                "done".to_string()
+            } else {
+                "error".to_string()
+            },
             fallback: true,
             success: matched,
             completion_matched: matched,
@@ -502,27 +545,36 @@ async fn execute_workflow_step(
     };
 
     let token_estimate = estimate_tokens(&step.prompt, &result.output);
-    emitter.send_event(
-        "workflow://progress",
-        serde_json::to_value(WorkflowProgressEvent {
-            workflow_name: workflow_name.to_string(),
-            step_index,
-            total_steps,
-            engine: step.engine.clone(),
-            status: "done".to_string(),
-            message: if result.success && result.completion_matched {
-                "step completed".to_string()
-            } else if result.success {
-                "step done but completion signal not matched".to_string()
-            } else {
-                "step failed".to_string()
-            },
-            token_estimate: Some(token_estimate),
-        }).map_err(|e| CoreError::Serialization { message: e.to_string() })?,
-    )
-    .map_err(|e| CoreError::SystemError { message: format!("emit workflow progress failed: {e}") })?;
+    emitter
+        .send_event(
+            "workflow://progress",
+            serde_json::to_value(WorkflowProgressEvent {
+                workflow_name: workflow_name.to_string(),
+                step_index,
+                total_steps,
+                engine: step.engine.clone(),
+                status: "done".to_string(),
+                message: if result.success && result.completion_matched {
+                    "step completed".to_string()
+                } else if result.success {
+                    "step done but completion signal not matched".to_string()
+                } else {
+                    "step failed".to_string()
+                },
+                token_estimate: Some(token_estimate),
+            })
+            .map_err(|e| CoreError::Serialization {
+                message: e.to_string(),
+            })?,
+        )
+        .map_err(|e| CoreError::SystemError {
+            message: format!("emit workflow progress failed: {e}"),
+        })?;
 
-    Ok((result, resolved.profile_id.unwrap_or_else(|| "default".to_string())))
+    Ok((
+        result,
+        resolved.profile_id.unwrap_or_else(|| "default".to_string()),
+    ))
 }
 
 #[command]
@@ -575,7 +627,8 @@ pub async fn workflow_run_step_core(
                 status: "warning".to_string(),
                 message: format!("history persistence failed: {err}"),
                 token_estimate: None,
-            }).unwrap_or_default()
+            })
+            .unwrap_or_default(),
         );
     }
 
@@ -616,7 +669,10 @@ pub async fn workflow_run_core(
     let workflow_name = request.name.clone();
     let total = request.steps.len();
     if total == 0 {
-        return Err(CoreError::ValidationError { field: "steps".to_string(), message: "workflow has no steps".to_string() });
+        return Err(CoreError::ValidationError {
+            field: "steps".to_string(),
+            message: "workflow has no steps".to_string(),
+        });
     }
 
     let now_ms = current_time_ms().unwrap_or_default();
@@ -676,7 +732,8 @@ pub async fn workflow_run_core(
                     status: "warning".to_string(),
                     message: format!("history persistence failed: {err}"),
                     token_estimate: None,
-                }).unwrap_or_default()
+                })
+                .unwrap_or_default(),
             );
         }
 
@@ -689,11 +746,16 @@ pub async fn workflow_run_core(
             workflow_name: workflow_name.clone(),
             step_index: total,
             total_steps: total,
-            engine: request.steps.last().map(|s| s.engine.clone()).unwrap_or_default(),
+            engine: request
+                .steps
+                .last()
+                .map(|s| s.engine.clone())
+                .unwrap_or_default(),
             status: "finished".to_string(),
             message: "workflow completed".to_string(),
             token_estimate: None,
-        }).unwrap_or_default()
+        })
+        .unwrap_or_default(),
     );
 
     let completed = step_results

@@ -27,7 +27,12 @@ pub struct ProcessMonitorState {
 impl ProcessMonitorState {
     pub fn stop_all(&self) {
         self.running.store(false, Ordering::Relaxed);
-        if let Some(flag) = self.stopper.lock().unwrap_or_else(|e| e.into_inner()).take() {
+        if let Some(flag) = self
+            .stopper
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+        {
             flag.store(true, Ordering::Relaxed);
         }
     }
@@ -39,7 +44,9 @@ pub fn process_get_stats(
     core_state: tauri::State<'_, crate::core::MaestroCore>,
 ) -> ProcessStats {
     let pty_state = &core_state.inner().pty_state;
-    let os_pid = session_id.as_ref().and_then(|id| active_os_pid(pty_state, id));
+    let os_pid = session_id
+        .as_ref()
+        .and_then(|id| active_os_pid(pty_state, id));
     if let Some(pid_u32) = os_pid {
         let mut sys = System::new_with_specifics(
             RefreshKind::nothing()
@@ -78,7 +85,11 @@ pub fn process_start_monitor(
     core.process_monitor.stop_all();
     core.process_monitor.running.store(true, Ordering::Relaxed);
     let stop_flag = Arc::new(AtomicBool::new(false));
-    *core.process_monitor.stopper.lock().unwrap_or_else(|e| e.into_inner()) = Some(stop_flag.clone());
+    *core
+        .process_monitor
+        .stopper
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = Some(stop_flag.clone());
 
     let app_handle = app.clone();
     thread::spawn(move || {

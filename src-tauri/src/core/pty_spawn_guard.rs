@@ -54,12 +54,11 @@ pub fn validate_pty_spawn(
         });
     }
 
-    let resolved_file = resolve_command_to_path(file).ok_or_else(|| {
-        CoreError::ValidationError {
+    let resolved_file =
+        resolve_command_to_path(file).ok_or_else(|| CoreError::ValidationError {
             field: "file".to_string(),
             message: format!("Command not found or invalid path: {}", file),
-        }
-    })?;
+        })?;
 
     if !allowed.contains(&resolved_file) {
         return Err(CoreError::PermissionDenied {
@@ -77,7 +76,9 @@ pub fn validate_pty_spawn(
         })?;
     ActionGuard::unwrap_default()
         .check_command(&command_str)
-        .map_err(|e| CoreError::PermissionDenied { reason: e })?;
+        .map_err(|e| CoreError::PermissionDenied {
+            reason: e.to_string(),
+        })?;
 
     Ok(())
 }

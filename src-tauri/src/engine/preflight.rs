@@ -1,6 +1,6 @@
 //! Preflight checks: command existence, auth, headless support. Read-only, no side effects.
 
-use crate::config::AppConfig;
+use crate::config::{AppConfig, EngineConfig, EngineProfile};
 use crate::engine::utils::{cursor_status_check, run_status_check_shell, StatusCheckResult};
 use serde::{Deserialize, Serialize};
 
@@ -19,21 +19,46 @@ fn shell_single_quote(input: &str) -> String {
     format!("'{escaped}'")
 }
 
+fn resolve_profile(
+    engine: &EngineConfig,
+    profile_id: Option<&str>,
+) -> Result<(String, EngineProfile), String> {
+    if let Some(requested_profile_id) = profile_id.filter(|id| !id.trim().is_empty()) {
+        let profile = engine
+            .profiles
+            .get(requested_profile_id)
+            .cloned()
+            .ok_or_else(|| format!("profile not found: {requested_profile_id}"))?;
+        return Ok((requested_profile_id.to_string(), profile));
+    }
+
+    if let Some(profile) = engine.profiles.get(&engine.active_profile_id).cloned() {
+        return Ok((engine.active_profile_id.clone(), profile));
+    }
+
+    if let Some((fallback_profile_id, profile)) = engine.profiles.iter().next() {
+        return Ok((fallback_profile_id.clone(), profile.clone()));
+    }
+
+    Ok(("default".to_string(), engine.legacy_profile.clone()))
+}
+
 pub async fn engine_preflight_core(
     engine_id: String,
+    profile_id: Option<String>,
     config: AppConfig,
 ) -> Result<EnginePreflightResult, String> {
     let engine = config
         .engines
         .get(&engine_id)
         .ok_or_else(|| format!("engine not found: {engine_id}"))?;
-    let profile = engine.active_profile();
+    let (resolved_profile_id, profile) = resolve_profile(engine, profile_id.as_deref())?;
 
     let command_exists = which::which(profile.command()).is_ok();
     if !command_exists {
         return Ok(EnginePreflightResult {
             engine_id,
-            profile_id: profile.id.clone(),
+            profile_id: resolved_profile_id,
             command_exists: false,
             auth_ok: false,
             supports_headless: profile.supports_headless(),
@@ -131,7 +156,7 @@ pub async fn engine_preflight_core(
 
     Ok(EnginePreflightResult {
         engine_id,
-        profile_id: profile.id.clone(),
+        profile_id: resolved_profile_id,
         command_exists,
         auth_ok,
         supports_headless: profile.supports_headless(),

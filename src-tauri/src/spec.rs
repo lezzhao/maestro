@@ -16,7 +16,12 @@ const CUSTOM_RULES_TEMPLATE: &str = "# Custom rules\n";
 pub trait SpecProvider: Send + Sync {
     fn id(&self) -> &str;
     fn display_name(&self) -> &str;
-    fn inject(&self, workspace_io: &WorkspaceIo, mode: &str, target_ide: &str) -> Result<(), String>;
+    fn inject(
+        &self,
+        workspace_io: &WorkspaceIo,
+        mode: &str,
+        target_ide: &str,
+    ) -> Result<(), String>;
     fn remove(&self, workspace_io: &WorkspaceIo) -> Result<(), String>;
     fn detect(&self, project_path: &Path) -> bool;
     fn preview(&self, mode: &str, target_ide: &str) -> Result<Vec<SpecPreviewResult>, String>;
@@ -42,7 +47,12 @@ impl SpecProvider for BmadProvider {
         &self.conf.display_name
     }
 
-    fn inject(&self, workspace_io: &WorkspaceIo, mode: &str, target_ide: &str) -> Result<(), String> {
+    fn inject(
+        &self,
+        workspace_io: &WorkspaceIo,
+        mode: &str,
+        target_ide: &str,
+    ) -> Result<(), String> {
         match mode {
             "full" => {
                 let src = self.conf.source_path.trim();
@@ -69,7 +79,13 @@ impl SpecProvider for BmadProvider {
     }
 
     fn remove(&self, workspace_io: &WorkspaceIo) -> Result<(), String> {
-        let maybe_paths = ["_bmad", ".cursor/rules/bmad.mdc", "CLAUDE.md", "GEMINI.md", "AGENTS.md"];
+        let maybe_paths = [
+            "_bmad",
+            ".cursor/rules/bmad.mdc",
+            "CLAUDE.md",
+            "GEMINI.md",
+            "AGENTS.md",
+        ];
         for p in maybe_paths {
             let _ = workspace_io.remove_path(p);
         }
@@ -88,7 +104,9 @@ impl SpecProvider for BmadProvider {
         if mode == "full" {
             let src = self.conf.source_path.trim().to_string();
             if src.is_empty() {
-                return Err("bmad full install requires providers.bmad.source_path to be set".to_string());
+                return Err(
+                    "bmad full install requires providers.bmad.source_path to be set".to_string(),
+                );
             }
             results.push(SpecPreviewResult {
                 file_path: "_bmad/".to_string(),
@@ -129,7 +147,12 @@ impl SpecProvider for CustomProvider {
         &self.conf.display_name
     }
 
-    fn inject(&self, workspace_io: &WorkspaceIo, _mode: &str, target_ide: &str) -> Result<(), String> {
+    fn inject(
+        &self,
+        workspace_io: &WorkspaceIo,
+        _mode: &str,
+        target_ide: &str,
+    ) -> Result<(), String> {
         let content = if self.conf.rules_content.trim().is_empty() {
             CUSTOM_RULES_TEMPLATE
         } else {
@@ -145,7 +168,12 @@ impl SpecProvider for CustomProvider {
     }
 
     fn remove(&self, workspace_io: &WorkspaceIo) -> Result<(), String> {
-        let maybe_paths = [".cursor/rules/custom.mdc", "CLAUDE.md", "GEMINI.md", "AGENTS.md"];
+        let maybe_paths = [
+            ".cursor/rules/custom.mdc",
+            "CLAUDE.md",
+            "GEMINI.md",
+            "AGENTS.md",
+        ];
         for p in maybe_paths {
             let _ = workspace_io.remove_path(p);
         }
@@ -195,7 +223,10 @@ impl SpecProviderRegistry {
     }
 
     pub fn get(&self, id: &str) -> Option<&dyn SpecProvider> {
-        self.providers.iter().find(|p| p.id() == id).map(|p| p.as_ref())
+        self.providers
+            .iter()
+            .find(|p| p.id() == id)
+            .map(|p| p.as_ref())
     }
 
     pub fn all(&self) -> impl Iterator<Item = &dyn SpecProvider> {
@@ -257,7 +288,9 @@ pub fn spec_inject_core(
         validate_project_scope(&project_path, &allowed)?;
     }
     let registry = SpecProviderRegistry::new(cfg);
-    let p = registry.get(&provider).ok_or_else(|| format!("unsupported provider: {provider}"))?;
+    let p = registry
+        .get(&provider)
+        .ok_or_else(|| format!("unsupported provider: {provider}"))?;
     let project = PathBuf::from(project_path.clone());
     let workspace_io = WorkspaceIo::new(&project)?;
     p.inject(&workspace_io, &mode, &target_ide)
@@ -276,13 +309,18 @@ pub fn spec_remove_core(
         validate_project_scope(&project_path, &allowed)?;
     }
     let registry = SpecProviderRegistry::new(cfg);
-    let p = registry.get(&provider).ok_or_else(|| format!("unsupported provider: {provider}"))?;
+    let p = registry
+        .get(&provider)
+        .ok_or_else(|| format!("unsupported provider: {provider}"))?;
     let project = PathBuf::from(project_path.clone());
     let workspace_io = WorkspaceIo::new(&project)?;
     p.remove(&workspace_io)
 }
 
-pub fn spec_detect_core(cfg: &crate::config::AppConfig, project_path: String) -> Vec<SpecDetectResult> {
+pub fn spec_detect_core(
+    cfg: &crate::config::AppConfig,
+    project_path: String,
+) -> Vec<SpecDetectResult> {
     let project = PathBuf::from(project_path);
     let registry = SpecProviderRegistry::new(cfg);
     registry
@@ -304,7 +342,9 @@ pub fn spec_preview_core(
         return Ok(Vec::new());
     }
     let registry = SpecProviderRegistry::new(cfg);
-    let p = registry.get(&provider).ok_or_else(|| format!("unsupported provider: {provider}"))?;
+    let p = registry
+        .get(&provider)
+        .ok_or_else(|| format!("unsupported provider: {provider}"))?;
     p.preview(&mode, &target_ide)
 }
 
@@ -319,7 +359,13 @@ pub fn spec_backup_core(
     let project = PathBuf::from(project_path);
     let workspace_io = WorkspaceIo::new(&project)?;
     let mut backed_up = Vec::new();
-    let paths_to_backup = [".cursor/rules/bmad.mdc", ".cursor/rules/custom.mdc", "CLAUDE.md", "GEMINI.md", "AGENTS.md"];
+    let paths_to_backup = [
+        ".cursor/rules/bmad.mdc",
+        ".cursor/rules/custom.mdc",
+        "CLAUDE.md",
+        "GEMINI.md",
+        "AGENTS.md",
+    ];
     for p in paths_to_backup {
         if let Some(src) = workspace_io.backup_file_if_exists(p)? {
             backed_up.push(src.to_string_lossy().to_string());
@@ -339,7 +385,13 @@ pub fn spec_restore_core(
     let project = PathBuf::from(project_path);
     let workspace_io = WorkspaceIo::new(&project)?;
     let mut restored = Vec::new();
-    let paths_to_restore = [".cursor/rules/bmad.mdc", ".cursor/rules/custom.mdc", "CLAUDE.md", "GEMINI.md", "AGENTS.md"];
+    let paths_to_restore = [
+        ".cursor/rules/bmad.mdc",
+        ".cursor/rules/custom.mdc",
+        "CLAUDE.md",
+        "GEMINI.md",
+        "AGENTS.md",
+    ];
     for p in paths_to_restore {
         if let Some(dst) = workspace_io.restore_file_if_exists(p)? {
             restored.push(dst.to_string_lossy().to_string());

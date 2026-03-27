@@ -133,14 +133,20 @@ pub fn ensure_workspace_columns(conn: &rusqlite::Connection) -> Result<(), CoreE
     for (name, ty) in columns {
         let count: i64 = conn
             .query_row(
-                &format!("SELECT COUNT(*) FROM pragma_table_info('workspaces') WHERE name='{}'", name),
+                &format!(
+                    "SELECT COUNT(*) FROM pragma_table_info('workspaces') WHERE name='{}'",
+                    name
+                ),
                 [],
                 |r| r.get(0),
             )
             .map_err(db_err)?;
         if count == 0 {
-            conn.execute(&format!("ALTER TABLE workspaces ADD COLUMN {} {}", name, ty), [])
-                .map_err(db_err)?;
+            conn.execute(
+                &format!("ALTER TABLE workspaces ADD COLUMN {} {}", name, ty),
+                [],
+            )
+            .map_err(db_err)?;
         }
     }
     Ok(())
@@ -320,10 +326,7 @@ pub fn update_workspace(
     sets.push("updated_at = CURRENT_TIMESTAMP");
     params.push(Box::new(req.id.clone()));
 
-    let sql = format!(
-        "UPDATE workspaces SET {} WHERE id = ?",
-        sets.join(", ")
-    );
+    let sql = format!("UPDATE workspaces SET {} WHERE id = ?", sets.join(", "));
 
     let params_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
     conn.execute(&sql, params_refs.as_slice()).map_err(db_err)?;
@@ -452,9 +455,7 @@ pub async fn workspace_delete(
     delete_workspace(&db_path, &workspace_id)?;
     crate::agent_state::emit_state_update(
         Some(&app),
-        crate::agent_state::AgentStateUpdate::WorkspaceDeleted {
-            workspace_id,
-        },
+        crate::agent_state::AgentStateUpdate::WorkspaceDeleted { workspace_id },
     );
     Ok(())
 }
@@ -552,16 +553,17 @@ mod tests {
         let ws = create_workspace(&db_path, &req).expect("create workspace");
 
         // Create a task associated with this workspace
-        let task = crate::task_state::create_task(
-            &db_path, "Task1", "", "cursor", "{}", None, None, None,
-        ).expect("create task");
+        let task =
+            crate::task_state::create_task(&db_path, "Task1", "", "cursor", "{}", None, None, None)
+                .expect("create task");
 
         // Associate task with workspace
         let conn = rusqlite::Connection::open(&db_path).expect("open db");
         conn.execute(
             "UPDATE tasks SET workspace_id = ?1 WHERE id = ?2",
             rusqlite::params![ws.id, task.id],
-        ).expect("associate");
+        )
+        .expect("associate");
         drop(conn);
 
         // Delete workspace

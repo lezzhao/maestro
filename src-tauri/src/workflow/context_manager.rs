@@ -98,7 +98,10 @@ async fn last_conversation_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-async fn load_messages_by_ids(app: &AppHandle, message_ids: &[String]) -> Result<Vec<ChatApiMessage>, String> {
+async fn load_messages_by_ids(
+    app: &AppHandle,
+    message_ids: &[String],
+) -> Result<Vec<ChatApiMessage>, String> {
     if message_ids.is_empty() {
         return Ok(Vec::new());
     }
@@ -127,7 +130,10 @@ async fn load_messages_by_ids(app: &AppHandle, message_ids: &[String]) -> Result
     Ok(out)
 }
 
-pub async fn build_chat_context(app: Option<&AppHandle>, request: &ChatApiRequest) -> Result<BuiltChatContext, String> {
+pub async fn build_chat_context(
+    app: Option<&AppHandle>,
+    request: &ChatApiRequest,
+) -> Result<BuiltChatContext, String> {
     let mut source_messages = if !request.messages.is_empty() {
         request.messages.clone()
     } else if let Some(app) = app {

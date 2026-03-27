@@ -1,10 +1,10 @@
 use ignore::gitignore::GitignoreBuilder;
-use notify::{RecursiveMode, RecommendedWatcher};
+use notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{new_debouncer, DebounceEventResult};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
+use tokio::sync::Mutex;
 
 pub struct FileWatcherState {
     pub watcher: Arc<Mutex<Option<notify_debouncer_mini::Debouncer<RecommendedWatcher>>>>,
@@ -37,7 +37,9 @@ pub async fn file_watcher_start(
     if gitignore_path.exists() {
         let _ = builder.add(&gitignore_path);
     }
-    let gitignore = builder.build().unwrap_or(ignore::gitignore::Gitignore::empty());
+    let gitignore = builder
+        .build()
+        .unwrap_or(ignore::gitignore::Gitignore::empty());
 
     let handle_clone = app.clone();
     let root_path_clone = root_path.clone();
@@ -50,19 +52,25 @@ pub async fn file_watcher_start(
                 for event in events {
                     let path = event.path;
                     let is_dir = path.is_dir();
-                    
+
                     // Simple skip for .git or hidden dirs if ignore doesn't catch them
                     if path.components().any(|c| c.as_os_str() == ".git") {
                         continue;
                     }
-                    
+
                     // Strip the root path to pass a relative path to gitignore
                     if let Ok(rel_path) = path.strip_prefix(&root_path_clone) {
-                        if !gitignore.matched_path_or_any_parents(rel_path, is_dir).is_ignore() {
+                        if !gitignore
+                            .matched_path_or_any_parents(rel_path, is_dir)
+                            .is_ignore()
+                        {
                             valid_changes = true;
                             break;
                         }
-                    } else if !gitignore.matched_path_or_any_parents(&path, is_dir).is_ignore() {
+                    } else if !gitignore
+                        .matched_path_or_any_parents(&path, is_dir)
+                        .is_ignore()
+                    {
                         valid_changes = true;
                         break;
                     }
@@ -76,7 +84,10 @@ pub async fn file_watcher_start(
 
     match debouncer_res {
         Ok(mut debouncer) => {
-            if let Err(e) = debouncer.watcher().watch(&root_path, RecursiveMode::Recursive) {
+            if let Err(e) = debouncer
+                .watcher()
+                .watch(&root_path, RecursiveMode::Recursive)
+            {
                 tracing::error!("Failed to watch directory {}: {}", path, e);
                 return Err(e.to_string());
             }
