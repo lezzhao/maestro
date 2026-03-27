@@ -1,17 +1,15 @@
 use super::types::*;
 use super::util::{completion_matched, with_model_args};
-use crate::core::events::{ChannelStringStream, StringStream};
 use crate::config::AppConfig;
 use crate::core::error::CoreError;
+use crate::core::events::{ChannelStringStream, StringStream};
+use crate::core::execution::{Execution, ExecutionMode, ExecutionStatus};
 use crate::headless::HeadlessProcessState;
 use crate::plugin_engine::maestro_engine::{
     ApiChatRequest, CliChatRequest, DefaultMaestroEngine, MaestroEngine,
 };
 use crate::pty::PtySessionInfo;
-use crate::core::execution::{Execution, ExecutionMode, ExecutionStatus};
-use crate::run_persistence::{
-    append_run_record, current_time_ms,
-};
+use crate::run_persistence::{append_run_record, current_time_ms};
 use crate::workspace_io::WorkspaceIo;
 
 use std::path::PathBuf;
@@ -25,17 +23,17 @@ use tauri::{
 use tokio_util::sync::CancellationToken;
 
 async fn last_conversation_path(app: &AppHandle) -> Result<PathBuf, CoreError> {
-    let mut dir: PathBuf = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| CoreError::Io { message: format!("resolve app config dir failed: {e}") })?;
+    let mut dir: PathBuf = app.path().app_config_dir().map_err(|e| CoreError::Io {
+        message: format!("resolve app config dir failed: {e}"),
+    })?;
     tokio::fs::create_dir_all(&dir)
         .await
-        .map_err(|e| CoreError::Io { message: format!("create app config dir failed: {e}") })?;
+        .map_err(|e| CoreError::Io {
+            message: format!("create app config dir failed: {e}"),
+        })?;
     dir.push("last-conversation.json");
     Ok(dir)
 }
-
 
 fn engine_supports_continue(engine_id: &str) -> bool {
     matches!(engine_id, "opencode" | "claude" | "gemini" | "codex")
@@ -43,7 +41,13 @@ fn engine_supports_continue(engine_id: &str) -> bool {
 
 fn builtin_headless_defaults(engine_id: &str) -> Option<Vec<String>> {
     match engine_id {
-        "cursor" => Some(vec!["agent".to_string(), "--print".to_string(), "--output-format".to_string(), "stream-json".to_string(), "--stream-partial-output".to_string()]),
+        "cursor" => Some(vec![
+            "agent".to_string(),
+            "--print".to_string(),
+            "--output-format".to_string(),
+            "stream-json".to_string(),
+            "--stream-partial-output".to_string(),
+        ]),
         "claude" => Some(vec!["-p".to_string()]),
         "gemini" => Some(vec!["-p".to_string()]),
         "opencode" => Some(vec!["run".to_string()]),
@@ -52,16 +56,21 @@ fn builtin_headless_defaults(engine_id: &str) -> Option<Vec<String>> {
     }
 }
 
+use crate::agent_state::{build_choice_meta, ChoiceAction, ChoiceOption, ChoicePayload};
+
 pub async fn chat_save_last_conversation_core(
     app: AppHandle,
     payload: serde_json::Value,
 ) -> Result<(), CoreError> {
     let path = last_conversation_path(&app).await?;
-    let text = serde_json::to_string_pretty(&payload)
-        .map_err(|e| CoreError::Serialization { message: format!("serialize last conversation failed: {e}") })?;
+    let text = serde_json::to_string_pretty(&payload).map_err(|e| CoreError::Serialization {
+        message: format!("serialize last conversation failed: {e}"),
+    })?;
     tokio::fs::write(&path, text)
         .await
-        .map_err(|e| CoreError::Io { message: format!("write last conversation failed: {e}") })?;
+        .map_err(|e| CoreError::Io {
+            message: format!("write last conversation failed: {e}"),
+        })?;
     // Emit agent state update so frontend can sync (event-driven architecture)
     if let (Some(task_id), Some(messages)) = (
         payload.get("task_id").and_then(|v| v.as_str()),
@@ -73,18 +82,49 @@ pub async fn chat_save_last_conversation_core(
                 let id = m.get("id")?.as_str()?.to_string();
                 let role = m.get("role")?.as_str().unwrap_or("user").to_string();
                 let content = m.get("content")?.as_str().unwrap_or("").to_string();
-                Some(crate::agent_state::PersistedMessagePayload { id, role, content })
+                let timestamp = m.get("timestamp").and_then(|value| value.as_i64());
+                let status = m
+                    .get("status")
+                    .and_then(|value| value.as_str())
+                    .map(|value| value.to_string());
+                let attachments = m
+                    .get("attachments")
+                    .and_then(|value| value.as_array())
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|item| {
+                                Some(crate::agent_state::PersistedAttachmentPayload {
+                                    name: item.get("name")?.as_str()?.to_string(),
+                                    path: item.get("path")?.as_str()?.to_string(),
+                                    snippet: item
+                                        .get("snippet")
+                                        .and_then(|value| value.as_str())
+                                        .map(|value| value.to_string()),
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .filter(|items| !items.is_empty());
+                let meta = m.get("meta").cloned().filter(|value| value.is_object());
+                Some(crate::agent_state::PersistedMessagePayload {
+                    id,
+                    role,
+                    content,
+                    timestamp,
+                    status,
+                    attachments,
+                    meta,
+                })
             })
             .collect();
-        if !msgs.is_empty() {
-            crate::agent_state::emit_state_update(
-                Some(&app),
-                crate::agent_state::AgentStateUpdate::MessagesUpdated {
-                    task_id: task_id.to_string(),
-                    messages: msgs,
-                },
-            );
-        }
+        crate::agent_state::emit_state_update(
+            Some(&app),
+            crate::agent_state::AgentStateUpdate::MessagesUpdated {
+                task_id: task_id.to_string(),
+                messages: msgs,
+            },
+        );
     }
     Ok(())
 }
@@ -95,7 +135,10 @@ pub async fn chat_save_last_conversation(
     payload: serde_json::Value,
     core_state: State<'_, crate::core::MaestroCore>,
 ) -> Result<(), CoreError> {
-    core_state.inner().chat_save_last_conversation(app, payload).await
+    core_state
+        .inner()
+        .chat_save_last_conversation(app, payload)
+        .await
 }
 
 pub async fn chat_load_last_conversation_core(
@@ -107,9 +150,13 @@ pub async fn chat_load_last_conversation_core(
     }
     let text = tokio::fs::read_to_string(path)
         .await
-        .map_err(|e| CoreError::Io { message: format!("read last conversation failed: {e}") })?;
-    let payload = serde_json::from_str::<serde_json::Value>(&text)
-        .map_err(|e| CoreError::Serialization { message: format!("parse last conversation failed: {e}") })?;
+        .map_err(|e| CoreError::Io {
+            message: format!("read last conversation failed: {e}"),
+        })?;
+    let payload =
+        serde_json::from_str::<serde_json::Value>(&text).map_err(|e| CoreError::Serialization {
+            message: format!("parse last conversation failed: {e}"),
+        })?;
     Ok(Some(payload))
 }
 
@@ -166,7 +213,10 @@ pub async fn chat_execute_api_core(
     let model = exec.model.clone().unwrap_or_default();
     let command = exec.command.clone();
     let engine_id = resolved.engine_id.clone();
-    let profile_id = resolved.profile_id.clone().unwrap_or_else(|| "default".to_string());
+    let profile_id = resolved
+        .profile_id
+        .clone()
+        .unwrap_or_else(|| "default".to_string());
     let context = super::context_manager::build_chat_context(app.as_ref(), &request)
         .await
         .map_err(|reason| CoreError::ExecutionFailed {
@@ -177,7 +227,7 @@ pub async fn chat_execute_api_core(
     let cancel_token = CancellationToken::new();
     let runtime_engine = DefaultMaestroEngine;
     let task_id = request.task_id.clone().unwrap_or_default();
-    
+
     let now_ms = current_time_ms().unwrap_or_default();
     let execution = Execution {
         id: execution_id.clone(),
@@ -269,25 +319,32 @@ pub async fn chat_execute_api_core(
                 format!("input_tokens≈{}", context.estimate.approx_input_tokens),
                 None,
             ),
-            Err(err) => headless_state_clone.fail_and_extract(
-                &exec_id_for_spawn,
-                err.clone(),
-                err.chars().take(300).collect::<String>(),
-            ),
+            Err(err) => {
+                let msg = err.to_string();
+                headless_state_clone.fail_and_extract(
+                    &exec_id_for_spawn,
+                    &msg,
+                    msg.chars().take(300).collect::<String>(),
+                )
+            }
         };
         if let (Some(io), Ok(exec)) = (io_opt.as_ref(), execution) {
             if let Err(e) = append_run_record(io, &exec) {
                 eprintln!("chat_execute_api: append_run_record failed: {e}");
             }
         }
-        // Emit run_finished for event-driven frontend sync
         let (status, err) = match &run_result {
             Ok(_) => ("done", None),
-            Err(e) => ("error", Some(e.clone())),
+            Err(e) => ("error", Some(e.to_string())),
         };
         crate::agent_state::emit_state_update(
             app_for_emit.as_ref(),
-            crate::agent_state::run_finished_payload(&task_id_for_emit, &run_id_for_emit, status, err),
+            crate::agent_state::run_finished_payload(
+                &task_id_for_emit,
+                &run_id_for_emit,
+                status,
+                err,
+            ),
         );
     });
 
@@ -300,13 +357,43 @@ pub async fn chat_execute_api_core(
 }
 
 #[command]
+pub fn chat_submit_choice(
+    app: AppHandle,
+    request: ChatSubmitChoiceRequest,
+) -> Result<(), CoreError> {
+    crate::agent_state::emit_state_update(
+        Some(&app),
+        crate::agent_state::resolve_choice_payload(
+            request.task_id.clone(),
+            request.message_id.clone(),
+            request.option_id.clone(),
+        ),
+    );
+    crate::agent_state::emit_state_update(
+        Some(&app),
+        crate::agent_state::append_system_message_payload(
+            request.task_id,
+            format!("已选择“{}”", request.option_label),
+            Some(serde_json::json!({
+                "eventType": "notice",
+                "eventStatus": "done",
+                "toolName": "choice",
+                "messageId": request.message_id,
+                "optionId": request.option_id,
+            })),
+        ),
+    );
+    Ok(())
+}
+
+#[command]
 pub fn chat_execute_api_stop(
     request: ChatExecuteStopRequest,
     core_state: State<'_, crate::core::MaestroCore>,
 ) -> Result<(), CoreError> {
-    core_state.inner().cancel_execution(crate::core::execution_app_service::CancelTarget::ExecutionId(
-        request.exec_id.clone(),
-    ))
+    core_state.inner().cancel_execution(
+        crate::core::execution_app_service::CancelTarget::ExecutionId(request.exec_id.clone()),
+    )
 }
 
 #[command]
@@ -348,7 +435,42 @@ pub async fn chat_execute_cli_core(
     let fallback_headless_args = builtin_headless_defaults(&resolved.engine_id);
     let supports_headless = exec.supports_headless || fallback_headless_args.is_some();
     if !supports_headless {
-        return Err(CoreError::Unsupported { feature: "headless mode".to_string() });
+        if let Some(app_handle) = app.as_ref() {
+            crate::agent_state::emit_state_update(
+                Some(app_handle),
+                crate::agent_state::append_system_message_payload(
+                    request.task_id.clone().unwrap_or_default(),
+                    "当前 CLI Provider 不支持无头执行，无法直接在聊天里运行。",
+                    Some(build_choice_meta(&ChoicePayload {
+                        title: "CLI 不支持当前执行模式".into(),
+                        description: Some(
+                            "你可以打开设置调整 Provider 配置，或者切换到支持 API 的模式继续。"
+                                .into(),
+                        ),
+                        status: "pending".into(),
+                        options: vec![
+                            ChoiceOption {
+                                id: "open-settings".into(),
+                                label: "打开设置".into(),
+                                description: Some("检查当前 Provider 的执行模式与参数。".into()),
+                                action: ChoiceAction::open_settings(),
+                            },
+                            ChoiceOption {
+                                id: "switch-api".into(),
+                                label: "切换到 API".into(),
+                                description: Some(
+                                    "如果当前 Provider 支持 API，可先改用 API 模式。".into(),
+                                ),
+                                action: ChoiceAction::switch_execution_mode("api"),
+                            },
+                        ],
+                    })),
+                ),
+            );
+        }
+        return Err(CoreError::Unsupported {
+            feature: "headless mode".to_string(),
+        });
     }
 
     let mut args = if !exec.headless_args.is_empty() {
@@ -358,7 +480,11 @@ pub async fn chat_execute_cli_core(
     } else {
         exec.args.clone()
     };
-    args = with_model_args(args, &resolved.engine_id, &exec.model.clone().unwrap_or_default());
+    args = with_model_args(
+        args,
+        &resolved.engine_id,
+        &exec.model.clone().unwrap_or_default(),
+    );
     if request.is_continuation && engine_supports_continue(&resolved.engine_id) {
         args.push("--continue".to_string());
     }
@@ -367,9 +493,38 @@ pub async fn chat_execute_cli_core(
     let command = exec.command.clone();
     let full_command_str = format!("{} {}", command, args.join(" "));
     let engine_id = resolved.engine_id.clone();
-    let profile_id = resolved.profile_id.clone().unwrap_or_else(|| "default".to_string());
-    if let Err(reason) = crate::plugin_engine::action_guard::ActionGuard::unwrap_default().check_command(&full_command_str) {
-        return Err(CoreError::PermissionDenied { reason: format!("Blocked by ActionGuard: {reason}") });
+    let profile_id = resolved
+        .profile_id
+        .clone()
+        .unwrap_or_else(|| "default".to_string());
+    if let Err(reason) = crate::plugin_engine::action_guard::ActionGuard::unwrap_default()
+        .check_command(&full_command_str)
+    {
+        if let Some(app_handle) = app.as_ref() {
+            crate::agent_state::emit_state_update(
+                Some(app_handle),
+                crate::agent_state::append_system_message_payload(
+                    request.task_id.clone().unwrap_or_default(),
+                    "当前命令被安全策略拦截，已阻止执行。",
+                    Some(build_choice_meta(&ChoicePayload {
+                        title: "命令被安全策略拦截".into(),
+                        description: Some("通常是命令参数触发了 ActionGuard。你可以先打开设置检查当前 Provider 配置。".into()),
+                        status: "pending".into(),
+                        options: vec![
+                            ChoiceOption {
+                                id: "open-settings".into(),
+                                label: "打开设置".into(),
+                                description: Some("检查命令、参数和执行模式配置。".into()),
+                                action: ChoiceAction::open_settings(),
+                            },
+                        ],
+                    })),
+                ),
+            );
+        }
+        return Err(CoreError::PermissionDenied {
+            reason: format!("Blocked by ActionGuard: {reason}"),
+        });
     }
     let task_id = request.task_id.clone().unwrap_or_default();
     let cancel_token = CancellationToken::new();
@@ -475,7 +630,47 @@ pub async fn chat_execute_cli_core(
                 let _ = on_data_clone.send_string(format!("\u{0}EXIT:{code}"));
             }
             Err(err) => {
-                let _ = on_data_clone.send_string(format!("\u{0}ERROR:{err}"));
+                let err_msg = err.to_string();
+                if err_msg.contains("Workspace Trust Required") {
+                    crate::agent_state::emit_state_update(
+                        app_for_emit.as_ref(),
+                        crate::agent_state::append_system_message_payload(
+                            task_id_for_emit.clone(),
+                            "当前 CLI 环境尚未建立目录信任，继续执行前需要先完成授权。",
+                            Some(build_choice_meta(&ChoicePayload {
+                                title: "CLI 目录信任未完成".into(),
+                                description: Some(
+                                    "你可以先查看官方修复说明，或切换到设置页检查当前引擎配置。"
+                                        .into(),
+                                ),
+                                status: "pending".into(),
+                                options: vec![
+                                    ChoiceOption {
+                                        id: "open-trust-docs".into(),
+                                        label: "查看修复文档".into(),
+                                        description: Some(
+                                            "打开官方说明，按文档完成目录信任。".into(),
+                                        ),
+                                        action: ChoiceAction {
+                                            kind: "open_external_url".into(),
+                                            mode: None,
+                                            url: Some("https://docs.cursor.com/agent/trust".into()),
+                                        },
+                                    },
+                                    ChoiceOption {
+                                        id: "open-settings".into(),
+                                        label: "打开设置".into(),
+                                        description: Some(
+                                            "进入设置页检查当前 Provider 和 CLI 配置。".into(),
+                                        ),
+                                        action: ChoiceAction::open_settings(),
+                                    },
+                                ],
+                            })),
+                        ),
+                    );
+                }
+                let _ = on_data_clone.send_string(format!("\u{0}ERROR:{err_msg}"));
             }
         }
 
@@ -496,25 +691,32 @@ pub async fn chat_execute_cli_core(
                     )
                 }
             }
-            Err(err) => headless_state_clone.fail_and_extract(
-                &exec_id_for_spawn,
-                err.to_string(),
-                err.to_string().chars().take(300).collect::<String>(),
-            ),
+            Err(err) => {
+                let msg = err.to_string();
+                headless_state_clone.fail_and_extract(
+                    &exec_id_for_spawn,
+                    &msg,
+                    msg.chars().take(300).collect::<String>(),
+                )
+            }
         };
         if let (Some(io), Ok(exec)) = (io_opt.as_ref(), execution) {
             if let Err(e) = append_run_record(io, &exec) {
                 eprintln!("chat_execute_cli: append_run_record failed: {e}");
             }
         }
-        // Emit run_finished for event-driven frontend sync
         let (status, err) = match &run_result {
             Ok(_) => ("done", None),
-            Err(e) => ("error", Some(e.clone())),
+            Err(e) => ("error", Some(e.to_string())),
         };
         crate::agent_state::emit_state_update(
             app_for_emit.as_ref(),
-            crate::agent_state::run_finished_payload(&task_id_for_emit, &run_id_for_emit, status, err),
+            crate::agent_state::run_finished_payload(
+                &task_id_for_emit,
+                &run_id_for_emit,
+                status,
+                err,
+            ),
         );
     });
 
@@ -532,9 +734,9 @@ pub fn chat_execute_cli_stop(
     request: ChatExecuteStopRequest,
     core_state: State<'_, crate::core::MaestroCore>,
 ) -> Result<(), CoreError> {
-    core_state.inner().cancel_execution(crate::core::execution_app_service::CancelTarget::ExecutionId(
-        request.exec_id.clone(),
-    ))
+    core_state.inner().cancel_execution(
+        crate::core::execution_app_service::CancelTarget::ExecutionId(request.exec_id.clone()),
+    )
 }
 
 pub fn chat_spawn_core(
@@ -577,32 +779,38 @@ pub fn chat_spawn_core(
 
     let session_id = uuid::Uuid::new_v4().to_string();
 
-    let spawn: PtySessionInfo = pty_state.spawn_session(
-        crate::pty::PtySpawnOptions {
-            session_id,
-            task_id: request.task_id.clone(),
-            file: exec.command.clone(),
-            args: with_model_args(exec.args.clone(), &resolved.engine_id, &exec.model.clone().unwrap_or_default()),
-            cwd: if cfg.project.path.trim().is_empty() {
-                None
-            } else {
-                Some(cfg.project.path.clone())
+    let spawn: PtySessionInfo = pty_state
+        .spawn_session(
+            crate::pty::PtySpawnOptions {
+                session_id,
+                task_id: request.task_id.clone(),
+                file: exec.command.clone(),
+                args: with_model_args(
+                    exec.args.clone(),
+                    &resolved.engine_id,
+                    &exec.model.clone().unwrap_or_default(),
+                ),
+                cwd: if cfg.project.path.trim().is_empty() {
+                    None
+                } else {
+                    Some(cfg.project.path.clone())
+                },
+                env: exec.env.clone().into_iter().collect(),
+                cols: request.cols.unwrap_or(120).clamp(60, 240),
+                rows: request.rows.unwrap_or(36).clamp(20, 80),
             },
-            env: exec.env.clone().into_iter().collect(),
-            cols: request.cols.unwrap_or(120).clamp(60, 240),
-            rows: request.rows.unwrap_or(36).clamp(20, 80),
-        },
-        bridge,
-    ).map_err(|e| CoreError::ExecutionFailed { id: "chat_spawn".to_string(), reason: e })?;
+            bridge,
+        )
+        .map_err(|e| CoreError::ExecutionFailed {
+            id: "chat_spawn".to_string(),
+            reason: e,
+        })?;
 
     if let Some(ready_signal) = exec.ready_signal.as_deref() {
         if !ready_signal.trim().is_empty() {
             let deadline = Instant::now() + Duration::from_millis(10_000);
             while Instant::now() < deadline {
-                let snap = output_buf
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .clone();
+                let snap = output_buf.lock().unwrap_or_else(|e| e.into_inner()).clone();
                 if completion_matched(Some(ready_signal), &snap) {
                     break;
                 }
@@ -620,8 +828,10 @@ pub fn chat_spawn_core(
     })
 }
 
+/// Tauri 同步 command — 内部含 ready_signal 阻塞等待，
+/// 同步 command 在 Tauri 的 blocking 线程池执行，不会阻塞 Tokio worker。
 #[command]
-pub async fn chat_spawn(
+pub fn chat_spawn(
     app: AppHandle,
     request: ChatSpawnRequest,
     core_state: State<'_, crate::core::MaestroCore>,

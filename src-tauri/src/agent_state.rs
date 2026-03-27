@@ -32,7 +32,19 @@ pub enum AgentStateUpdate {
         task_id: String,
         messages: Vec<PersistedMessagePayload>,
     },
+    MessageAppended {
+        task_id: String,
+        message: PersistedMessagePayload,
+    },
+    ChoiceResolved {
+        task_id: String,
+        message_id: String,
+        option_id: String,
+    },
     TaskCreated {
+        task: TaskRecordPayload,
+    },
+    TaskUpdated {
         task: TaskRecordPayload,
     },
     TaskStateChanged {
@@ -40,7 +52,9 @@ pub enum AgentStateUpdate {
         from_state: String,
         to_state: String,
     },
-    TaskDeleted { task_id: String },
+    TaskDeleted {
+        task_id: String,
+    },
     TaskRuntimeBindingChanged {
         task_id: String,
         binding: crate::task_state::TaskRuntimeBinding,
@@ -119,18 +133,126 @@ pub struct TaskRunPayload {
     pub error: Option<String>,
 }
 
+/// Choice 交互的 action 类型（前端根据 kind 分发执行）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChoiceAction {
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+/// Choice 交互的单个选项
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChoiceOption {
+    pub id: String,
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub action: ChoiceAction,
+}
+
+/// 结构化选择消息的 payload
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChoicePayload {
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub status: String,
+    pub options: Vec<ChoiceOption>,
+}
+
+impl ChoiceAction {
+    pub fn open_settings() -> Self {
+        Self {
+            kind: "open_settings".into(),
+            mode: None,
+            url: None,
+        }
+    }
+
+    pub fn switch_execution_mode(mode: &str) -> Self {
+        Self {
+            kind: "switch_execution_mode".into(),
+            mode: Some(mode.into()),
+            url: None,
+        }
+    }
+}
+
+/// 从 ChoicePayload 构建嵌入 message.meta 的 JSON 对象
+pub fn build_choice_meta(payload: &ChoicePayload) -> serde_json::Value {
+    serde_json::json!({ "choice": payload })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PersistedAttachmentPayload {
+    pub name: String,
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snippet: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PersistedMessagePayload {
     pub id: String,
     pub role: String,
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attachments: Option<Vec<PersistedAttachmentPayload>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meta: Option<serde_json::Value>,
+}
+
+pub fn append_system_message_payload(
+    task_id: impl Into<String>,
+    content: impl Into<String>,
+    meta: Option<serde_json::Value>,
+) -> AgentStateUpdate {
+    AgentStateUpdate::MessageAppended {
+        task_id: task_id.into(),
+        message: PersistedMessagePayload {
+            id: uuid::Uuid::new_v4().to_string(),
+            role: "system".to_string(),
+            content: content.into(),
+            timestamp: None,
+            status: None,
+            attachments: None,
+            meta,
+        },
+    }
+}
+
+pub fn resolve_choice_payload(
+    task_id: impl Into<String>,
+    message_id: impl Into<String>,
+    option_id: impl Into<String>,
+) -> AgentStateUpdate {
+    AgentStateUpdate::ChoiceResolved {
+        task_id: task_id.into(),
+        message_id: message_id.into(),
+        option_id: option_id.into(),
+    }
 }
 
 /// Emit agent state update to frontend. No-op if app is None (e.g. daemon mode).
 pub fn emit_state_update(app: Option<&AppHandle>, payload: AgentStateUpdate) {
     if let Some(handle) = app {
-        let value = serde_json::to_value(&payload).unwrap_or_default();
-        let _ = handle.emit(AGENT_STATE_UPDATE_EVENT, value);
+        match serde_json::to_value(&payload) {
+            Ok(value) => {
+                if let Err(e) = handle.emit(AGENT_STATE_UPDATE_EVENT, value) {
+                    tracing::error!("agent state event emit failed: {e}");
+                }
+            }
+            Err(e) => {
+                tracing::error!("agent state event serialize failed, skipping emit: {e}");
+            }
+        }
     }
 }
 

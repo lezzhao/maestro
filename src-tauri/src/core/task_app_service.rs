@@ -1,8 +1,8 @@
 use super::error;
 use super::MaestroCore;
-use tauri::AppHandle;
 use crate::agent_state::{emit_state_update, AgentStateUpdate, TaskRecordPayload};
 use crate::task_runtime_service;
+use tauri::AppHandle;
 
 impl MaestroCore {
     /// Use-Case: Create task and broadcast state event.
@@ -25,12 +25,12 @@ impl MaestroCore {
             request.workspace_boundary.clone()
         };
 
-        let profile_id = request.profile_id.ok_or_else(|| {
-            error::CoreError::ValidationError {
+        let profile_id = request
+            .profile_id
+            .ok_or_else(|| error::CoreError::ValidationError {
                 field: "profile_id".to_string(),
                 message: "profile_id is required for task_create".to_string(),
-            }
-        })?;
+            })?;
 
         let created = crate::task_state::create_task(
             &db_path,
@@ -84,11 +84,12 @@ impl MaestroCore {
         app: &AppHandle,
         request: crate::task_state::TaskTransitionRequest,
     ) -> Result<String, error::CoreError> {
-        let event = crate::task_state::TaskEvent::from_str(&request.event_type, request.event_reason)
-            .ok_or_else(|| error::CoreError::ValidationError {
-                field: "event_type".to_string(),
-                message: format!("invalid event: {}", request.event_type),
-            })?;
+        let event =
+            crate::task_state::TaskEvent::from_str(&request.event_type, request.event_reason)
+                .ok_or_else(|| error::CoreError::ValidationError {
+                    field: "event_type".to_string(),
+                    message: format!("invalid event: {}", request.event_type),
+                })?;
         let db_path = crate::task_state::bmad_db_path(app)?;
         let io = self.workspace_io()?;
         let to_state = crate::task_state::transition(
@@ -116,7 +117,10 @@ impl MaestroCore {
         crate::task_state::delete_task(&db_path, &task_id)?;
         self.deleted_task_ids
             .lock()
-            .expect("deleted_task_ids lock poisoned")
+            .unwrap_or_else(|e| {
+                tracing::warn!("deleted_task_ids lock was poisoned, recovering");
+                e.into_inner()
+            })
             .insert(task_id.clone());
         if let Ok(io) = self.workspace_io() {
             let _ = crate::run_persistence::remove_records_by_task_id(&io, &task_id);
@@ -152,15 +156,10 @@ impl MaestroCore {
     ) -> Result<(), error::CoreError> {
         let db_path = crate::task_state::bmad_db_path(app)?;
         crate::task_state::update_task(&db_path, &request)?;
-        
-        // Re-fetch and emit update
+
+        // 重新拉取最新任务快照，并发出明确的更新事件
         if let Some(task) = crate::task_repository::get_task_record(&db_path, &request.id)? {
-            emit_state_update(
-                Some(app),
-                AgentStateUpdate::TaskCreated { // Using TaskCreated as a "upsert" replacement or update
-                    task,
-                },
-            );
+            emit_state_update(Some(app), AgentStateUpdate::TaskUpdated { task });
         }
         Ok(())
     }
@@ -173,12 +172,7 @@ impl MaestroCore {
         request: crate::task_state::TaskSwitchRuntimeBindingRequest,
     ) -> Result<(), error::CoreError> {
         let config = self.config.get();
-        super::task_switch_transaction::execute(
-            app,
-            request,
-            &config,
-            &self.pty_state,
-        )
+        super::task_switch_transaction::execute(app, request, &config, &self.pty_state)
     }
 
     /// Use-Case: Update task's engine and broadcast state event.
@@ -195,7 +189,8 @@ impl MaestroCore {
             &request.engine_id,
             request.profile_id,
             &config,
-        ).map_err(error::CoreError::from)?;
+        )
+        .map_err(error::CoreError::from)?;
         emit_state_update(
             Some(app),
             AgentStateUpdate::TaskRuntimeBindingChanged {
