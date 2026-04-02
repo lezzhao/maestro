@@ -1,12 +1,13 @@
 import { memo, useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { RefreshCcw } from "lucide-react";
+import { ArrowDown } from "lucide-react";
 import { Virtuoso, VirtuosoHandle } from "react-virtuoso";
 import { ChatMessageItem } from "../ChatMessageItem";
 import { useTaskChatState } from "../../hooks/use-task-chat-state";
 import { recordPerf } from "../../lib/utils/perf";
 import type { TranslationFn } from "../../i18n";
 import type { ChatChoiceOption, ChatMessage } from "../../types";
+import { NewChatLanding } from "./NewChatLanding";
 
 export interface ChatLabels {
   inputPlaceholder: string;
@@ -22,11 +23,12 @@ export interface ChatLabels {
 }
 
 export interface MessageListProps {
-  taskId: string;
+  taskId: string | null;
   chatLabels: ChatLabels;
   handleRetry: (id: string) => void;
   handleCopy: (content: string) => void;
   handleChoiceSelect?: (message: ChatMessage, option: ChatChoiceOption) => void | Promise<void>;
+  onActionClick?: (text: string) => void;
   t: TranslationFn;
 }
 
@@ -36,12 +38,14 @@ export const MessageList = memo(function MessageList({
   handleRetry,
   handleCopy,
   handleChoiceSelect,
+  onActionClick,
   t,
 }: MessageListProps) {
   const { messages, isRunning, latestRun, latestRunEvents, latestTranscript } = useTaskChatState(taskId);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const autoScrollEnabledRef = useRef(true);
   const [autoScrollAllowed, setAutoScrollAllowed] = useState(true);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
   const systemEvents = latestRunEvents.slice(-6);
 
@@ -59,6 +63,28 @@ export const MessageList = memo(function MessageList({
   const scrollToBottom = useCallback((behavior: "auto" | "smooth" = "smooth") => {
     virtuosoRef.current?.scrollToIndex({ index: "LAST", align: "end", behavior });
   }, []);
+
+  useEffect(() => {
+    const handleScrollEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<{ id: string }>;
+      const messageId = customEvent.detail.id;
+      const index = messages.findIndex(m => m.id === messageId);
+      if (index !== -1) {
+        autoScrollEnabledRef.current = false;
+        setAutoScrollAllowed(false);
+        virtuosoRef.current?.scrollToIndex({
+          index,
+          align: "center",
+          behavior: "smooth"
+        });
+        setHighlightedId(messageId);
+        setTimeout(() => setHighlightedId(null), 3000);
+      }
+    };
+
+    window.addEventListener("maestro:scroll-to-message", handleScrollEvent);
+    return () => window.removeEventListener("maestro:scroll-to-message", handleScrollEvent);
+  }, [messages]);
 
   const handleScroll = (isAtBottom: boolean) => {
     if (autoScrollEnabledRef.current !== isAtBottom) {
@@ -98,12 +124,7 @@ export const MessageList = memo(function MessageList({
   return (
     <div className="flex-1 min-h-0 relative">
       {messages.length === 0 ? (
-        <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center opacity-60">
-          <h3 className="text-sm font-semibold text-text-main mb-1">{t("empty_chat_title")}</h3>
-          <p className="text-xs text-text-muted max-w-[240px] leading-relaxed">
-            {t("empty_chat_desc")}
-          </p>
-        </div>
+        <NewChatLanding onActionClick={(text) => onActionClick?.(text)} />
       ) : (
         <Virtuoso
           ref={virtuosoRef}
@@ -111,19 +132,21 @@ export const MessageList = memo(function MessageList({
           data={messages}
           atBottomStateChange={handleScroll}
           initialTopMostItemIndex={messages.length - 1}
+          increaseViewportBy={300}
           itemContent={(index, message) => (
             <div className={index === 0 ? "pt-2 pb-1" : "py-1"}>
                 <ChatMessageItem
-                message={message}
-                minimalMode={true}
-                labels={chatLabels}
-                isRunning={isRunning}
-                onRetry={handleRetry}
-                onCopy={handleCopy}
-                onChoiceSelect={handleChoiceSelect}
-                liveTranscript={
-                    index === messages.length - 1 ? liveTranscriptText : undefined
-                }
+                  message={message}
+                  minimalMode={true}
+                  labels={chatLabels}
+                  isRunning={isRunning}
+                  onRetry={handleRetry}
+                  onCopy={handleCopy}
+                  onChoiceSelect={handleChoiceSelect}
+                  isHighlighted={highlightedId === message.id}
+                  liveTranscript={
+                      index === messages.length - 1 ? liveTranscriptText : undefined
+                  }
                 />
             </div>
           )}
@@ -132,22 +155,19 @@ export const MessageList = memo(function MessageList({
 
       <AnimatePresence>
         {!autoScrollAllowed && messages.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 10 }}
-            className="absolute bottom-4 right-4 z-10"
+          <motion.button
+            initial={{ opacity: 0, y: 10, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.9 }}
+            onClick={() => {
+              autoScrollEnabledRef.current = true;
+              scrollToBottom("smooth");
+            }}
+            className="absolute bottom-8 right-8 p-3 rounded-full bg-primary text-white shadow-glow hover:scale-110 active:scale-95 transition-all z-10 group border border-primary/20"
+            title={t("scroll_to_bottom")}
           >
-            <button
-              onClick={() => { autoScrollEnabledRef.current = true; scrollToBottom(); }}
-              className="flex items-center gap-2 pl-3 pr-4 py-1.5 rounded-lg bg-bg-surface border border-border-muted shadow-sm hover:border-primary-500 transition-colors"
-            >
-              <RefreshCcw size={12} className="text-primary-500" />
-              <span className="text-[10px] font-semibold text-text-muted uppercase">
-                {t("scroll_to_bottom")}
-              </span>
-            </button>
-          </motion.div>
+            <ArrowDown size={18} className="group-hover:translate-y-0.5 transition-transform" />
+          </motion.button>
         )}
       </AnimatePresence>
     </div>

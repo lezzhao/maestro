@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Plus, Settings2 } from "lucide-react";
 import { useAppUiState, useWorkspaceStoreState } from "../../hooks/use-app-store-selectors";
-import { deleteWorkspaceCommand } from "../../hooks/workspace-commands";
+import { deleteWorkspaceCommand } from "../../hooks/commands/workspace-commands";
 import { cn } from "../../lib/utils";
 import { useTranslation } from "../../i18n";
 import type { Workspace } from "../../types";

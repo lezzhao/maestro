@@ -10,6 +10,7 @@ import {
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import type { EngineConfig } from "../../types";
+import { useTranslation } from "../../i18n";
 
 interface ProviderCreateDialogProps {
   onClose: () => void;
@@ -20,6 +21,7 @@ export function ProviderCreateDialog({
   onClose,
   onUpsertEngine
 }: ProviderCreateDialogProps) {
+  const { t } = useTranslation();
   const [step, setStep] = useState<"type" | "details">("type");
   const [type, setType] = useState<"cli" | "api">("cli");
   const [name, setName] = useState("");
@@ -40,7 +42,7 @@ export function ProviderCreateDialog({
         const { invoke } = await import("@tauri-apps/api/core");
         const exists = await invoke<boolean>("engine_check_command", { command });
         if (!exists) {
-          setError(`未在本地找到命令 '${command}'，请确保已安装到 PATH。`);
+          setError(t("err_command_not_found", { command }));
           setIsSaving(false);
           return;
         }
@@ -49,7 +51,7 @@ export function ProviderCreateDialog({
       }
     } else {
       if (!apiKey.trim()) {
-        setError("API Key 不能为空，请提供有效的 Key 或环境变量。");
+        setError(t("err_api_key_empty"));
         setIsSaving(false);
         return;
       }
@@ -81,8 +83,8 @@ export function ProviderCreateDialog({
     try {
       await onUpsertEngine(id, engine);
       onClose();
-    } catch (e: any) {
-      setError(e?.message || String(e));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setIsSaving(false);
     }
@@ -96,7 +98,7 @@ export function ProviderCreateDialog({
         <div className="px-8 pt-8 pb-4 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold tracking-tight text-text-main">
-              {step === "type" ? "选择提供商类型" : "配置环境"}
+              {step === "type" ? t("select_provider_type") : t("config_environment")}
             </h2>
             <p className="text-[11px] font-bold text-text-muted/50 uppercase tracking-widest mt-1">
               New Language Provider / {type.toUpperCase()} Mode
@@ -124,7 +126,7 @@ export function ProviderCreateDialog({
                     <ChevronRight size={14} className="text-text-muted opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all" />
                   </div>
                   <p className="text-[11px] text-text-muted/60 mt-1 leading-relaxed">
-                    连接本地已安装的开发工具。通过命令行进行原生交互，支持如 Claude Code, Codex 等。
+                    {t("cli_desc")}
                   </p>
                 </div>
               </button>
@@ -142,7 +144,7 @@ export function ProviderCreateDialog({
                     <ChevronRight size={14} className="text-text-muted opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all" />
                   </div>
                   <p className="text-[11px] text-text-muted/60 mt-1 leading-relaxed">
-                    通过 API Key 直接与云端大模型对话。支持 OpenAI, Anthropic 等厂商。
+                    {t("api_desc")}
                   </p>
                 </div>
               </button>
@@ -152,7 +154,7 @@ export function ProviderCreateDialog({
               <div className="space-y-4">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase text-text-muted/40 tracking-widest pl-1 flex items-center gap-2">
-                    <Cpu size={10} /> 提供商名称 (Label)
+                    <Cpu size={10} /> {t("provider_label")}
                   </label>
                   <Input 
                     autoFocus
@@ -166,7 +168,7 @@ export function ProviderCreateDialog({
                 {type === "cli" ? (
                   <div className="space-y-2">
                     <label className="text-[10px] font-black uppercase text-text-muted/40 tracking-widest pl-1 flex items-center gap-2">
-                      <Monitor size={10} /> 基础执行命令 (Base Command)
+                      <Monitor size={10} /> {t("base_command")}
                     </label>
                     <Input 
                       placeholder="e.g. claude"
@@ -180,12 +182,12 @@ export function ProviderCreateDialog({
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase text-text-muted/40 tracking-widest pl-1 flex items-center gap-2">
-                          <Cloud size={10} /> 提供商 (Provider)
+                          <Cloud size={10} /> {t("provider_select_label")}
                         </label>
                         <select 
                           value={apiProvider}
                           onChange={e => {
-                            const p = e.target.value as any;
+                            const p = e.target.value as "anthropic" | "openai-compatible";
                             setApiProvider(p);
                             setApiBaseUrl(p === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com/v1");
                           }}
@@ -197,7 +199,7 @@ export function ProviderCreateDialog({
                       </div>
                       <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase text-text-muted/40 tracking-widest pl-1 flex items-center gap-2">
-                          <Cpu size={10} /> 模型 (Model)
+                          <Cpu size={10} /> {t("model_label")}
                         </label>
                         <Input 
                           placeholder="claude-3-5-sonnet..."
@@ -245,7 +247,7 @@ export function ProviderCreateDialog({
               <div className="p-4 rounded-sm bg-primary/5 border border-primary/10 flex items-start gap-3">
                 <div className="text-primary mt-0.5"><Cpu size={14} /></div>
                 <p className="text-[10px] leading-relaxed text-primary/80 font-medium italic">
-                  创建后您仍可以在提供商详情页中补充更复杂的参数（Arguments）或环境变量（Environment Variables）。
+                  {t("provider_create_hint")}
                 </p>
               </div>
             </div>
@@ -260,7 +262,7 @@ export function ProviderCreateDialog({
               className="px-6 rounded-sm text-text-muted/60 text-[11px] font-bold uppercase transition-all"
               onClick={() => { setStep("type"); setError(null); }}
             >
-              上一步 / Back
+              {t("prev_step")}
             </Button>
           )}
           
@@ -272,7 +274,7 @@ export function ProviderCreateDialog({
               onClick={handleCreate}
               loading={isSaving}
             >
-              创建并完成 / Finalize
+              {t("finalize")}
             </Button>
           ) : (
             <Button 
@@ -280,7 +282,7 @@ export function ProviderCreateDialog({
               className="px-6 rounded-sm text-text-muted/40 text-[11px] font-bold uppercase"
               onClick={onClose}
             >
-              取消 / Cancel
+              {t("cancel")}
             </Button>
           )}
         </div>

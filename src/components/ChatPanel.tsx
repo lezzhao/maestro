@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { MessageSquare, RefreshCcw } from "lucide-react";
+import { RefreshCcw } from "lucide-react";
 import { useAppUiState } from "../hooks/use-app-store-selectors";
 import { useTranslation } from "../i18n";
 import { cn } from "../lib/utils";
@@ -38,6 +38,7 @@ export function ChatPanel({
     handleCopy,
     pendingAttachments,
     removePendingAttachment,
+    addPendingAttachments,
   } = useChatSession({
     activeTaskId,
     activeEngineId,
@@ -77,22 +78,6 @@ export function ChatPanel({
   const sendBlockedReason = isActiveEngineUnavailable
     ? t("event_engine_unavailable", { engine: activeEngine?.display_name || activeEngineId })
     : "";
-
-  if (!activeTaskId) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center p-8 text-center bg-bg-surface">
-        <div className="w-16 h-16 rounded-2xl bg-bg-elevated flex items-center justify-center text-text-muted/20 mb-6">
-           <MessageSquare size={32} />
-        </div>
-        <h3 className="text-xl font-bold text-text-main mb-2">
-          {t("no_active_task") || "No Active Task"}
-        </h3>
-        <p className="text-xs text-text-muted max-w-xs leading-relaxed font-medium opacity-60">
-          {t("create_task_prompt") || "Select a task from the sidebar or create a new one to start working."}
-        </p>
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col h-full bg-transparent animate-in fade-in duration-200">
@@ -149,6 +134,11 @@ export function ChatPanel({
         handleRetry={handleRetry}
         handleCopy={handleCopy}
         handleChoiceSelect={handleChoiceSelect}
+        onActionClick={(text) => {
+          setInput(text);
+          // Small delay to ensure state update if needed, though handleSend uses current input
+          setTimeout(() => void handleSend(), 0);
+        }}
         t={t}
       />
 
@@ -158,6 +148,7 @@ export function ChatPanel({
         isRunning={isRunning}
         pendingAttachments={pendingAttachments}
         removePendingAttachment={removePendingAttachment}
+        addPendingAttachments={addPendingAttachments}
         handleSend={handleSend}
         handleStop={handleStop}
         placeholder={chatLabels.inputPlaceholder}

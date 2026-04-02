@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { FileCode2, ChevronLeft, ChevronRight } from "lucide-react";
+import { FileCode2, ChevronLeft, ChevronRight, Pin, PinOff } from "lucide-react";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { cn } from "../lib/utils";
 import { useTranslation } from "../i18n";
+import { useAppStore } from "../stores/appStore";
 import type { FileChange } from "../types";
 
 interface Props {
@@ -15,6 +16,8 @@ interface Props {
 export function GitChangesPanel({ gitChanges, activeFile, onFileSelect }: Props) {
   const { t } = useTranslation();
   const [page, setPage] = useState(1);
+  const pinnedFiles = useAppStore(state => state.pinnedFiles);
+  const togglePinFile = useAppStore(state => state.togglePinFile);
   const pageSize = 15;
 
   const totalPages = Math.ceil(gitChanges.length / pageSize) || 1;
@@ -42,20 +45,36 @@ export function GitChangesPanel({ gitChanges, activeFile, onFileSelect }: Props)
           </div>
         ) : (
           pagedChanges.map((change) => (
-            <button
+            <div
               key={`${change.status}-${change.path}`}
               className={cn(
-                "w-full text-left px-2 py-1.5 rounded-sm border border-transparent transition-all group",
+                "w-full flex items-center justify-between gap-3 px-2 py-1.5 rounded-sm border border-transparent transition-all group",
                 activeFile === change.path
                   ? "bg-primary-500/10 border-primary-500/30 text-primary-500"
                   : "hover:bg-bg-subtle/50 text-text-muted hover:text-text-main"
               )}
-              onClick={() => onFileSelect(change.path)}
             >
-              <div className="flex items-center justify-between gap-3">
-                <span className="truncate text-[11px] font-mono leading-none tracking-tight">
-                  {change.path}
-                </span>
+              <button
+                className="truncate text-[11px] font-mono leading-none tracking-tight flex-1 text-left"
+                onClick={() => onFileSelect(change.path)}
+              >
+                {change.path}
+              </button>
+              
+              <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  className={cn(
+                    "p-1 rounded-sm transition-colors",
+                    pinnedFiles.includes(change.path) ? "text-primary bg-primary/10" : "text-text-muted hover:text-primary"
+                  )}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    togglePinFile(change.path);
+                  }}
+                  title={pinnedFiles.includes(change.path) ? "取消锁定" : "锁定到上下文"}
+                >
+                  {pinnedFiles.includes(change.path) ? <Pin size={10} /> : <PinOff size={10} />}
+                </button>
                 <span
                   className={cn(
                     "text-[8px] uppercase font-black px-1 rounded-sm border shrink-0",
@@ -69,7 +88,7 @@ export function GitChangesPanel({ gitChanges, activeFile, onFileSelect }: Props)
                   {change.status.slice(0, 1)}
                 </span>
               </div>
-            </button>
+            </div>
           ))
         )}
       </div>

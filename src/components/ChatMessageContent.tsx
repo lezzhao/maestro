@@ -4,9 +4,11 @@ import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
 import { decodeTransportEscapes, normalizeTerminalChunk } from "../lib/utils/terminal";
 import { cn } from "../lib/utils";
+import { ThinkingBlock } from "./chat/ThinkingBlock";
 
 type Props = {
-  content: string;
+  actualContent: string;
+  thinking?: string;
   isStreaming?: boolean;
   className?: string;
 };
@@ -17,45 +19,24 @@ const LazyMarkdownCodeBlock = lazy(async () => {
 });
 
 export const ChatMessageContent = memo(function ChatMessageContent({
-  content,
+  actualContent,
+  thinking,
   isStreaming = false,
   className = "",
 }: Props) {
-  const cleaned = useMemo(() => {
-    let out = content;
-    
-    // Performance: If streaming extremely long output, only clean the relevant "window"
-    // to avoid O(N^2) processing of the whole buffer every 60ms.
-    const isVeryLong = isStreaming && content.length > 8000;
+  const processedContent = useMemo(() => {
+    if (!actualContent) return "";
+    let out = actualContent;
+    const isVeryLong = isStreaming && out.length > 8000;
     if (isVeryLong) {
-      // Keep a large enough window to preserve context but small enough to be fast
       out = "..." + out.substring(out.length - 5000);
     }
-
     out = decodeTransportEscapes(out);
     out = normalizeTerminalChunk(out);
-    return out.trim();
-  }, [content, isStreaming]);
+    return out;
+  }, [actualContent, isStreaming]);
 
-
-
-  if (!cleaned) {
-    // Fallback if cleaning stripped everything but the original had content
-    if (content.trim()) {
-      return (
-        <pre className={cn(
-          "text-[12px] leading-tight whitespace-pre-wrap font-mono opacity-60 w-full",
-          className
-        )}>
-          {content.substring(0, 1000)}
-        </pre>
-      );
-    }
-    return null;
-  }
-
-
-
+  if (!processedContent && !thinking) return null;
   const components: Components = {
     code({ className: codeClassName, children, ...props }) {
       const match = /language-(\w+)/.exec(codeClassName || "");
@@ -75,10 +56,19 @@ export const ChatMessageContent = memo(function ChatMessageContent({
   };
 
   return (
-    <div className={cn("chat-markdown", className)}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {cleaned}
-      </ReactMarkdown>
+    <div className={cn("chat-markdown w-full flex flex-col", className)}>
+      {thinking && (
+        <ThinkingBlock 
+          content={thinking} 
+          isStreaming={isStreaming && !actualContent}
+          label="Inference Logic"
+        />
+      )}
+      {processedContent && (
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+          {processedContent}
+        </ReactMarkdown>
+      )}
     </div>
   );
 });

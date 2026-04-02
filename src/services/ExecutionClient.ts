@@ -20,6 +20,8 @@ import {
   parseRunIdChunk,
   parseVerificationChunk,
   parseTokenUsageChunk,
+  CTRL_TOOL_APPROVAL_REQUEST,
+  parseToolApprovalRequestChunk,
 } from "../lib/utils/controlChunks";
 import type { VerificationSummary } from "../types";
 
@@ -29,6 +31,7 @@ export type ExecutionEvent =
   | { type: "verification"; verification: VerificationSummary }
   | { type: "tokenUsage"; usage: { approx_input_tokens: number; approx_output_tokens: number } }
   | { type: "done"; exitCode?: number | null }
+  | { type: "toolApprovalRequest"; request: { requestId: string; toolName: string; arguments: string } }
   | { type: "error"; message: string };
 
 export class ExecutionClient {
@@ -102,6 +105,13 @@ export class ExecutionClient {
         const usage = parseTokenUsageChunk<{ approx_input_tokens: number; approx_output_tokens: number }>(chunk);
         if (usage) {
           this.onEvent({ type: "tokenUsage", usage });
+        }
+        return;
+      }
+      if (chunk.startsWith(CTRL_TOOL_APPROVAL_REQUEST)) {
+        const request = parseToolApprovalRequestChunk<{ requestId: string; toolName: string; arguments: string }>(chunk);
+        if (request) {
+          this.onEvent({ type: "toolApprovalRequest", request });
         }
         return;
       }

@@ -1,5 +1,7 @@
 import { Panel, type PanelImperativeHandle } from "react-resizable-panels";
 import { TaskSidebar } from "./TaskSidebar";
+import { ConversationSidebar } from "./ConversationSidebar";
+import { GlobalSearch } from "./GlobalSearch";
 import { useTranslation } from "../i18n";
 import { useActiveWorkspace } from "../hooks/use-app-store-selectors";
 import type { RefObject } from "react";
@@ -30,8 +32,14 @@ export function MainSidebar({
         </h2>
       </div>
 
-      <div className="flex-1 min-h-0 px-1 overflow-hidden">
+      <GlobalSearch />
+
+      <div className="flex-1 min-h-[40%] px-1 overflow-hidden">
         <TaskSidebar />
+      </div>
+
+      <div className="h-[45%] min-h-0 px-1 overflow-hidden">
+        <ConversationSidebar />
       </div>
 
 

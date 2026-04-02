@@ -25,6 +25,9 @@ import { useTaskRuntimeContext } from "../../hooks/useTaskRuntimeContext";
 import { PanelFallback } from "../ui/PanelFallback";
 import { toast } from "sonner";
 import { parseTaskFileChanges } from "../../lib/fileChangeParser";
+import { useAppStore } from "../../stores/appStore";
+import { ArtifactsPanel } from "./ArtifactsPanel";
+import { TaskChronicle } from "../TaskChronicle";
 
 
 export function WorkspaceLayout() {
@@ -42,6 +45,7 @@ export function WorkspaceLayout() {
     listModels,
     upsertEngine,
     deleteEngine,
+    onVerifyConnection,
   } = useEngine();
   const { projectPath, gitDiff } = useProject();
   const { activeTaskId, activeTask } = useActiveTask();
@@ -58,6 +62,8 @@ export function WorkspaceLayout() {
     lang, setLang,
     activeWorkspaceId,
   } = useAppUiState();
+
+  const { activeArtifact, isArtifactsPanelOpen } = useAppStore();
 
   const [activeFile, setActiveFile] = useState("");
   const [activeDiff, setActiveDiff] = useState("");
@@ -130,7 +136,7 @@ export function WorkspaceLayout() {
 
   useTaskSwitchEffects({
     activeTaskId,
-    activeTaskMessagesLength: activeTaskMessages.length,
+    activeTaskMessagesLength: activeTaskMessages?.length || 0,
     setActiveFile,
     setActiveDiff,
   });
@@ -173,6 +179,7 @@ export function WorkspaceLayout() {
               onFetchModels={listModels}
               onUpsertEngine={upsertEngine}
               onDeleteEngine={deleteEngine}
+              onVerifyConnection={onVerifyConnection}
               theme={theme}
               onThemeChange={setTheme}
               lang={lang}
@@ -183,7 +190,7 @@ export function WorkspaceLayout() {
           <div className="h-full flex flex-col items-center justify-center p-8 bg-bg-base/30 animate-in fade-in duration-500">
             <div className="w-[450px] space-y-8 flex flex-col items-center text-center">
               <div className="relative group">
-                <div className="absolute inset-0 bg-primary blur-[40px] opacity-20 rounded-full group-hover:opacity-30 transition-opacity" />
+                <div className="absolute inset-0 bg-primary blur-2xl opacity-20 rounded-full group-hover:opacity-30 transition-opacity" />
                 <div className="relative w-24 h-24 rounded-2xl bg-bg-surface border border-border-muted flex items-center justify-center text-primary shadow-xl">
                   <Plus size={40} strokeWidth={2.5} />
                 </div>
@@ -236,17 +243,33 @@ export function WorkspaceLayout() {
               </div>
             </Panel>
 
-            {activeTask && taskFileChanges.length > 0 && (
+            {activeTask && taskFileChanges.length > 0 && !activeArtifact && (
               <>
                 <Separator
                   className="w-px bg-border-muted/50 hover:bg-primary-500 active:bg-primary-600 transition-colors cursor-col-resize z-50 -mx-[0.5px]"
                 />
-                <Panel id="panel-right" defaultSize={260} minSize={200} maxSize={450} className="flex flex-col min-h-0 bg-transparent">
-                  <GitChangesPanel 
-                    gitChanges={taskFileChanges}
-                    activeFile={activeFile}
-                    onFileSelect={handleFileSelect}
-                  />
+                <Panel id="panel-right" defaultSize={260} minSize={200} maxSize={450} className="flex flex-col min-h-0 bg-transparent p-2 gap-2">
+                  <div className="flex-1 min-h-0">
+                    <GitChangesPanel 
+                      gitChanges={taskFileChanges}
+                      activeFile={activeFile}
+                      onFileSelect={handleFileSelect}
+                    />
+                  </div>
+                  <div className="h-[250px] shrink-0">
+                    <TaskChronicle messages={activeTaskMessages} />
+                  </div>
+                </Panel>
+              </>
+            )}
+
+            {isArtifactsPanelOpen && activeArtifact && (
+               <>
+                <Separator
+                  className="w-px bg-border-muted/50 hover:bg-primary-500 active:bg-primary-600 transition-colors cursor-col-resize z-50 -mx-[0.5px]"
+                />
+                <Panel id="panel-artifacts" defaultSize={500} minSize={300} className="flex flex-col min-h-0 bg-transparent">
+                  <ArtifactsPanel />
                 </Panel>
               </>
             )}

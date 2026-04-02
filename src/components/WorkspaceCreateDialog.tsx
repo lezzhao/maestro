@@ -2,8 +2,8 @@ import { useState, useCallback } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { FolderOpen, X, MessageSquare, FolderTree } from "lucide-react";
 import { useProjectStoreState, useTaskStoreState, useWorkspaceStoreState } from "../hooks/use-app-store-selectors";
-import { setCurrentProjectCommand } from "../hooks/project-commands";
-import { createWorkspaceCommand } from "../hooks/workspace-commands";
+import { setCurrentProjectCommand } from "../hooks/commands/project-commands";
+import { createWorkspaceCommand } from "../hooks/commands/workspace-commands";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
 

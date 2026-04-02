@@ -1,7 +1,9 @@
 import { useState } from "react";
 import SyntaxHighlighter from "react-syntax-highlighter/dist/esm/prism-async-light";
 import oneDark from "react-syntax-highlighter/dist/esm/styles/prism/one-dark";
-import { Clipboard, Check } from "lucide-react";
+import { Clipboard, Check, Eye } from "lucide-react";
+import { useAppStore } from "../stores/appStore";
+import { cn } from "../lib/utils";
 import bash from "react-syntax-highlighter/dist/esm/languages/prism/bash";
 import javascript from "react-syntax-highlighter/dist/esm/languages/prism/javascript";
 import json from "react-syntax-highlighter/dist/esm/languages/prism/json";
@@ -27,6 +29,10 @@ SyntaxHighlighter.registerLanguage("tsx", tsx);
 
 export function MarkdownCodeBlock({ language, code }: Props) {
   const [copied, setCopied] = useState(false);
+  const setActiveArtifact = useAppStore(state => state.setActiveArtifact);
+
+  const previewableLanguages = ["html", "svg", "mermaid", "tsx", "jsx", "javascript", "typescript"];
+  const isPreviewable = previewableLanguages.includes(language.toLowerCase());
 
   const handleCopy = async () => {
     try {
@@ -39,25 +45,36 @@ export function MarkdownCodeBlock({ language, code }: Props) {
   };
 
   return (
-    <div className="group relative my-3 rounded-xl border border-border-muted/30 bg-[#1e1e1e] shadow-md overflow-hidden transition-all hover:border-border-muted/50">
-      <div className="flex items-center justify-between px-4 py-2 bg-bg-base/40 border-b border-border-muted/20 backdrop-blur-sm">
+    <div className="group relative my-4 rounded-2xl border border-border-muted/10 bg-bg-surface/5 backdrop-blur-xl shadow-lg overflow-hidden transition-all duration-300 hover:border-primary/20 hover:shadow-glow">
+      <div className="flex items-center justify-between px-5 py-2.5 bg-bg-base/30 border-b border-border-muted/10 backdrop-blur-md">
         <span className="text-[10px] font-bold text-text-muted/80 uppercase tracking-widest">{language}</span>
-        <button
-          onClick={handleCopy}
-          className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] text-text-muted hover:text-primary-400 hover:bg-primary-500/10 transition-all font-medium"
-        >
-          {copied ? (
-            <>
-              <Check size={12} className="text-success-500" />
-              <span>COPIED</span>
-            </>
-          ) : (
-            <>
-              <Clipboard size={12} />
-              <span>COPY</span>
-            </>
+        <div className="flex items-center gap-2">
+          {isPreviewable && (
+            <button
+              onClick={() => setActiveArtifact({ code, language, title: `Preview: ${language}` })}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] text-primary-400 bg-primary-500/5 hover:bg-primary-500/15 border border-primary-500/10 transition-all font-bold tracking-wider"
+            >
+              <Eye size={12} />
+              PREVIEW
+            </button>
           )}
-        </button>
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] text-text-muted hover:text-primary-400 hover:bg-primary-500/10 transition-all font-medium"
+          >
+            {copied ? (
+              <>
+                <Check size={12} className="text-success-500" />
+                <span>COPIED</span>
+              </>
+            ) : (
+              <>
+                <Clipboard size={12} />
+                <span>COPY</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
       <SyntaxHighlighter
         style={oneDark}

@@ -9,7 +9,7 @@ export type Workspace = {
   // Workspace-level config overrides
   preferredEngineId?: string | null;
   preferredProfileId?: string | null;
-  specProvider?: "none" | "bmad" | "custom" | null;
+  specProvider?: "none" | "maestro" | "custom" | null;
   specMode?: string | null;
   specTargetIde?: string | null;
   settings?: string | null;
@@ -17,6 +17,19 @@ export type Workspace = {
   createdAt: number;
   /** Unix timestamp ms */
   updatedAt: number;
+};
+
+export type AuthScheme = 
+  | { type: "api_key"; config: { api_key: string; key_prefix?: string; is_secret: boolean } }
+  | { type: "aws_bedrock"; config: { region: string; profile?: string; access_key_id?: string } }
+  | { type: "azure_foundry"; config: { endpoint: string; deployment: string; key?: string } }
+  | { type: "none"; config?: null };
+
+export type ProviderMetadata = {
+  provider_id: string;
+  logo_key?: string;
+  help_url?: string;
+  category?: string;
 };
 
 /** Required fields for all engine profiles. */
@@ -35,9 +48,11 @@ export type EngineProfileOptional = {
   model?: string | null;
   ready_signal?: string | null;
   execution_mode?: "cli" | "api";
-  api_provider?: "openai-compatible" | "anthropic" | null;
+  api_provider?: string | null;
   api_base_url?: string | null;
   api_key?: string | null;
+  auth?: AuthScheme | null;
+  metadata?: ProviderMetadata | null;
 };
 
 export type EngineProfile = EngineProfileBase & Partial<EngineProfileOptional>;
@@ -52,6 +67,7 @@ export type EngineConfig = {
   exit_command?: string;
   exit_timeout_ms?: number;
   icon: string;
+  category?: string; // 'cloud', 'local', 'proxy'
 };
 
 export type EnginePreflightResult = {
@@ -147,6 +163,8 @@ export type TokenEstimate = {
 export type ChatAttachment = {
   name: string;
   path: string;
+  mime_type?: string;
+  data?: string; // Base64
   snippet?: string;
 };
 
@@ -161,6 +179,11 @@ export type ChatChoiceAction =
   | {
       kind: "open_external_url";
       url: string;
+    }
+  | {
+      kind: "resolve_pending_tool";
+      requestId: string;
+      approved: boolean;
     };
 
 export type ChoiceVariant = "default" | "destructive" | "outline" | "secondary" | "ghost" | "link" | "primary-gradient";
@@ -190,6 +213,7 @@ export type ChatMessage = {
   status?: "streaming" | "done" | "error";
   tokenEstimate?: TokenEstimate;
   durationMs?: number;
+  reasoning?: string;
   meta?: {
     auto?: boolean;
     engineId?: string;
@@ -197,7 +221,14 @@ export type ChatMessage = {
     eventType?: "status" | "tool" | "notice";
     eventStatus?: "pending" | "done" | "error";
     toolName?: string;
+    toolInput?: string;
+    toolOutput?: string;
     choice?: ChatChoicePayload;
+    usage?: {
+      input_tokens: number;
+      output_tokens: number;
+      total_tokens: number;
+    };
   };
 };
 
@@ -295,6 +326,7 @@ export type ChatSpawnRequest = {
   engine_id: string;
   profile_id?: string | null;
   task_id?: string | null;
+  conversation_id?: string | null;
   cols?: number;
   rows?: number;
 };
@@ -317,17 +349,27 @@ export type ChatSessionMeta = {
   ready_signal?: string | null;
 };
 
+export type ChatApiAttachment = {
+  name: string;
+  path: string;
+  mime_type: string;
+  data: string; // Base64 encoded data
+};
+
 export type ChatApiMessage = {
   role: "system" | "user" | "assistant";
   content: string;
+  attachments?: ChatApiAttachment[];
 };
 
 export type ChatApiRequest = {
   engine_id: string;
   profile_id?: string | null;
   task_id?: string | null;
+  conversation_id?: string | null;
   message_ids?: string[];
   messages?: ChatApiMessage[];
+  pinned_files?: string[];
   max_input_tokens?: number;
   max_messages?: number;
 };
@@ -662,3 +704,17 @@ export type CliPruneResult = {
   deleted_sessions: number;
   deleted_logs: number;
 };
+
+export type Conversation = {
+  id: string;
+  taskId?: string | null;
+  title: string;
+  engineId: string;
+  profileId?: string | null;
+  messageCount: number;
+  summary?: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ConversationRecord = Conversation;
