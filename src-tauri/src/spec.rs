@@ -1,13 +1,13 @@
-use crate::config::SpecProviderBmad;
-use crate::project::validate_project_scope;
+use crate::config::SpecProviderMaestro;
+use crate::scoped_fs::ScopedFS;
 use crate::workspace_io::WorkspaceIo;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use tauri::command;
 
-const BMAD_RULES_TEMPLATE: &str = r#"# BMAD Rules
+const MAESTRO_RULES_TEMPLATE: &str = r#"# Maestro Rules
 
-Use BMAD process: Brief -> Model -> Action -> Done.
+Use Maestro process: Brief -> Model -> Action -> Done.
 "#;
 
 const CUSTOM_RULES_TEMPLATE: &str = "# Custom rules\n";
@@ -28,19 +28,19 @@ pub trait SpecProvider: Send + Sync {
 }
 
 #[derive(Clone)]
-pub struct BmadProvider {
-    conf: SpecProviderBmad,
+pub struct MaestroProvider {
+    conf: SpecProviderMaestro,
 }
 
-impl BmadProvider {
-    pub fn new(conf: SpecProviderBmad) -> Self {
+impl MaestroProvider {
+    pub fn new(conf: SpecProviderMaestro) -> Self {
         Self { conf }
     }
 }
 
-impl SpecProvider for BmadProvider {
+impl SpecProvider for MaestroProvider {
     fn id(&self) -> &str {
-        "bmad"
+        "maestro"
     }
 
     fn display_name(&self) -> &str {
@@ -58,16 +58,16 @@ impl SpecProvider for BmadProvider {
                 let src = self.conf.source_path.trim();
                 if src.is_empty() {
                     return Err(
-                        "bmad full install requires providers.bmad.source_path to be set"
+                        "maestro full install requires providers.maestro.source_path to be set"
                             .to_string(),
                     );
                 }
-                workspace_io.copy_dir_from(Path::new(src), "_bmad")?;
+                workspace_io.copy_dir_from(Path::new(src), "_maestro")?;
             }
             _ => {
-                let content = BMAD_RULES_TEMPLATE;
+                let content = MAESTRO_RULES_TEMPLATE;
                 let rel_path = match target_ide {
-                    "cursor" => ".cursor/rules/bmad.mdc",
+                    "cursor" => ".cursor/rules/maestro.mdc",
                     "claude" => "CLAUDE.md",
                     "gemini" => "GEMINI.md",
                     _ => "AGENTS.md",
@@ -80,8 +80,8 @@ impl SpecProvider for BmadProvider {
 
     fn remove(&self, workspace_io: &WorkspaceIo) -> Result<(), String> {
         let maybe_paths = [
-            "_bmad",
-            ".cursor/rules/bmad.mdc",
+            "_maestro",
+            ".cursor/rules/maestro.mdc",
             "CLAUDE.md",
             "GEMINI.md",
             "AGENTS.md",
@@ -93,8 +93,8 @@ impl SpecProvider for BmadProvider {
     }
 
     fn detect(&self, project_path: &Path) -> bool {
-        project_path.join("_bmad").exists()
-            || project_path.join(".cursor/rules/bmad.mdc").exists()
+        project_path.join("_maestro").exists()
+            || project_path.join(".cursor/rules/maestro.mdc").exists()
             || project_path.join("CLAUDE.md").exists()
             || project_path.join("GEMINI.md").exists()
     }
@@ -105,23 +105,23 @@ impl SpecProvider for BmadProvider {
             let src = self.conf.source_path.trim().to_string();
             if src.is_empty() {
                 return Err(
-                    "bmad full install requires providers.bmad.source_path to be set".to_string(),
+                    "maestro full install requires providers.maestro.source_path to be set".to_string(),
                 );
             }
             results.push(SpecPreviewResult {
-                file_path: "_bmad/".to_string(),
+                file_path: "_maestro/".to_string(),
                 content: format!("Will copy directory from: {src}"),
             });
         } else {
             let path = match target_ide {
-                "cursor" => ".cursor/rules/bmad.mdc",
+                "cursor" => ".cursor/rules/maestro.mdc",
                 "claude" => "CLAUDE.md",
                 "gemini" => "GEMINI.md",
                 _ => "AGENTS.md",
             };
             results.push(SpecPreviewResult {
                 file_path: path.to_string(),
-                content: BMAD_RULES_TEMPLATE.to_string(),
+                content: MAESTRO_RULES_TEMPLATE.to_string(),
             });
         }
         Ok(results)
@@ -216,7 +216,7 @@ impl SpecProviderRegistry {
     pub fn new(cfg: &crate::config::AppConfig) -> Self {
         Self {
             providers: vec![
-                Box::new(BmadProvider::new(cfg.providers.bmad.clone())),
+                Box::new(MaestroProvider::new(cfg.providers.maestro.clone())),
                 Box::new(CustomProvider::new(cfg.providers.custom.clone())),
             ],
         }
@@ -257,12 +257,12 @@ pub fn spec_descriptors(cfg: &crate::config::AppConfig) -> Vec<SpecDescriptor> {
     vec![
         SpecDescriptor {
             id: "none".to_string(),
-            display_name: "无规范".to_string(),
+            display_name: cfg.i18n().t("spec_none"),
             modes: vec![],
         },
         SpecDescriptor {
-            id: "bmad".to_string(),
-            display_name: cfg.providers.bmad.display_name.clone(),
+            id: "maestro".to_string(),
+            display_name: cfg.providers.maestro.display_name.clone(),
             modes: vec!["full".to_string(), "rules_only".to_string()],
         },
         SpecDescriptor {
@@ -284,8 +284,9 @@ pub fn spec_inject_core(
         return Ok(());
     }
     let allowed = cfg.project.path.clone();
-    if !allowed.is_empty() {
-        validate_project_scope(&project_path, &allowed)?;
+    let scoped = ScopedFS::new(&project_path)?;
+    if !allowed.is_empty() && scoped.root() != std::path::Path::new(&allowed).canonicalize().unwrap_or_default() {
+        return Err("project path is outside allowed workspace scope".to_string());
     }
     let registry = SpecProviderRegistry::new(cfg);
     let p = registry
@@ -305,8 +306,9 @@ pub fn spec_remove_core(
         return Ok(());
     }
     let allowed = cfg.project.path.clone();
-    if !allowed.is_empty() {
-        validate_project_scope(&project_path, &allowed)?;
+    let scoped = ScopedFS::new(&project_path)?;
+    if !allowed.is_empty() && scoped.root() != std::path::Path::new(&allowed).canonicalize().unwrap_or_default() {
+        return Err("project path is outside allowed workspace scope".to_string());
     }
     let registry = SpecProviderRegistry::new(cfg);
     let p = registry
@@ -353,14 +355,15 @@ pub fn spec_backup_core(
     project_path: String,
 ) -> Result<Vec<String>, String> {
     let allowed = cfg.project.path.clone();
-    if !allowed.is_empty() {
-        validate_project_scope(&project_path, &allowed)?;
+    let scoped = ScopedFS::new(&project_path)?;
+    if !allowed.is_empty() && scoped.root() != std::path::Path::new(&allowed).canonicalize().unwrap_or_default() {
+        return Err("project path is outside allowed workspace scope".to_string());
     }
     let project = PathBuf::from(project_path);
     let workspace_io = WorkspaceIo::new(&project)?;
     let mut backed_up = Vec::new();
     let paths_to_backup = [
-        ".cursor/rules/bmad.mdc",
+        ".cursor/rules/maestro.mdc",
         ".cursor/rules/custom.mdc",
         "CLAUDE.md",
         "GEMINI.md",
@@ -379,14 +382,15 @@ pub fn spec_restore_core(
     project_path: String,
 ) -> Result<Vec<String>, String> {
     let allowed = cfg.project.path.clone();
-    if !allowed.is_empty() {
-        validate_project_scope(&project_path, &allowed)?;
+    let scoped = ScopedFS::new(&project_path)?;
+    if !allowed.is_empty() && scoped.root() != std::path::Path::new(&allowed).canonicalize().unwrap_or_default() {
+        return Err("project path is outside allowed workspace scope".to_string());
     }
     let project = PathBuf::from(project_path);
     let workspace_io = WorkspaceIo::new(&project)?;
     let mut restored = Vec::new();
     let paths_to_restore = [
-        ".cursor/rules/bmad.mdc",
+        ".cursor/rules/maestro.mdc",
         ".cursor/rules/custom.mdc",
         "CLAUDE.md",
         "GEMINI.md",
@@ -401,7 +405,7 @@ pub fn spec_restore_core(
 }
 
 #[command]
-pub fn spec_list(core_state: tauri::State<'_, crate::core::MaestroCore>) -> Vec<SpecDescriptor> {
+pub fn spec_list(core_state: tauri::State<'_, std::sync::Arc<crate::core::MaestroCore>>) -> Vec<SpecDescriptor> {
     core_state.inner().spec_list()
 }
 
@@ -411,7 +415,7 @@ pub fn spec_inject(
     project_path: String,
     mode: String,
     target_ide: String,
-    core_state: tauri::State<'_, crate::core::MaestroCore>,
+    core_state: tauri::State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<(), crate::core::error::CoreError> {
     core_state
         .inner()
@@ -422,7 +426,7 @@ pub fn spec_inject(
 pub fn spec_remove(
     provider: String,
     project_path: String,
-    core_state: tauri::State<'_, crate::core::MaestroCore>,
+    core_state: tauri::State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<(), crate::core::error::CoreError> {
     core_state.inner().spec_remove(provider, project_path)
 }
@@ -430,7 +434,7 @@ pub fn spec_remove(
 #[command]
 pub fn spec_detect(
     project_path: String,
-    core_state: tauri::State<'_, crate::core::MaestroCore>,
+    core_state: tauri::State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Vec<SpecDetectResult> {
     core_state.inner().spec_detect(project_path)
 }
@@ -440,7 +444,7 @@ pub fn spec_preview(
     provider: String,
     mode: String,
     target_ide: String,
-    core_state: tauri::State<'_, crate::core::MaestroCore>,
+    core_state: tauri::State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<Vec<SpecPreviewResult>, crate::core::error::CoreError> {
     core_state.inner().spec_preview(provider, mode, target_ide)
 }
@@ -448,7 +452,7 @@ pub fn spec_preview(
 #[command]
 pub fn spec_backup(
     project_path: String,
-    core_state: tauri::State<'_, crate::core::MaestroCore>,
+    core_state: tauri::State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<Vec<String>, crate::core::error::CoreError> {
     core_state.inner().spec_backup(project_path)
 }
@@ -456,7 +460,7 @@ pub fn spec_backup(
 #[command]
 pub fn spec_restore(
     project_path: String,
-    core_state: tauri::State<'_, crate::core::MaestroCore>,
+    core_state: tauri::State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<Vec<String>, crate::core::error::CoreError> {
     core_state.inner().spec_restore(project_path)
 }

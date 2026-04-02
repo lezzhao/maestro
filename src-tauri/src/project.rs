@@ -1,12 +1,14 @@
-use crate::config::write_config_to_disk;
-use crate::scoped_fs::ScopedWorkspace;
+use crate::scoped_fs::ScopedFS;
 use serde::Serialize;
+use ignore::WalkBuilder;
+use regex::Regex;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 use tauri::{command, AppHandle, State};
+use crate::config::write_config_to_disk;
 
-const FILE_TREE_MAX_DEPTH: usize = 5;
 const FILE_TREE_MAX_FILES: usize = 2000;
 
 #[derive(Debug, Clone, Serialize)]
@@ -70,7 +72,7 @@ fn detect_stack(path: &Path) -> Vec<String> {
     stacks
 }
 
-fn ensure_git_repo(project_path: &str) -> Result<(), String> {
+fn ensure_git_repo(project_path: &str, i18n: &crate::i18n::I18n) -> Result<(), String> {
     let path = PathBuf::from(project_path);
     if !path.exists() || !path.is_dir() {
         return Err(format!("project path invalid: {project_path}"));
@@ -95,7 +97,7 @@ fn ensure_git_repo(project_path: &str) -> Result<(), String> {
     if is_work_tree {
         Ok(())
     } else {
-        Err("不是 git 仓库".to_string())
+        Err(i18n.t("err_not_git_repo"))
     }
 }
 
@@ -122,90 +124,37 @@ fn normalize_status(code: &str) -> String {
     "unknown".to_string()
 }
 
-fn should_skip_dir(name: &str) -> bool {
-    matches!(
-        name,
-        ".git" | "node_modules" | "dist" | "build" | "target" | ".next" | "out" | ".cache"
-    )
-}
+
 
 fn normalize_rel_path(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
-async fn list_files_via_git(project_path: &str) -> Result<Vec<String>, String> {
-    let output = tokio::process::Command::new("git")
-        .arg("-C")
-        .arg(project_path)
-        .arg("ls-files")
-        .arg("--cached")
-        .arg("--others")
-        .arg("--exclude-standard")
-        .output()
-        .await
-        .map_err(|e| format!("execute git ls-files failed: {e}"))?;
+async fn list_files_via_ignore(scoped: &ScopedFS) -> Vec<String> {
+    let mut files = Vec::new();
+    let root = scoped.root();
+    let walker = WalkBuilder::new(root)
+        .standard_filters(true) // respects .gitignore, etc.
+        .hidden(true)
+        .build();
 
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut files: Vec<String> = stdout
-        .lines()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-
-    files.sort();
-    files.dedup();
-    if files.len() > FILE_TREE_MAX_FILES {
-        files.truncate(FILE_TREE_MAX_FILES);
-    }
-    Ok(files)
-}
-
-async fn collect_files_fallback(
-    root: &Path,
-    current: &Path,
-    depth: usize,
-    out: &mut Vec<String>,
-) -> Result<(), String> {
-    if out.len() >= FILE_TREE_MAX_FILES || depth > FILE_TREE_MAX_DEPTH {
-        return Ok(());
-    }
-    let mut entries = tokio::fs::read_dir(current)
-        .await
-        .map_err(|e| format!("read dir failed: {e}"))?;
-    while let Some(entry) = entries
-        .next_entry()
-        .await
-        .map_err(|e| format!("read dir entry failed: {e}"))?
-    {
-        if out.len() >= FILE_TREE_MAX_FILES {
+    for result in walker {
+        if let Ok(entry) = result {
+            if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
+                if let Ok(rel) = entry.path().strip_prefix(root) {
+                    files.push(normalize_rel_path(rel));
+                }
+            }
+        }
+        if files.len() >= FILE_TREE_MAX_FILES {
             break;
         }
-        let path = entry.path();
-        let name_os = entry.file_name();
-        let name = name_os.to_string_lossy();
-
-        let metadata = entry
-            .metadata()
-            .await
-            .map_err(|e| format!("get metadata failed: {e}"))?;
-        if metadata.is_dir() {
-            if should_skip_dir(&name) || depth >= FILE_TREE_MAX_DEPTH {
-                continue;
-            }
-            // Use Box::pin for recursion in async if needed, but here we can just await
-            Box::pin(collect_files_fallback(root, &path, depth + 1, out)).await?;
-        } else if metadata.is_file() {
-            if let Ok(rel) = path.strip_prefix(root) {
-                out.push(normalize_rel_path(rel));
-            }
-        }
     }
-    Ok(())
+    files.sort();
+    files
 }
+
+
 
 fn find_or_insert_dir<'a>(
     nodes: &'a mut Vec<FileTreeNode>,
@@ -282,7 +231,7 @@ fn build_file_tree(files: Vec<String>) -> Vec<FileTreeNode> {
 
 #[command]
 pub fn project_detect_stack(project_path: String) -> Result<ProjectStackResult, String> {
-    let scoped = ScopedWorkspace::new(&project_path)?;
+    let scoped = ScopedFS::new(&project_path)?;
     let path = scoped.root().to_path_buf();
     Ok(ProjectStackResult {
         path: project_path,
@@ -294,10 +243,10 @@ pub fn project_detect_stack(project_path: String) -> Result<ProjectStackResult, 
 pub fn project_set_current(
     app: AppHandle,
     project_path: String,
-    core_state: State<'_, crate::core::MaestroCore>,
+    core_state: State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<ProjectSetResult, String> {
     if project_path.trim().is_empty() {
-        let mut config = core_state.inner().config.get();
+        let mut config = (*core_state.inner().config.get()).clone();
         config.project.path.clear();
         config.project.detected_stack.clear();
         write_config_to_disk(&app, &config)?;
@@ -308,10 +257,10 @@ pub fn project_set_current(
         });
     }
 
-    let scoped = ScopedWorkspace::new(&project_path)?;
+    let scoped = ScopedFS::new(&project_path)?;
     let path = scoped.root().to_path_buf();
     let stacks = detect_stack(&path);
-    let mut config = core_state.inner().config.get();
+    let mut config = (*core_state.inner().config.get()).clone();
     config.project.path = project_path.clone();
     config.project.detected_stack = stacks.clone();
     write_config_to_disk(&app, &config)?;
@@ -322,48 +271,141 @@ pub fn project_set_current(
     })
 }
 
-/// Validate project_path matches configured workspace (scoped permission).
-pub fn validate_project_scope(project_path: &str, allowed: &str) -> Result<(), String> {
-    let a = std::path::Path::new(project_path)
-        .canonicalize()
-        .map_err(|e| format!("canonicalize project failed: {e}"))?;
-    let b = std::path::Path::new(allowed)
-        .canonicalize()
-        .map_err(|e| format!("canonicalize allowed failed: {e}"))?;
-    if a != b {
-        return Err("project path is outside allowed workspace scope".to_string());
-    }
-    Ok(())
-}
 
 #[command]
 pub async fn project_list_files(
     project_path: String,
-    core_state: State<'_, crate::core::MaestroCore>,
+    core_state: State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<Vec<FileTreeNode>, String> {
     let allowed_path = core_state.inner().config.get().project.path.clone();
     if allowed_path.is_empty() {
         return Err("no workspace selected; set project first".to_string());
     }
-    validate_project_scope(&project_path, &allowed_path)?;
-    let scoped = ScopedWorkspace::new(&project_path)?;
-    let path = scoped.root().to_path_buf();
-
-    let files = match list_files_via_git(&project_path).await {
-        Ok(files) if !files.is_empty() => files,
-        _ => {
-            let mut fallback = Vec::new();
-            collect_files_fallback(&path, &path, 0, &mut fallback).await?;
-            fallback.sort();
-            fallback.dedup();
-            if fallback.len() > FILE_TREE_MAX_FILES {
-                fallback.truncate(FILE_TREE_MAX_FILES);
-            }
-            fallback
-        }
-    };
-
+    let scoped = ScopedFS::new(&project_path)?;
+    if scoped.root() != std::path::Path::new(&allowed_path).canonicalize().unwrap_or_default() {
+         return Err("project path is outside allowed workspace scope".to_string());
+    }
+    
+    let files = list_files_via_ignore(&scoped).await;
     Ok(build_file_tree(files))
+}
+
+#[command]
+pub async fn project_list_files_deep(
+    project_path: String,
+    core_state: State<'_, std::sync::Arc<crate::core::MaestroCore>>,
+) -> Result<Vec<String>, String> {
+    let allowed_path = core_state.inner().config.get().project.path.clone();
+    if allowed_path.is_empty() {
+        return Err("no workspace selected".into());
+    }
+    let scoped = ScopedFS::new(&project_path)?;
+    if scoped.root() != std::path::Path::new(&allowed_path).canonicalize().unwrap_or_default() {
+         return Err("project path is outside allowed workspace scope".to_string());
+    }
+
+    let mut files = Vec::new();
+    let walker = WalkBuilder::new(scoped.root())
+        .standard_filters(true)
+        .hidden(true)
+        .build();
+
+    for result in walker {
+        if let Ok(entry) = result {
+            if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
+                if let Ok(rel) = entry.path().strip_prefix(scoped.root()) {
+                    files.push(normalize_rel_path(rel));
+                }
+            }
+        }
+        // Higher limit for deep scanning (fuzzy search)
+        if files.len() >= 10_000 {
+            break;
+        }
+    }
+    Ok(files)
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SymbolMatch {
+    pub file: String,
+    pub line: usize,
+    pub content: String,
+}
+
+#[command]
+pub async fn project_find_symbols(
+    project_path: String,
+    query: String,
+    core_state: State<'_, std::sync::Arc<crate::core::MaestroCore>>,
+) -> Result<Vec<SymbolMatch>, String> {
+    let allowed_path = core_state.inner().config.get().project.path.clone();
+    if allowed_path.is_empty() {
+        return Err("no workspace selected".into());
+    }
+    let scoped = ScopedFS::new(&project_path)?;
+    if scoped.root() != std::path::Path::new(&allowed_path).canonicalize().unwrap_or_default() {
+         return Err("project path is outside allowed workspace scope".to_string());
+    }
+
+    let re = Regex::new(&format!(r"(?i)(?:function|class|export|const|let|var|def|fn|trait|struct|enum|type)\s+[^{{\s]*{}\w*", regex::escape(&query)))
+        .map_err(|e| format!("invalid regex: {e}"))?;
+
+    let mut matches = Vec::new();
+    let walker = WalkBuilder::new(scoped.root())
+        .standard_filters(true)
+        .build();
+
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(16));
+    let mut futures = Vec::new();
+
+    for result in walker {
+        let entry = match result {
+            Ok(e) => e,
+            _ => continue,
+        };
+        if !entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
+            continue;
+        }
+
+        let path = entry.path().to_path_buf();
+        let re_clone = re.clone();
+        let sem_clone = semaphore.clone();
+        let root_clone = scoped.root().to_path_buf();
+
+        futures.push(tokio::spawn(async move {
+            let _permit = sem_clone.acquire().await.map_err(|e| e.to_string())?;
+            let content = tokio::fs::read_to_string(&path).await.map_err(|e| e.to_string())?;
+            let mut file_matches = Vec::new();
+            for (idx, line) in content.lines().enumerate() {
+                if re_clone.is_match(line) {
+                    if let Ok(rel) = path.strip_prefix(&root_clone) {
+                        file_matches.push(SymbolMatch {
+                            file: normalize_rel_path(rel),
+                            line: idx + 1,
+                            content: line.trim().to_string(),
+                        });
+                    }
+                }
+                if file_matches.len() >= 10 { break; }
+            }
+            Ok::<Vec<SymbolMatch>, String>(file_matches)
+        }));
+
+        if futures.len() >= 1000 { break; } // Max files to scan
+    }
+
+    for f in futures {
+        if let Ok(Ok(res)) = f.await {
+            matches.extend(res);
+            if matches.len() >= 100 {
+                matches.truncate(100);
+                break;
+            }
+        }
+    }
+
+    Ok(matches)
 }
 
 #[command]
@@ -371,14 +413,16 @@ pub async fn project_read_file(
     project_path: String,
     file_path: String,
     max_chars: Option<usize>,
-    core_state: State<'_, crate::core::MaestroCore>,
+    core_state: State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<String, String> {
     let allowed_path = core_state.inner().config.get().project.path.clone();
     if allowed_path.is_empty() {
         return Err("no workspace selected; set project first".to_string());
     }
-    validate_project_scope(&project_path, &allowed_path)?;
-    let scoped = ScopedWorkspace::new(&project_path)?;
+    let scoped = ScopedFS::new(&project_path)?;
+    if scoped.root() != std::path::Path::new(&allowed_path).canonicalize().unwrap_or_default() {
+         return Err("project path is outside allowed workspace scope".to_string());
+    }
     if file_path.trim().is_empty() {
         return Err("file path is empty".to_string());
     }
@@ -443,30 +487,31 @@ pub async fn project_read_file(
 #[command]
 pub fn project_recommend_engine(
     project_path: String,
-    core_state: State<'_, crate::core::MaestroCore>,
+    core_state: State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<EngineRecommendation, String> {
-    let scoped = ScopedWorkspace::new(&project_path)?;
+    let scoped = ScopedFS::new(&project_path)?;
     let path = scoped.root().to_path_buf();
 
     let stacks = detect_stack(&path);
     let cfg = core_state.inner().config.get();
 
+    let i18n = cfg.i18n();
     if stacks.iter().any(|s| s == "rust") && cfg.engines.contains_key("codex") {
         return Ok(EngineRecommendation {
             engine_id: "codex".to_string(),
-            reason: "检测到 Rust 项目，推荐使用对系统级语言表现稳定的引擎".to_string(),
+            reason: i18n.t("recommend_rust"),
         });
     }
     if stacks.iter().any(|s| s == "node") && cfg.engines.contains_key("cursor") {
         return Ok(EngineRecommendation {
             engine_id: "cursor".to_string(),
-            reason: "检测到 Node/前端项目，推荐 Cursor Agent 默认配置".to_string(),
+            reason: i18n.t("recommend_node"),
         });
     }
     if stacks.iter().any(|s| s == "python") && cfg.engines.contains_key("gemini") {
         return Ok(EngineRecommendation {
             engine_id: "gemini".to_string(),
-            reason: "检测到 Python 项目，推荐通用推理能力较强的引擎".to_string(),
+            reason: i18n.t("recommend_python"),
         });
     }
 
@@ -478,24 +523,28 @@ pub fn project_recommend_engine(
         .ok_or("no engines configured")?;
     Ok(EngineRecommendation {
         engine_id: first,
-        reason: "回退到第一个可用引擎".to_string(),
+        reason: i18n.t("fallback_first_engine"),
     })
 }
 
 #[command]
 pub async fn project_git_status(
     project_path: String,
-    core_state: State<'_, crate::core::MaestroCore>,
+    core_state: State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<Vec<FileChange>, String> {
     let allowed_path = core_state.inner().config.get().project.path.clone();
     if allowed_path.is_empty() {
         return Err("no workspace selected; set project first".to_string());
     }
-    validate_project_scope(&project_path, &allowed_path)?;
-    ensure_git_repo(&project_path)?;
+    let scoped = ScopedFS::new(&project_path)?;
+    let i18n = core_state.inner().config.get().i18n();
+    if scoped.root() != std::path::Path::new(&allowed_path).canonicalize().unwrap_or_default() {
+         return Err("project path is outside allowed workspace scope".to_string());
+    }
+    ensure_git_repo(&project_path, &i18n)?;
     let output = tokio::process::Command::new("git")
         .arg("-C")
-        .arg(&project_path)
+        .arg(scoped.root())
         .arg("status")
         .arg("--porcelain")
         .arg("--untracked-files=all")
@@ -533,22 +582,28 @@ pub async fn project_git_status(
 pub async fn project_git_diff(
     project_path: String,
     file_path: Option<String>,
-    core_state: State<'_, crate::core::MaestroCore>,
+    core_state: State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<String, String> {
     let allowed_path = core_state.inner().config.get().project.path.clone();
     if allowed_path.is_empty() {
         return Err("no workspace selected; set project first".to_string());
     }
-    validate_project_scope(&project_path, &allowed_path)?;
-    ensure_git_repo(&project_path)?;
+    let scoped = ScopedFS::new(&project_path)?;
+    let i18n = core_state.inner().config.get().i18n();
+    if scoped.root() != std::path::Path::new(&allowed_path).canonicalize().unwrap_or_default() {
+         return Err("project path is outside allowed workspace scope".to_string());
+    }
+    ensure_git_repo(&project_path, &i18n)?;
     let mut command = tokio::process::Command::new("git");
-    command.arg("-C").arg(&project_path).arg("diff");
+    command.arg("-C").arg(scoped.root()).arg("diff");
     if let Some(path) = file_path
         .as_deref()
         .map(str::trim)
         .filter(|p| !p.is_empty())
     {
-        command.arg("--").arg(path);
+        // Use resolve_in_scope to ensure the diffed file is within project boundaries
+        let canonical_file = scoped.resolve_in_scope(path)?;
+        command.arg("--").arg(canonical_file);
     }
 
     let output = command

@@ -7,8 +7,13 @@
 
 use crate::config::{AppConfig, EngineProfile};
 use crate::core::error::CoreError;
-use crate::task_state::{self, bmad_db_path, TaskRuntimeBinding};
+use crate::task_state::{self, maestro_db_path, TaskRuntimeBinding};
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CascadingSettings {
+    pub system_prompt: Option<String>,
+}
 use std::path::Path;
 use tauri::AppHandle;
 
@@ -49,6 +54,7 @@ pub struct ResolvedExecutionConfig {
     pub exit_command: Option<String>,
     pub exit_timeout_ms: Option<u64>,
     pub settings: Option<String>,
+    pub system_prompt: Option<String>,
 }
 
 /// Layer 3: Event/frontend projection. Composed from metadata + execution.
@@ -75,6 +81,7 @@ pub struct ResolvedRuntimeContext {
     pub exit_timeout_ms: Option<u64>,
     pub resolved_from: RuntimeResolvedFrom,
     pub settings: Option<String>,
+    pub system_prompt: Option<String>,
 }
 
 impl ResolvedRuntimeContext {
@@ -96,6 +103,7 @@ impl ResolvedRuntimeContext {
             exit_command: self.exit_command.clone(),
             exit_timeout_ms: self.exit_timeout_ms,
             settings: self.settings.clone(),
+            system_prompt: self.system_prompt.clone(),
         }
     }
 }
@@ -122,6 +130,7 @@ impl ResolvedExecutionConfig {
             ready_signal: self.ready_signal.clone(),
             exit_command: self.exit_command.clone(),
             exit_timeout_ms: self.exit_timeout_ms,
+            system_prompt: self.system_prompt.clone(),
         }
     }
 }
@@ -146,6 +155,7 @@ pub struct RuntimeSnapshotPayload {
     pub ready_signal: Option<String>,
     pub exit_command: Option<String>,
     pub exit_timeout_ms: Option<u64>,
+    pub system_prompt: Option<String>,
 }
 
 /// Stable contract: snapshot record linking task to frozen payload. Do not add/remove fields without migration.
@@ -205,46 +215,37 @@ fn resolve_task_runtime_context_inner(
         }
     })?;
 
-    let mut merged_settings: serde_json::Value = serde_json::json!({});
+    let mut merged_settings = serde_json::Map::new();
 
-    // 1. Global Settings (from AppConfig)
-    // Assuming AppConfig has some global settings we want to cascade.
-    // For now, let's look for a 'settings' field in AppConfig or AppSection if it exists.
-    // Maestro doesn't have a dedicated global 'settings' object yet in AppConfig,
-    // but we can add one if needed. Let's assume it's empty for now or comes from elsewhere.
-
-    // 2. Workspace Settings
+    // 1. Workspace Settings
     if let Some(ref ws_id) = task.workspace_id {
         if let Ok(ws) = crate::workspace_commands::get_workspace_by_id(db_path, ws_id) {
-            if let Some(ws_settings_str) = ws.settings {
-                if let Ok(ws_json) = serde_json::from_str::<serde_json::Value>(&ws_settings_str) {
-                    if let Some(obj) = ws_json.as_object() {
-                        for (k, v) in obj {
-                            merged_settings[k] = v.clone();
-                        }
-                    }
+            if let Some(ws_json) = &ws.settings {
+                if let Ok(serde_json::Value::Object(map)) = serde_json::from_str(ws_json) {
+                    merged_settings.extend(map);
                 }
             }
         }
     }
 
-    // 3. Task Settings
-    if let Some(task_settings_str) = task.settings {
-        if let Ok(task_json) = serde_json::from_str::<serde_json::Value>(&task_settings_str) {
-            if let Some(obj) = task_json.as_object() {
-                for (k, v) in obj {
-                    merged_settings[k] = v.clone();
-                }
-            }
+    // 2. Task Settings
+    if let Some(task_json) = &task.settings {
+        if let Ok(serde_json::Value::Object(map)) = serde_json::from_str(task_json) {
+            merged_settings.extend(map);
         }
     }
 
-    let final_settings_str =
-        if merged_settings.is_object() && !merged_settings.as_object().unwrap().is_empty() {
-            Some(merged_settings.to_string())
-        } else {
-            None
-        };
+    let merged_value = serde_json::Value::Object(merged_settings.clone());
+    let cascading_settings: CascadingSettings =
+        serde_json::from_value(merged_value).unwrap_or_default();
+
+    let final_settings_str = if !merged_settings.is_empty() {
+        Some(serde_json::Value::Object(merged_settings).to_string())
+    } else {
+        None
+    };
+
+    let system_prompt = cascading_settings.system_prompt;
 
     let binding = TaskRuntimeBinding {
         engine_id: task.engine_id.clone(),
@@ -285,6 +286,7 @@ fn resolve_task_runtime_context_inner(
                     exit_timeout_ms: payload.exit_timeout_ms,
                     resolved_from: RuntimeResolvedFrom::Snapshot,
                     settings: final_settings_str.clone(),
+                    system_prompt: payload.system_prompt,
                 });
             }
         }
@@ -344,6 +346,7 @@ fn resolve_task_runtime_context_inner(
         exit_timeout_ms: profile.exit_timeout_ms,
         resolved_from,
         settings: final_settings_str,
+        system_prompt,
     })
 }
 
@@ -357,7 +360,7 @@ pub fn create_snapshot_and_pin_task(
     profile_id: &str,
     profile: &EngineProfile,
 ) -> Result<(), CoreError> {
-    let db_path = bmad_db_path(app)?;
+    let db_path = maestro_db_path(app)?;
     let snapshot_id = uuid::Uuid::new_v4().to_string();
     let payload = RuntimeSnapshotPayload {
         engine_id: engine_id.to_string(),
@@ -377,6 +380,7 @@ pub fn create_snapshot_and_pin_task(
         ready_signal: profile.ready_signal(),
         exit_command: profile.exit_command.clone(),
         exit_timeout_ms: profile.exit_timeout_ms,
+        system_prompt: None, // snapshot usually from live resolve which includes this
     };
     let payload_json = serde_json::to_string(&payload).map_err(|e| CoreError::Io {
         message: format!("serialize payload failed: {e}"),
@@ -401,7 +405,7 @@ pub fn resolve_task_runtime_context_for_app(
     task_id: &str,
     cfg: &AppConfig,
 ) -> Result<ResolvedRuntimeContext, CoreError> {
-    let db_path = bmad_db_path(app)?;
+    let db_path = maestro_db_path(app)?;
     resolve_task_runtime_context(&db_path, task_id, cfg)
 }
 
@@ -415,7 +419,7 @@ mod tests {
 
     fn temp_db_path() -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("test_bmad_state.db");
+        let path = dir.path().join("test_maestro_state.db");
         (dir, path)
     }
 
@@ -456,6 +460,7 @@ mod tests {
             icon: "".to_string(),
             profiles: profiles.clone(),
             active_profile_id: "profile_a".to_string(),
+            category: None,
             legacy_profile: mock_profile("default"),
         };
         let mut engines = BTreeMap::new();
@@ -486,6 +491,7 @@ mod tests {
             icon: "".to_string(),
             profiles: profiles.clone(),
             active_profile_id: "default".to_string(),
+            category: None,
             legacy_profile: mock_profile("default"),
         };
         let mut engines = BTreeMap::new();
@@ -532,6 +538,7 @@ mod tests {
             ready_signal: None,
             exit_command: None,
             exit_timeout_ms: None,
+            system_prompt: None,
         };
         let payload_json = serde_json::to_string(&payload).expect("serialize payload");
         let snapshot = RuntimeSnapshot {
@@ -557,6 +564,7 @@ mod tests {
             icon: "".to_string(),
             profiles,
             active_profile_id: "profile_a".to_string(),
+            category: None,
             legacy_profile: mock_profile("default"),
         };
         let mut engines = BTreeMap::new();
@@ -588,6 +596,7 @@ mod tests {
             icon: "".to_string(),
             profiles,
             active_profile_id: "default".to_string(),
+            category: None,
             legacy_profile: mock_profile("default"),
         };
         let mut engines = BTreeMap::new();
