@@ -10,7 +10,7 @@ export async function takeGitSnapshot(taskId: string, toState: string): Promise<
   try {
     // We create a commit instead of a stash, or a lightweight tag if needed
     // Assuming the user has a local initialized git repository.
-    // For simplicity, we are staging ALL changes and making an auto-commit with bmad-bot.
+    // For simplicity, we are staging ALL changes and making an auto-commit with maestro-bot.
     
     // First stage all changes
     const stageCmd = Command.create('git', ['add', '.']);
@@ -25,7 +25,7 @@ export async function takeGitSnapshot(taskId: string, toState: string): Promise<
     }
 
     // Commit
-    const message = `[bmad auto-snapshot] Task ${taskId} -> ${toState}`;
+    const message = `[maestro auto-snapshot] Task ${taskId} -> ${toState}`;
     const commitCmd = Command.create('git', ['commit', '-m', message]);
     const commitResult = await commitCmd.execute();
 

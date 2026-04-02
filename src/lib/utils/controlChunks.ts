@@ -11,6 +11,7 @@ export const CTRL_EXIT = `${CTRL_PREFIX}EXIT:`;
 export const CTRL_ERROR = `${CTRL_PREFIX}ERROR:`;
 export const CTRL_VERIFICATION = `${CTRL_PREFIX}VERIFICATION:`;
 export const CTRL_TOKEN_USAGE = `${CTRL_PREFIX}TOKEN_USAGE:`;
+export const CTRL_TOOL_APPROVAL_REQUEST = `${CTRL_PREFIX}TOOL_APPROVAL_REQUEST:`;
 
 export function isControlChunk(chunk: string): boolean {
   return chunk.startsWith(CTRL_PREFIX);
@@ -43,6 +44,16 @@ export function parseVerificationChunk<T>(chunk: string): T | null {
 
 export function parseTokenUsageChunk<T>(chunk: string): T | null {
   const raw = chunk.replace(CTRL_TOKEN_USAGE, "").trim();
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+export function parseToolApprovalRequestChunk<T>(chunk: string): T | null {
+  const raw = chunk.replace(CTRL_TOOL_APPROVAL_REQUEST, "").trim();
   if (!raw) return null;
   try {
     return JSON.parse(raw) as T;

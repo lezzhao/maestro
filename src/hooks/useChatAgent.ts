@@ -10,7 +10,7 @@ import {
   stopChatCliCommand,
   stopChatSessionCommand,
   submitChatChoiceCommand,
-} from "./chat-commands";
+} from "./commands/chat-commands";
 import type {
   ChatApiRequest,
   ChatExecuteApiResult,

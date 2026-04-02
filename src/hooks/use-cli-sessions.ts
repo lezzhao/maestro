@@ -3,7 +3,7 @@ import {
   listCliSessionsCommand,
   pruneCliSessionsCommand,
   readCliSessionLogsCommand,
-} from "./diagnostics-commands";
+} from "./commands/diagnostics-commands";
 import type { CliSessionListItem } from "../types";
 
 interface UseCliSessionsOptions {

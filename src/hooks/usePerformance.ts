@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { usePerformanceStoreState } from "./use-app-store-selectors";
-import { stopProcessMonitorCommand, startProcessMonitorCommand } from "./performance-commands";
+import { stopProcessMonitorCommand, startProcessMonitorCommand } from "./commands/performance-commands";
 
 interface ProcessStats {
   cpu_percent: number;

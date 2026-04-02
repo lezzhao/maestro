@@ -4,7 +4,7 @@ import type {
   FileChange,
   ProjectSetResult,
   ProjectStackResult,
-} from "../types";
+} from "../../types";
 
 export function detectProjectStackCommand(projectPath: string) {
   return invoke<ProjectStackResult>("project_detect_stack", { projectPath });

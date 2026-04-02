@@ -7,7 +7,7 @@ export type PerfRecord = {
 
 const PERF_KEY = "__MAESTRO_PERF__";
 const MAX_RECORDS = 400;
-const MARK_PREFIX = "bmad:";
+const MARK_PREFIX = "maestro:";
 
 function getPerfStore(): PerfRecord[] {
   const target = window as Window & {

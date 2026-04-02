@@ -10,7 +10,7 @@ import type {
   ChatSessionMeta,
   ChatSpawnRequest,
   ChatStopRequest,
-} from "../types";
+} from "../../types";
 
 function createStringChannel(onChunk: (chunk: string) => void) {
   const onData = new Channel<string>();

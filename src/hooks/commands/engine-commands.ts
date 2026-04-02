@@ -4,7 +4,8 @@ import type {
   EngineModelListResult,
   EnginePreflightResult,
   EngineProfile,
-} from "../types";
+  AuthScheme,
+} from "../../types";
 
 export function listEnginesCommand() {
   return invoke<Record<string, EngineConfig>>("engine_list");
@@ -65,4 +66,19 @@ export function upsertProfileCommand(
 
 export function listEngineModelsCommand(engineId: string) {
   return invoke<EngineModelListResult>("engine_list_models", { engineId });
+}
+
+export function verifyLLMConnectionCommand(
+  providerId: string,
+  auth: AuthScheme,
+  baseUrl?: string | null,
+) {
+  return invoke<{ success: boolean; message: string; available_models: string[] }>(
+    "verify_llm_connection",
+    {
+      providerId,
+      auth,
+      baseUrl: baseUrl ?? null,
+    },
+  );
 }

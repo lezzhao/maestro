@@ -18,9 +18,10 @@ import { Toaster, toast } from "sonner";
 import {
   cleanupDeadPtySessionsCommand,
   reconcileActiveCliSessionsCommand,
-} from "./hooks/app-runtime-commands";
-import { setCurrentProjectCommand } from "./hooks/project-commands";
-import { updateWorkspaceCommand } from "./hooks/workspace-commands";
+} from "./hooks/commands/app-runtime-commands";
+import { setCurrentProjectCommand } from "./hooks/commands/project-commands";
+import { updateWorkspaceCommand } from "./hooks/commands/workspace-commands";
+import { PermissionDialog } from "./components/chat/PermissionDialog";
 
 function App() {
   const { t } = useTranslation();
@@ -192,6 +193,7 @@ function App() {
         </Suspense>
         
         <WorkspaceLayout />
+        <PermissionDialog />
       </div>
     </AppProviders>
   );

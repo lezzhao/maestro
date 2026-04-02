@@ -84,6 +84,7 @@ export function createAgentStateUpdateApplier(
       }),
       setTaskRunning: chatState.setTaskRunning,
       setExecutionPhase: chatState.setExecutionPhase,
+      setPendingPermissionRequest: chatState.setPendingPermissionRequest,
     });
   };
 }

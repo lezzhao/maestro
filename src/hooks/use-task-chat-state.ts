@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { useChatStore } from "../stores/chatStore";
+import { useChatStore } from "../stores/chat/index";
 
 export function useTaskChatState(taskId: string | null) {
   return useChatStore(useShallow((state) => {
@@ -9,6 +9,7 @@ export function useTaskChatState(taskId: string | null) {
     const latestRun = state.getLatestRun(taskId);
     const latestRunEvents = state.getRunEvents(latestRun?.id || null);
     const latestTranscript = state.getRunTranscript(latestRun?.id || null);
+    const latestVerification = state.getRunVerification(latestRun?.id || null);
     const pendingAttachments = state.getTaskPendingAttachments(taskId);
     return {
       messages,
@@ -16,6 +17,7 @@ export function useTaskChatState(taskId: string | null) {
       latestRun,
       latestRunEvents,
       latestTranscript,
+      latestVerification,
       pendingAttachments,
     };
   }));

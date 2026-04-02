@@ -13,7 +13,8 @@ import {
   updateTaskProfileCommand,
   upsertEngineCommand,
   upsertProfileCommand,
-} from "./engine-commands";
+  verifyLLMConnectionCommand,
+} from "./commands/engine-commands";
 import {
   clearEngineModelCache,
   getAvailableEngines,
@@ -22,7 +23,8 @@ import {
   loadEngineModelList,
   loadEnginePreflight,
 } from "./engine-cache-support";
-import type {
+import {
+  AuthScheme,
   EngineConfig,
   EngineModelListResult,
   EnginePreflightResult,
@@ -189,6 +191,13 @@ export function useEngine() {
     [getActiveProfileId],
   );
 
+  const verifyConnection = useCallback(
+    async (providerId: string, auth: AuthScheme, baseUrl?: string | null) => {
+      return verifyLLMConnectionCommand(providerId, auth, baseUrl);
+    },
+    [],
+  );
+
   const updateProfileModel = useCallback(
     async (engineId: string, profileId: string, model: string) => {
       const engine = engines[engineId];
@@ -247,5 +256,6 @@ export function useEngine() {
     upsertProfile,
     listModels,
     updateProfileModel,
+    onVerifyConnection: verifyConnection,
   };
 }

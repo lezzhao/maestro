@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Workspace } from "../types";
+import type { Workspace } from "../../types";
 
 interface WorkspaceCreateRequest {
   name: string;

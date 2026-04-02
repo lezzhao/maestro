@@ -30,7 +30,7 @@ export interface Artefact {
   updated_at: string;
 }
 
-class BMadDatabase {
+class MaestroDatabase {
   private db: Database | null = null;
   private initialized = false;
 
@@ -39,7 +39,7 @@ class BMadDatabase {
     
     // Load the SQLite database instance from Tauri.
     // It creates state.db in the app's appData directory.
-    this.db = await Database.load("sqlite:bmad_state.db");
+    this.db = await Database.load("sqlite:maestro_state.db");
 
     await this.createTables();
     this.initialized = true;
@@ -137,4 +137,4 @@ class BMadDatabase {
   }
 }
 
-export const dbProvider = new BMadDatabase();
+export const dbProvider = new MaestroDatabase();

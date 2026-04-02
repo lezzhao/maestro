@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import { DEFAULT_ENGINE_ID, DEFAULT_PROFILE_ID } from "../constants";
-import { createTaskCommand, deleteTaskCommand } from "../hooks/task-commands";
+import { createTaskCommand, deleteTaskCommand } from "../hooks/commands/task-commands";
 import type {
   EngineConfig,
   EnginePreflightResult,
@@ -19,7 +19,7 @@ type AppStore = {
   projectPath: string;
   engines: Record<string, EngineConfig>;
   enginePreflight: Record<string, EnginePreflightResult>;
-  specProvider: "none" | "bmad" | "custom";
+  specProvider: "none" | "maestro" | "custom";
   theme: "light" | "dark" | "system";
   lang: "en" | "zh";
 
@@ -30,6 +30,13 @@ type AppStore = {
   // Workspace Management
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
+  
+  // Artifacts (Phase 3)
+  activeArtifact: { code: string; language: string; title?: string } | null;
+  isArtifactsPanelOpen: boolean;
+  
+  // Context Pinning (Phase 4)
+  pinnedFiles: string[];
 
   // Actions
   setCurrentStep: (step: "setup" | "project" | "compose" | "review") => void;
@@ -39,7 +46,7 @@ type AppStore = {
   setProjectPath: (path: string) => void;
   setEngines: (engines: Record<string, EngineConfig>) => void;
   setEnginePreflight: (engineId: string, result: EnginePreflightResult) => void;
-  setSpecProvider: (provider: "none" | "bmad" | "custom") => void;
+  setSpecProvider: (provider: "none" | "maestro" | "custom") => void;
   setTheme: (theme: "light" | "dark" | "system") => void;
   setLang: (lang: "en" | "zh") => void;
 
@@ -60,6 +67,14 @@ type AppStore = {
   updateWorkspace: (id: string, patch: Partial<Workspace>) => void;
   removeWorkspace: (id: string) => void;
   setActiveWorkspaceId: (id: string | null) => void;
+
+  // Artifact Actions
+  setActiveArtifact: (artifact: { code: string; language: string; title?: string } | null) => void;
+  setArtifactsPanelOpen: (open: boolean) => void;
+
+  // Context Actions
+  togglePinFile: (path: string) => void;
+  clearPinnedFiles: () => void;
 };
 
 export const useAppStore = create<AppStore>()(
@@ -95,6 +110,11 @@ export const useAppStore = create<AppStore>()(
 
       workspaces: [],
       activeWorkspaceId: null,
+
+      activeArtifact: null,
+      isArtifactsPanelOpen: false,
+
+      pinnedFiles: [],
 
       setCurrentStep: (currentStep) => set({ currentStep }),
       setShowSettings: (showSettings) => set({ showSettings }),
@@ -215,6 +235,16 @@ export const useAppStore = create<AppStore>()(
           };
         }),
       setActiveWorkspaceId: (activeWorkspaceId) => set({ activeWorkspaceId }),
+
+      setActiveArtifact: (activeArtifact) => set({ activeArtifact, isArtifactsPanelOpen: !!activeArtifact }),
+      setArtifactsPanelOpen: (isArtifactsPanelOpen) => set({ isArtifactsPanelOpen }),
+
+      togglePinFile: (path) => set((state) => ({
+        pinnedFiles: state.pinnedFiles.includes(path) 
+          ? state.pinnedFiles.filter(p => p !== path)
+          : [...state.pinnedFiles, path]
+      })),
+      clearPinnedFiles: () => set({ pinnedFiles: [] }),
     }),
     {
       name: "maestro-app-storage",

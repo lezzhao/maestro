@@ -7,7 +7,7 @@ import {
   readProjectFileCommand,
   recommendProjectEngineCommand,
   setCurrentProjectCommand,
-} from "./project-commands";
+} from "./commands/project-commands";
 import { loadProjectGitDiff, loadProjectGitStatus } from "./project-cache-support";
 import type { FileChange } from "../types";
 

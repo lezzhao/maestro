@@ -41,7 +41,12 @@ export type AgentStateUpdate =
   | { type: "workspace_created"; workspace: import("../types").Workspace }
   | { type: "workspace_updated"; workspace: import("../types").Workspace }
   | { type: "workspace_deleted"; workspace_id: string }
-  | { type: "execution_token_usage"; task_id: string; run_id: string; input_tokens: number; output_tokens: number };
+  | { type: "execution_token_usage"; task_id: string; run_id: string; input_tokens: number; output_tokens: number }
+  | { type: "pending_approval"; task_id: string; request_id: string; tool_name: string; tool_input: string; message: string }
+  | { type: "reasoning"; task_id: string; message_id: string; content: string }
+  | { type: "tool_started"; task_id: string; message_id: string; tool_name: string; tool_input: string }
+  | { type: "tool_finished"; task_id: string; message_id: string; tool_name: string; tool_output: string; success: boolean }
+  | { type: "message_token_usage"; task_id: string; message_id: string; input_tokens: number; output_tokens: number; total_tokens: number };
 
 type AgentReducerDeps = {
   createRun: (run: TaskRun) => void;
@@ -72,6 +77,7 @@ type AgentReducerDeps = {
   };
   setTaskRunning: (taskId: string, running: boolean) => void;
   setExecutionPhase: (taskId: string, phase: "idle" | "connecting" | "sending" | "streaming" | "completed" | "error") => void;
+  setPendingPermissionRequest: (request: import("../stores/chat/types").PermissionRequest | null) => void;
 };
 
 function toTaskRecordPatch(task: TaskRecord): Partial<import("../types").TaskViewState> {
@@ -217,6 +223,55 @@ export function applyAgentStateUpdate(payload: AgentStateUpdate, deps: AgentRedu
         stats.approx_output_tokens = (stats.approx_output_tokens || 0) + payload.output_tokens;
         deps.updateTaskRecord(payload.task_id, { stats });
       }
+      break;
+    }
+    case "pending_approval": {
+      deps.setPendingPermissionRequest({
+        requestId: payload.request_id,
+        toolName: payload.tool_name,
+        toolInput: payload.tool_input,
+        message: payload.message,
+      });
+      break;
+    }
+    case "reasoning": {
+      deps.updateMessage(payload.task_id, payload.message_id, {
+        reasoning: payload.content,
+      });
+      break;
+    }
+    case "tool_started": {
+      deps.updateMessage(payload.task_id, payload.message_id, {
+        meta: {
+          eventType: "tool",
+          eventStatus: "pending",
+          toolName: payload.tool_name,
+          toolInput: payload.tool_input,
+        },
+      });
+      break;
+    }
+    case "tool_finished": {
+      deps.updateMessage(payload.task_id, payload.message_id, {
+        meta: {
+          eventType: "tool",
+          eventStatus: payload.success ? "done" : "error",
+          toolName: payload.tool_name,
+          toolOutput: payload.tool_output,
+        },
+      });
+      break;
+    }
+    case "message_token_usage": {
+      deps.updateMessage(payload.task_id, payload.message_id, {
+        meta: {
+          usage: {
+            input_tokens: payload.input_tokens,
+            output_tokens: payload.output_tokens,
+            total_tokens: payload.total_tokens,
+          },
+        },
+      });
       break;
     }
     default:

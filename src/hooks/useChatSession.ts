@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { useChatStore } from "../stores/chatStore";
 import { useChatInputHistory } from "./useChatInputHistory";
-import { useChatExecutionOrchestrator } from "./use-chat-execution-orchestrator";
+import { useChatExecutionOrchestrator } from "./orchestrators/use-chat-execution-orchestrator";
 import type { EngineProfile } from "../types";
 
 export interface UseChatSessionParams {
@@ -32,6 +32,7 @@ export function useChatSession({
     handleStop,
     pendingAttachments,
     removePendingAttachment,
+    addPendingAttachments,
   } = useChatExecutionOrchestrator({
     activeTaskId,
     activeEngineId,
@@ -52,5 +53,6 @@ export function useChatSession({
     handleCopy,
     pendingAttachments,
     removePendingAttachment,
+    addPendingAttachments,
   };
 }

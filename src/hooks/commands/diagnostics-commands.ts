@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { CliPruneResult, CliSessionListItem } from "../types";
+import type { CliPruneResult, CliSessionListItem } from "../../types";
 
 export function listCliSessionsCommand(engineId?: string) {
   return invoke<CliSessionListItem[]>("cli_list_sessions", {

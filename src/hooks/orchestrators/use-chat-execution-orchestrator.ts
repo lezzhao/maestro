@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { createMessage } from "../components/chat/createMessage";
-import { useEngineStoreState, useTaskStoreState } from "./use-app-store-selectors";
-import { useTranslation } from "../i18n";
-import { useChatStore } from "../stores/chatStore";
-import { useChatAgent } from "./useChatAgent";
-import { useExecutionQueue } from "./useExecutionQueue";
-import { useAgentExecutor } from "./useAgentExecutor";
-import type { ExecutionEvent } from "../services/ExecutionClient";
-import type { ChatApiMessage, ChatChoicePayload, EngineProfile, RunEvent } from "../types";
+import { createMessage } from "../../components/chat/createMessage";
+import { useEngineStoreState, useTaskStoreState } from "../use-app-store-selectors";
+import { useTranslation } from "../../i18n";
+import { useChatStore } from "../../stores/chatStore";
+import { useAppStore } from "../../stores/appStore";
+import { useChatAgent } from "../useChatAgent";
+import { useExecutionQueue } from "../useExecutionQueue";
+import { useAgentExecutor } from "../useAgentExecutor";
+import type { ExecutionEvent } from "../../services/ExecutionClient";
+import type { ChatApiMessage, ChatChoicePayload, EngineProfile, RunEvent, ChatAttachment } from "../../types";
 
 export interface UseChatExecutionOrchestratorParams {
   activeTaskId: string | null;
@@ -58,45 +59,19 @@ export function useChatExecutionOrchestrator({
   const setRunVerification = useChatStore((s) => s.setRunVerification);
   const clearPendingAttachmentsByTask = useChatStore((s) => s.clearPendingAttachments);
   const removePendingAttachmentByTask = useChatStore((s) => s.removePendingAttachment);
+  const addPendingAttachmentsByTask = useChatStore((s) => s.addPendingAttachments);
   const executionPhase = useChatStore((s) => s.taskExecutionPhase[activeTaskId ?? ""] || "idle");
   const setExecutionPhase = useChatStore((s) => s.setExecutionPhase);
-  const activeRunId = useChatStore((s) => s.taskActiveRunId[activeTaskId ?? ""]);
+  const activeRunId = useChatStore((s) => s.taskActiveRunId[activeTaskId ?? "global"]);
   const setActiveRunId = useChatStore((s) => s.setActiveRunId);
   const setActiveAssistantMsgId = useChatStore((s) => s.setActiveAssistantMsgId);
+  const activeConversationId = useChatStore((s) => s.activeConversationId[activeTaskId ?? "global"]);
+  const pinnedFiles = useAppStore((s) => s.pinnedFiles);
 
   const { stopSession, saveLastConversation } = useChatAgent();
   const { queue, pushQueue, popQueue, clearQueue } = useExecutionQueue();
-  const { startExecution, stopExecution } = useAgentExecutor(
-    executionMode,
-    useCallback(
-      (event: ExecutionEvent) => {
-        if (!activeTaskId) return;
-
-        switch (event.type) {
-          case "verification":
-            if (activeRunId) {
-              setRunVerification(activeRunId, event.verification);
-            }
-            break;
-          case "done":
-            if (event.exitCode !== undefined && event.exitCode !== 0 && event.exitCode !== null) {
-              failRoundRef.current?.(`命令执行失败（退出码：${event.exitCode}）`);
-            } else {
-              finalizeRoundRef.current?.();
-            }
-            break;
-          case "error":
-            failRoundRef.current?.(event.message);
-            break;
-        }
-      },
-      [activeRunId, activeTaskId, setRunVerification],
-    ),
-  );
-
-  const runExecutionRef = useRef<
-    ((content: string, mode: "api" | "cli") => Promise<void>) | null
-  >(null);
+  
+  const runExecutionRef = useRef<((content: string, mode: "api" | "cli") => Promise<void>) | null>(null);
   const cliContinuationRef = useRef(false);
   const finalizeRoundRef = useRef<(() => void) | null>(null);
   const failRoundRef = useRef<((errText: string) => void) | null>(null);
@@ -134,6 +109,66 @@ export function useChatExecutionOrchestrator({
     [activeRunId, activeTaskId, addRunEvent],
   );
 
+  const { startExecution, stopExecution } = useAgentExecutor(
+    executionMode,
+    useCallback(
+      (event: ExecutionEvent) => {
+        if (!activeTaskId) return;
+
+        switch (event.type) {
+          case "verification":
+            if (activeRunId) {
+              setRunVerification(activeRunId, event.verification);
+            }
+            break;
+          case "done":
+            if (event.exitCode !== undefined && event.exitCode !== 0 && event.exitCode !== null) {
+              failRoundRef.current?.(t("execution_failed_code", { code: event.exitCode }));
+            } else {
+              finalizeRoundRef.current?.();
+            }
+            break;
+          case "toolApprovalRequest":
+            createChoiceSystemMessage(
+              `${t("tool_approval_title", { name: event.request.toolName })}\n${t("tool_approval_args", { args: JSON.stringify(event.request.arguments, null, 2) })}`,
+              {
+                title: t("high_risk_tool_title"),
+                description: t("high_risk_tool_desc", { name: event.request.toolName }),
+                status: "pending",
+                options: [
+                  {
+                    id: "approve",
+                    label: t("approve_execution"),
+                    variant: "primary-gradient",
+                    action: {
+                      kind: "resolve_pending_tool",
+                      requestId: event.request.requestId,
+                      approved: true,
+                    },
+                  },
+                  {
+                    id: "reject",
+                    label: t("reject"),
+                    variant: "ghost",
+                    action: {
+                      kind: "resolve_pending_tool",
+                      requestId: event.request.requestId,
+                      approved: false,
+                    },
+                  },
+                ],
+              },
+            );
+            break;
+          case "error":
+            failRoundRef.current?.(event.message);
+            break;
+        }
+      },
+      [activeRunId, activeTaskId, setRunVerification, createChoiceSystemMessage, t],
+    ),
+  );
+
   const finalizeRound = useCallback(() => {
     if (!activeTaskId) return;
 
@@ -151,7 +186,7 @@ export function useChatExecutionOrchestrator({
     emitRunEvent({
       kind: "status",
       status: "done",
-      message: "本轮执行完成",
+      message: t("round_completed"),
       engineId: activeEngineId,
       mode: executionMode,
     });
@@ -163,6 +198,7 @@ export function useChatExecutionOrchestrator({
     emitRunEvent,
     executionMode,
     updateTaskRecord,
+    t,
   ]);
 
   const failRound = useCallback(
@@ -242,7 +278,13 @@ export function useChatExecutionOrchestrator({
       )
       .map((message) => ({
         role: message.role === "system" ? "system" : message.role === "assistant" ? "assistant" : "user",
-        content: buildMessageContentWithAttachments(message),
+        content: message.content,
+        attachments: message.attachments?.map(a => ({
+          name: a.name,
+          path: a.path,
+          mime_type: a.mime_type || "application/octet-stream",
+          data: a.data || "",
+        })),
       }));
   }, [activeTaskId]);
 
@@ -276,7 +318,7 @@ export function useChatExecutionOrchestrator({
       try {
         setExecutionPhase(activeTaskId, "sending");
         if (mode === "api") {
-          const allMessages = useChatStore.getState().messages[activeTaskId] || [];
+          const allMessages = useChatStore.getState().messages[activeTaskId || "global"] || [];
           await saveLastConversation({
             task_id: activeTaskId,
             messages: allMessages,
@@ -288,8 +330,10 @@ export function useChatExecutionOrchestrator({
               engine_id: activeEngineId,
               profile_id: activeProfileId,
               task_id: activeTaskId,
+              conversation_id: activeConversationId,
               message_ids: buildApiMessageIds(),
               messages: buildApiMessages(),
+              pinned_files: pinnedFiles,
               max_input_tokens: 12000,
               max_messages: 48,
             }
@@ -329,6 +373,8 @@ export function useChatExecutionOrchestrator({
       startExecution,
       updateTaskRecord,
       updateTaskRuntimeBinding,
+      activeConversationId,
+      pinnedFiles,
     ],
   );
 
@@ -336,10 +382,21 @@ export function useChatExecutionOrchestrator({
 
   useEffect(() => {
     if (activeTaskId && (executionPhase === "completed" || executionPhase === "error")) {
+      const state = useChatStore.getState();
+      const conversationId = activeConversationId;
+      
+      // Auto-titling logic: if it's the default title, try to generate a better one
+      if (executionPhase === "completed" && conversationId) {
+        const convo = state.conversationsByTask[activeTaskId || "global"]?.find(c => c.id === conversationId);
+        if (convo && convo.title === t("new_conversation_default")) {
+          state.generateTitle(conversationId);
+        }
+      }
+
       const timer = setTimeout(() => setExecutionPhase(activeTaskId, "idle"), 600);
       return () => clearTimeout(timer);
     }
-  }, [activeTaskId, executionPhase, setExecutionPhase]);
+  }, [activeTaskId, executionPhase, setExecutionPhase, activeConversationId, t]);
 
   useEffect(() => {
     if (activeTaskId && executionPhase === "idle" && !isRunning && queue.length > 0) {
@@ -364,9 +421,10 @@ export function useChatExecutionOrchestrator({
 
     let finalContent = trimmedInput;
     const currentAttachments = [...pendingAttachments];
-    if (currentAttachments.length > 0) {
-      const attachmentNotes = currentAttachments.map((attachment) => `[File: ${attachment.path}]`).join("\n");
-      finalContent = `${attachmentNotes}\n\n${trimmedInput}`;
+    
+    // For CLI mode, we still need to build text content with attachment path notes
+    if (executionMode === "cli" && currentAttachments.length > 0) {
+      finalContent = buildMessageContentWithAttachments({ content: trimmedInput, attachments: currentAttachments });
     }
 
     setInput("");
@@ -392,21 +450,21 @@ export function useChatExecutionOrchestrator({
       toast.error(
         `${t("execution_error")}: ${t("api_key")} / ${t("api_base_url")} / ${t("model_required")}`,
       );
-      createChoiceSystemMessage("当前 API 模式缺少必要配置，暂时无法发起请求。", {
-        title: "补全 API 配置",
-        description: "至少需要填写 API Key、Base URL 和模型标识，或者切回 CLI 模式继续。",
+      createChoiceSystemMessage(t("api_config_missing"), {
+        title: t("complete_api_config"),
+        description: t("api_config_desc"),
         status: "pending",
         options: [
           {
             id: "open-settings",
-            label: "打开设置",
-            description: "前往设置页补全 API 提供商配置。",
+            label: t("open_settings"),
+            description: t("go_to_settings_api"),
             action: { kind: "open_settings" },
           },
           {
             id: "switch-cli",
-            label: "切换到 CLI",
-            description: "如果本地 CLI 已可用，可以先切回 CLI 模式。",
+            label: t("switch_to_cli"),
+            description: t("switch_to_cli_desc"),
             action: { kind: "switch_execution_mode", mode: "cli" },
           },
         ],
@@ -418,22 +476,22 @@ export function useChatExecutionOrchestrator({
     const preflight = enginePreflight[preflightKey] || enginePreflight[activeEngineId];
     if (executionMode === "cli") {
       if (!preflight) {
-        toast.error(`${t("execution_error")}: 当前引擎 ${activeEngineId} 尚未完成检测，请稍后再试。`);
-        createChoiceSystemMessage(`当前引擎 ${activeEngineId} 尚未完成 CLI 检测。`, {
-          title: "CLI 检测尚未完成",
-          description: "你可以先打开设置查看检测状态，或者改用 API 模式继续。",
+        toast.error(`${t("execution_error")}: ${t("engine_preflight_pending", { id: activeEngineId })}`);
+        createChoiceSystemMessage(t("engine_preflight_pending", { id: activeEngineId }), {
+          title: t("cli_preflight_pending_title"),
+          description: t("cli_preflight_pending_desc"),
           status: "pending",
           options: [
             {
               id: "open-settings",
-              label: "打开设置",
-              description: "查看引擎状态并重新触发检测。",
+              label: t("open_settings"),
+              description: t("check_engine_status"),
               action: { kind: "open_settings" },
             },
             {
               id: "switch-api",
-              label: "切换到 API",
-              description: "如果当前 Provider 支持 API，可先改用 API 模式。",
+              label: t("switch_to_api"),
+              description: t("switch_to_api_desc"),
               action: { kind: "switch_execution_mode", mode: "api" },
             },
           ],
@@ -441,22 +499,22 @@ export function useChatExecutionOrchestrator({
         return;
       }
       if (!preflight.command_exists || !preflight.auth_ok) {
-        toast.error(`${t("execution_error")}: 当前引擎 ${activeEngineId} 不可用。请在设置中完成 CLI 配置。`);
-        createChoiceSystemMessage(`当前引擎 ${activeEngineId} 的 CLI 还不可用。`, {
-          title: "CLI 尚不可用",
-          description: "通常是命令不存在、未登录或鉴权未通过。你可以进入设置修复，或切换到 API 模式。",
+        toast.error(`${t("execution_error")}: ${t("engine_unavailable", { id: activeEngineId })}`);
+        createChoiceSystemMessage(t("engine_unavailable", { id: activeEngineId }), {
+          title: t("cli_unavailable_title"),
+          description: t("cli_unavailable_desc"),
           status: "pending",
           options: [
             {
               id: "open-settings",
-              label: "打开设置",
-              description: "检查命令路径、登录状态和预检结果。",
+              label: t("open_settings"),
+              description: t("cli_fix_hint"),
               action: { kind: "open_settings" },
             },
             {
               id: "switch-api",
-              label: "切换到 API",
-              description: "如果当前 Provider 支持 API，可先改用 API 模式。",
+              label: t("switch_to_api"),
+              description: t("switch_to_api_desc"),
               action: { kind: "switch_execution_mode", mode: "api" },
             },
           ],
@@ -497,7 +555,7 @@ export function useChatExecutionOrchestrator({
         await stopSession({ session_id: activeTask.sessionId });
       }
     } catch (error) {
-      console.error("停止执行时出错:", error);
+      console.error("Error stopping execution:", error);
     }
     clearQueue();
   }, [activeTaskId, clearQueue, stopExecution, stopSession, tasks]);
@@ -510,11 +568,20 @@ export function useChatExecutionOrchestrator({
     [activeTaskId, removePendingAttachmentByTask],
   );
 
+  const addPendingAttachments = useCallback(
+    (attachments: ChatAttachment[]) => {
+      if (!activeTaskId) return;
+      addPendingAttachmentsByTask(activeTaskId, attachments);
+    },
+    [activeTaskId, addPendingAttachmentsByTask],
+  );
+
   return {
     executionPhase,
     handleSend,
     handleStop,
     pendingAttachments,
     removePendingAttachment,
+    addPendingAttachments,
   };
 }
