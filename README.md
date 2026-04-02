@@ -13,7 +13,7 @@ Maestro 是一个基于 **Tauri v2 + React + Rust** 构建的 **AI-Native 开发
 - **双模运行机制**：
   - **手动模式（交互式 terminal）**：通过内置的 PTY + xterm.js 直接与 Agent 交互。
   - **编排模式（Headless Workflow）**：支持后台无头执行复杂任务流，实时监控执行结果并自动归档。
-- **自定义规范注入 (Spec Injection)**：支持在项目目录中动态注入和管理执行规范（如默认支持的 `BMAD` 规范，或自定义 Markdown 规范），强制 AI 生成符合标准的代码。
+- **自定义规范注入 (Spec Injection)**：支持在项目目录中动态注入和管理执行规范（如默认支持的 `Maestro` 规范，或自定义 Markdown 规范），强制 AI 生成符合标准的代码。
 - **安全的凭据管理**：集成了操作系统的原生 Keyring（钥匙串/凭证管理器），安全存储 API Key，并对本地日志中的敏感凭据进行自动脱敏拦截，防止配置泄漏。
 - **进程与生命周期守护**：提供高可用性的孤儿进程检测与会话恢复清理，确保资源的及时回收与状态一致性。
 
@@ -105,10 +105,10 @@ AI 助手往往需要明确的 prompt 指令或是行为规范（Rule）。Maest
 
 Maestro 支持三种层级的注入：
 - `none`: 不注入任何特殊规则。
-- `bmad`: 注入项目主推的 **BMAD (Brief -> Model -> Action -> Done)** 工作流规范。
+- `maestro`: 注入项目主推的 **Maestro (Brief -> Model -> Action -> Done)** 工作流规范。
 - `custom`: 用户使用自定义规范路径注入。
 
-> 注入发生时，Maestro 提供了 `.bmad-bak` 安全备份机制，用户可以在切换不同 Agent 流派时无缝 `spec_restore` 预先存在的业务 `.cursorrules` 或 `.CLAUDE.md`。
+> 注入发生时，Maestro 提供了 `.maestro-bak` 安全备份机制，用户可以在切换不同 Agent 流派时无缝 `spec_restore` 预先存在的业务 `.cursorrules` 或 `.CLAUDE.md`。
 
 ---
 

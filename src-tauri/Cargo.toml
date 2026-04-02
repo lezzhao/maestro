@@ -30,6 +30,7 @@ strip-ansi-escapes = "0.2"
 regex = "1"
 which = "7"
 tauri-plugin-dialog = "2.6.0"
+tauri-plugin-global-shortcut = "2.2.0"
 futures = "0.3"
 reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"] }
 tauri-plugin-sql = { version = "2.3.2", features = ["sqlite"] }
@@ -48,7 +49,11 @@ tracing = "0.1"
 notify-debouncer-mini = "0.7.0"
 ignore = "0.4.25"
 notify = "8.2.0"
+async-trait = "0.1.89"
 
 [dev-dependencies]
 tempfile = "3.14"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-global-shortcut = "2"
 

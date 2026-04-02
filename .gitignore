@@ -17,7 +17,7 @@ dist-ssr
 src-tauri/target/
 
 # CLI 运行时状态
-.bmad-cli/
+.maestro-cli/
 .maestro-cli/
 
 # TypeScript

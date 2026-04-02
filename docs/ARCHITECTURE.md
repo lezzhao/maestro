@@ -20,14 +20,14 @@ flowchart TB
     end
 
     subgraph DB [持久化]
-        bmad_state[(bmad_state.db)]
+        maestro_state[(maestro_state.db)]
         run_records[(run_records)]
     end
 
-    TaskRecord --> bmad_state
-    TaskRuntimeBinding --> bmad_state
-    RuntimeSnapshot --> bmad_state
-    ExecutionBinding --> bmad_state
+    TaskRecord --> maestro_state
+    TaskRuntimeBinding --> maestro_state
+    RuntimeSnapshot --> maestro_state
+    ExecutionBinding --> maestro_state
     Execution --> run_records
 
     ResolvedRuntimeContext --> Execution
@@ -101,7 +101,7 @@ flowchart LR
 
 | 用途 | 路径类型 | 路径示例 | 模块 |
 |------|----------|----------|------|
-| 任务 DB | 全局 | `{app_data_dir}/bmad_state.db` | task_state |
+| 任务 DB | 全局 | `{app_data_dir}/maestro_state.db` | task_state |
 | 配置文件 | 全局 | `~/.maestro/config.toml` | config |
 | 上次对话 | 全局 | `{app_config_dir}/last-conversation.json` | workflow/chat |
 | Run records | 工作区 | `{project_path}/.maestro-cli/run-records.jsonl` | run_persistence |

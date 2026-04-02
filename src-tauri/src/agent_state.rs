@@ -10,6 +10,7 @@
 
 use crate::workspace_commands::Workspace;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 
 pub const AGENT_STATE_UPDATE_EVENT: &str = "agent://state-update";
@@ -27,6 +28,7 @@ pub enum AgentStateUpdate {
         run_id: String,
         status: String,
         error: Option<String>,
+        reconciliation: bool,
     },
     MessagesUpdated {
         task_id: String,
@@ -95,6 +97,47 @@ pub enum AgentStateUpdate {
         run_id: String,
         input_tokens: u64,
         output_tokens: u64,
+    },
+    PendingApproval {
+        task_id: String,
+        request_id: String,
+        tool_name: String,
+        tool_input: String,
+        message: String,
+    },
+    Reasoning {
+        task_id: String,
+        message_id: String,
+        content: String,
+    },
+    ToolStarted {
+        task_id: String,
+        message_id: String,
+        tool_name: String,
+        tool_input: String,
+    },
+    ToolFinished {
+        task_id: String,
+        message_id: String,
+        tool_name: String,
+        tool_output: String,
+        success: bool,
+        duration_ms: u64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        stdout: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        stderr: Option<String>,
+    },
+    MessageTokenUsage {
+        task_id: String,
+        message_id: String,
+        input_tokens: u64,
+        output_tokens: u64,
+        total_tokens: u64,
+    },
+    Trace {
+        task_id: String,
+        content: String,
     },
 }
 
@@ -240,7 +283,44 @@ pub fn resolve_choice_payload(
     }
 }
 
-/// Emit agent state update to frontend. No-op if app is None (e.g. daemon mode).
+/// Trait for emitting application events, decoupling business logic from Tauri.
+pub trait AppEventHandle: Send + Sync {
+    fn emit_state_update(&self, payload: AgentStateUpdate);
+}
+
+/// Default implementation for Tauri applications.
+pub struct TauriEventHandle {
+    pub handle: AppHandle,
+}
+
+impl TauriEventHandle {
+    pub fn new(handle: AppHandle) -> Self {
+        Self { handle }
+    }
+
+    pub fn arc(handle: AppHandle) -> Arc<dyn AppEventHandle> {
+        Arc::new(Self::new(handle))
+    }
+
+    pub fn noop() -> Arc<dyn AppEventHandle> {
+        Arc::new(NoopEventHandle)
+    }
+}
+
+impl AppEventHandle for TauriEventHandle {
+    fn emit_state_update(&self, payload: AgentStateUpdate) {
+        emit_state_update(Some(&self.handle), payload);
+    }
+}
+
+/// No-op implementation for testing and headless/daemon modes.
+pub struct NoopEventHandle;
+
+impl AppEventHandle for NoopEventHandle {
+    fn emit_state_update(&self, _payload: AgentStateUpdate) {}
+}
+
+/// Emit agent state update to frontend via AppHandle.
 pub fn emit_state_update(app: Option<&AppHandle>, payload: AgentStateUpdate) {
     if let Some(handle) = app {
         match serde_json::to_value(&payload) {
@@ -289,5 +369,6 @@ pub fn run_finished_payload(
         run_id: run_id.to_string(),
         status: status.to_string(),
         error,
+        reconciliation: true,
     }
 }

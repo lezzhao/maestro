@@ -108,7 +108,7 @@ fn map_run_records(
 #[command]
 pub fn cli_list_sessions(
     engine_id: Option<String>,
-    core_state: State<'_, MaestroCore>,
+    core_state: State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<Vec<CliSessionListItem>, String> {
     let io = resolve_workspace_io(core_state.inner())?;
     let log_dir = cli_log_dir(&io);
@@ -125,7 +125,7 @@ pub fn cli_read_session_logs(
     engine_id: String,
     session_id: Option<String>,
     _limit: Option<usize>,
-    core_state: State<'_, MaestroCore>,
+    core_state: State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<String, String> {
     let io = resolve_workspace_io(core_state.inner())?;
     let run_records = read_run_records(&io).unwrap_or_default();
@@ -163,7 +163,7 @@ pub fn cli_prune_sessions(
     engine_id: Option<String>,
     status: Option<String>,
     older_than_hours: Option<u64>,
-    core_state: State<'_, MaestroCore>,
+    core_state: State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<CliPruneResult, String> {
     let io = resolve_workspace_io(core_state.inner())?;
     let log_dir = cli_log_dir(&io);
@@ -194,7 +194,7 @@ pub fn cli_prune_sessions(
             keep.push(item);
         }
     }
-    rewrite_run_records(&io, &keep)?;
+    rewrite_run_records(&io, &keep, None)?;
     let mut deleted_logs = 0usize;
     for record in &remove {
         let log_path = session_log_path(&log_dir, &record.id);
@@ -209,7 +209,7 @@ pub fn cli_prune_sessions(
 }
 
 #[command]
-pub fn cli_reconcile_active_sessions(core_state: State<'_, MaestroCore>) -> Result<usize, String> {
+pub fn cli_reconcile_active_sessions(core_state: State<'_, std::sync::Arc<crate::core::MaestroCore>>) -> Result<usize, String> {
     let io = resolve_workspace_io(core_state.inner())?;
     let mut reconciled = 0;
 
@@ -231,7 +231,7 @@ pub fn cli_reconcile_active_sessions(core_state: State<'_, MaestroCore>) -> Resu
             updated.push(item);
         }
         if reconciled > 0 {
-            rewrite_run_records(&io, &updated)?;
+            rewrite_run_records(&io, &updated, None)?;
         }
     }
 

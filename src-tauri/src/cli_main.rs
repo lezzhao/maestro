@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 use std::sync::Arc;
+use tauri_app_lib::agent_state::TauriEventHandle;
 use tauri_app_lib::core::events::{MpscEventStream, MpscStringStream};
 use tauri_app_lib::ipc::{IpcMessage, IpcResponse};
 use tauri_app_lib::workflow::chat::{chat_execute_api_core, chat_execute_cli_core};
@@ -68,7 +69,7 @@ pub async fn run_cli_mode(args: Vec<String>) {
                                     msg_id: msg.id.clone(),
                                 });
                                 let result = workflow_run_core(
-                                    None,
+                                    TauriEventHandle::noop(),
                                     stream,
                                     req,
                                     &core_clone.config.get(),
@@ -121,6 +122,7 @@ pub async fn run_cli_mode(args: Vec<String>) {
                                     msg_id: msg.id.clone(),
                                 });
                                 let result = workflow_run_step_core(
+                                    TauriEventHandle::noop(),
                                     stream,
                                     req,
                                     &core_clone.config.get(),
@@ -175,9 +177,10 @@ pub async fn run_cli_mode(args: Vec<String>) {
                                     msg_id: msg.id.clone(),
                                 });
                                 let result = chat_execute_api_core(
-                                    None,
+                                    TauriEventHandle::noop(),
+                                    core_clone.clone(),
                                     req,
-                                    core_clone.config.get(),
+                                    (*core_clone.config.get()).clone(),
                                     &core_clone.headless_state,
                                     stream,
                                 )
@@ -231,9 +234,10 @@ pub async fn run_cli_mode(args: Vec<String>) {
                                     msg_id: msg.id.clone(),
                                 });
                                 let result = chat_execute_cli_core(
-                                    None,
+                                    TauriEventHandle::noop(),
+                                    core_clone.clone(),
                                     req,
-                                    core_clone.config.get(),
+                                    (*core_clone.config.get()).clone(),
                                     &core_clone.headless_state,
                                     stream,
                                 )
