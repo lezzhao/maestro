@@ -7,14 +7,14 @@ use std::sync::Mutex;
 
 static RUN_RECORDS_LOCK: Mutex<()> = Mutex::new(());
 
-fn redact_execution(record: &Execution) -> Execution {
+fn redact_execution(record: &Execution, extra_secrets: Option<&[String]>) -> Execution {
     let mut r = record.clone();
-    r.output_preview = redact::redact_sensitive(&r.output_preview);
+    r.output_preview = redact::redact_sensitive(&r.output_preview, extra_secrets);
     if let Some(ref e) = r.error {
-        r.error = Some(redact::redact_sensitive(e));
+        r.error = Some(redact::redact_sensitive(e, extra_secrets));
     }
     if let Some(ref res) = r.result {
-        r.result = Some(redact::redact_sensitive(res));
+        r.result = Some(redact::redact_sensitive(res, extra_secrets));
     }
     r
 }
@@ -26,7 +26,11 @@ pub fn current_time_ms() -> Result<i64, String> {
         .as_millis() as i64)
 }
 
-pub fn append_run_record(workspace_io: &WorkspaceIo, record: &Execution) -> Result<(), String> {
+pub fn append_run_record(
+    workspace_io: &WorkspaceIo, 
+    record: &Execution,
+    extra_secrets: Option<&[String]>,
+) -> Result<(), String> {
     let _guard = RUN_RECORDS_LOCK
         .lock()
         .map_err(|_| "lock run records failed".to_string())?;
@@ -39,7 +43,7 @@ pub fn append_run_record(workspace_io: &WorkspaceIo, record: &Execution) -> Resu
         .append(true)
         .open(&path)
         .map_err(|e| format!("open run record file failed: {e}"))?;
-    let redacted = redact_execution(record);
+    let redacted = redact_execution(record, extra_secrets);
     let text = serde_json::to_string(&redacted)
         .map_err(|e| format!("serialize run record failed: {e}"))?;
     file.write_all(format!("{text}\n").as_bytes())
@@ -82,6 +86,7 @@ pub fn read_run_records(workspace_io: &WorkspaceIo) -> Result<Vec<Execution>, St
 pub fn rewrite_run_records(
     workspace_io: &WorkspaceIo,
     records: &[Execution],
+    extra_secrets: Option<&[String]>,
 ) -> Result<(), String> {
     let _guard = RUN_RECORDS_LOCK
         .lock()
@@ -92,7 +97,7 @@ pub fn rewrite_run_records(
     }
     let content = records
         .iter()
-        .map(|item| serde_json::to_string(&redact_execution(item)).unwrap_or_default())
+        .map(|item| serde_json::to_string(&redact_execution(item, extra_secrets)).unwrap_or_default())
         .filter(|line| !line.is_empty())
         .collect::<Vec<_>>()
         .join("\n");
@@ -120,7 +125,7 @@ pub fn remove_records_by_task_id(
     if records.len() == before {
         return Ok(0);
     }
-    rewrite_run_records(workspace_io, &records)?;
+    rewrite_run_records(workspace_io, &records, None)?;
     Ok(before.saturating_sub(records.len()))
 }
 
@@ -156,8 +161,8 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path().to_path_buf();
         let io = WorkspaceIo::new(&root).expect("io");
-        append_run_record(&io, &mock_execution("r1", "t1")).expect("append r1");
-        append_run_record(&io, &mock_execution("r2", "t2")).expect("append r2");
+        append_run_record(&io, &mock_execution("r1", "t1"), None).expect("append r1");
+        append_run_record(&io, &mock_execution("r2", "t2"), None).expect("append r2");
 
         let removed = remove_records_by_task_id(&io, "t1").expect("remove t1");
         assert_eq!(removed, 1);

@@ -7,7 +7,7 @@ pub fn insert_runtime_snapshot(
     db_path: &Path,
     snapshot: &crate::task_runtime::RuntimeSnapshot,
 ) -> Result<(), CoreError> {
-    let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
+    let conn = crate::task_repository::db_connection(db_path).map_err(crate::task_repository::db_err)?;
     crate::task_repository::ensure_tables(&conn)?;
     conn.execute(
         "INSERT INTO runtime_snapshots (id, task_id, engine_id, profile_id, payload_json, reason, created_at)
@@ -31,7 +31,7 @@ pub fn get_runtime_snapshot_payload(
     db_path: &Path,
     snapshot_id: &str,
 ) -> Result<Option<crate::task_runtime::RuntimeSnapshotPayload>, CoreError> {
-    let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
+    let conn = crate::task_repository::db_connection(db_path).map_err(crate::task_repository::db_err)?;
     crate::task_repository::ensure_tables(&conn)?;
     let mut stmt = conn
         .prepare("SELECT payload_json FROM runtime_snapshots WHERE id = ?1")

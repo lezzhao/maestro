@@ -2,11 +2,13 @@ use crate::core::execution::Execution;
 use crate::workflow::types::VerificationSummary;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::{Instant, Duration};
 use tokio_util::sync::CancellationToken;
 
 pub struct HeadlessEntry {
     pub execution: Execution,
     pub cancel_token: CancellationToken,
+    pub created_at: Instant,
 }
 
 /// Manages headless execution lifecycle: register → running → complete/fail/cancel → extract for persist.
@@ -18,6 +20,7 @@ pub struct HeadlessProcessState {
 impl HeadlessProcessState {
     /// Register a new execution and return its id.
     pub fn register(&self, execution: Execution, cancel_token: CancellationToken) -> String {
+        self.cleanup_stale();
         let exec_id = execution.id.clone();
         self.entries
             .lock()
@@ -27,9 +30,19 @@ impl HeadlessProcessState {
                 HeadlessEntry {
                     execution,
                     cancel_token,
+                    created_at: Instant::now(),
                 },
             );
         exec_id
+    }
+
+    /// Explicitly remove old executions that were never completed/failed.
+    /// Usually happens if a task crashes or a bug prevents final extraction.
+    pub fn cleanup_stale(&self) {
+        let mut map = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+        let now = Instant::now();
+        // Remove if older than 30 minutes
+        map.retain(|_, entry| now.duration_since(entry.created_at) < Duration::from_secs(1800));
     }
 
     /// Cancel an active execution. Sends cancel signal; the task will call fail_and_extract

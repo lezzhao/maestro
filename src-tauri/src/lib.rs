@@ -1,14 +1,15 @@
-mod agent_state;
+pub mod agent_state;
 mod api_provider;
 mod cli_state;
 pub mod config;
 pub(crate) mod constants;
+mod conversation;
 pub mod core;
 mod engine;
-pub(crate) mod engines;
 pub(crate) mod execution_binding;
 pub(crate) mod execution_binding_repository;
 mod headless;
+pub mod i18n;
 pub mod ipc;
 pub(crate) mod plugin_engine;
 mod process;
@@ -16,9 +17,13 @@ mod project;
 mod pty;
 mod redact;
 mod run_persistence;
+mod memory;
+mod tools;
+mod mcp;
 mod scoped_fs;
 pub(crate) mod snapshot_repository;
 mod spec;
+mod safety;
 mod task_commands;
 mod task_lifecycle;
 mod task_migration;
@@ -30,10 +35,15 @@ pub mod workflow;
 pub(crate) mod workspace_commands;
 mod workspace_io;
 
+use std::sync::Arc;
 use cli_state::{
     cli_list_sessions, cli_prune_sessions, cli_read_session_logs, cli_reconcile_active_sessions,
 };
-use config::{load_or_create_config, save_config};
+use config::{get_builtin_roles, load_or_create_config, save_config, verify::verify_llm_connection};
+use conversation::{
+    conversation_create, conversation_delete, conversation_generate_title, conversation_list,
+    conversation_load_messages, conversation_update_title,
+};
 use core::MaestroCore;
 use engine::{
     engine_check_command, engine_delete, engine_list, engine_list_models, engine_preflight,
@@ -41,8 +51,9 @@ use engine::{
 };
 use process::{process_get_stats, process_start_monitor, process_stop_monitor};
 use project::{
-    project_detect_stack, project_git_diff, project_git_status, project_list_files,
-    project_read_file, project_recommend_engine, project_set_current,
+    project_detect_stack, project_find_symbols, project_git_diff, project_git_status,
+    project_list_files, project_list_files_deep, project_read_file, project_recommend_engine,
+    project_set_current,
 };
 use pty::{pty_cleanup_dead_sessions, pty_kill, pty_kill_all, pty_resize, pty_spawn, pty_write};
 use spec::{
@@ -54,12 +65,13 @@ use task_commands::{
     task_update, task_update_runtime_binding,
 };
 use tauri::Manager;
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use workflow::{
     chat_execute_api, chat_execute_api_stop, chat_execute_cli, chat_execute_cli_stop,
     chat_load_last_conversation, chat_save_last_conversation, chat_send, chat_spawn, chat_stop,
     chat_submit_choice, workflow_export_archives, workflow_get_archive,
     workflow_get_engine_history_detail, workflow_get_full_archive, workflow_list_archives,
-    workflow_list_engine_history, workflow_run, workflow_run_step,
+    workflow_list_engine_history, workflow_run, workflow_run_step, chat_resolve_pending_tool,
 };
 use workspace_commands::{workspace_create, workspace_delete, workspace_list, workspace_update};
 
@@ -72,12 +84,41 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_shell::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    if event.state() == ShortcutState::Pressed {
+                        // Default shortcut is Option+Space
+                        let meta = shortcut.id().to_string();
+                        if meta.contains("Alt") && meta.contains("Space") {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let is_visible = window.is_visible().unwrap_or(false);
+                                let is_focused = window.is_focused().unwrap_or(false);
+
+                                if is_visible && is_focused {
+                                    let _ = window.hide();
+                                } else {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                        }
+                    }
+                })
+                .build(),
+        )
         .setup(|app| {
+            let shortcut = Shortcut::new(
+                Some(tauri_plugin_global_shortcut::Modifiers::ALT),
+                tauri_plugin_global_shortcut::Code::Space,
+            );
+            let _ = app.global_shortcut().register(shortcut);
+
             app.manage(FileWatcherState::new());
 
             let config = load_or_create_config(app.handle().clone())?;
-            app.manage(MaestroCore::new(config.clone()));
-            if let Ok(db_path) = crate::task_state::bmad_db_path(app.handle()) {
+            app.manage(Arc::new(MaestroCore::new(config.clone())));
+            if let Ok(db_path) = crate::task_state::maestro_db_path(app.handle()) {
                 if let Ok(n) =
                     crate::task_migration::migrate_backfill_task_profile_id(&db_path, &config)
                 {
@@ -92,15 +133,15 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 // Short delay to let frontend initialize
                 tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-                if let Some(core) = handle_clone.try_state::<MaestroCore>() {
-                    let config = std::sync::Arc::new(core.config.get());
-                    let engine_ids: Vec<String> = config.engines.keys().cloned().collect();
+                if let Some(core) = handle_clone.try_state::<Arc<MaestroCore>>() {
+                    let config_snapshot = (*core.config.get()).clone();
+                    let engine_ids: Vec<String> = config_snapshot.engines.keys().cloned().collect();
                     for engine_id in engine_ids {
                         // 复用同一份快照，避免每个引擎都 clone 一次完整 AppConfig
                         if let Ok(result) = crate::engine::engine_preflight_core(
                             engine_id.clone(),
                             None,
-                            (*config).clone(),
+                            config_snapshot.clone(),
                         )
                         .await
                         {
@@ -121,6 +162,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             load_or_create_config,
             save_config,
+            verify_llm_connection,
             engine_check_command,
             engine_delete,
             engine_list,
@@ -148,6 +190,8 @@ pub fn run() {
             project_git_status,
             project_git_diff,
             project_list_files,
+            project_list_files_deep,
+            project_find_symbols,
             project_read_file,
             process_get_stats,
             process_start_monitor,
@@ -170,6 +214,7 @@ pub fn run() {
             chat_save_last_conversation,
             chat_load_last_conversation,
             chat_submit_choice,
+            chat_resolve_pending_tool,
             cli_list_sessions,
             cli_read_session_logs,
             cli_prune_sessions,
@@ -192,12 +237,19 @@ pub fn run() {
             workspace_delete,
             file_watcher_start,
             file_watcher_stop,
+            get_builtin_roles,
+            conversation_create,
+            conversation_delete,
+            conversation_list,
+            conversation_load_messages,
+            conversation_update_title,
+            conversation_generate_title,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri app")
         .run(|app_handle, event| {
             if let tauri::RunEvent::Exit = event {
-                if let Some(core) = app_handle.try_state::<MaestroCore>() {
+                if let Some(core) = app_handle.try_state::<Arc<MaestroCore>>() {
                     core.pty_state.kill_all();
                     core.process_monitor.stop_all();
                 }

@@ -36,9 +36,9 @@ struct PtySession {
     killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct PtyManagerState {
-    sessions: RwLock<HashMap<String, Arc<PtySession>>>,
+    sessions: Arc<RwLock<HashMap<String, Arc<PtySession>>>>,
 }
 
 impl PtyManagerState {
@@ -249,6 +249,9 @@ impl PtyManagerState {
         });
         self.add_session(session.clone());
 
+        let sessions_clone = self.sessions.clone();
+        let session_id_clone = options.session_id.clone();
+        
         thread::spawn(move || {
             let mut buffer = [0_u8; 8192];
             let mut pending = String::new();
@@ -279,6 +282,8 @@ impl PtyManagerState {
             if !pending.is_empty() {
                 let _ = on_data.send(pending);
             }
+            // Auto-cleanup on thread exit
+            sessions_clone.write().unwrap_or_else(|e| e.into_inner()).remove(&session_id_clone);
         });
 
         Ok(PtySessionInfo {
@@ -293,7 +298,7 @@ impl PtyManagerState {
 pub fn pty_spawn(
     options: PtySpawnOptions,
     on_data: Channel<String>,
-    core_state: tauri::State<'_, crate::core::MaestroCore>,
+    core_state: tauri::State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<PtySessionInfo, crate::core::error::CoreError> {
     core_state.inner().pty_spawn(options, on_data)
 }
@@ -302,7 +307,7 @@ pub fn pty_spawn(
 pub fn pty_write(
     session_id: String,
     data: String,
-    core_state: tauri::State<'_, crate::core::MaestroCore>,
+    core_state: tauri::State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<(), crate::core::error::CoreError> {
     core_state.inner().pty_write(session_id, data)
 }
@@ -312,7 +317,7 @@ pub fn pty_resize(
     session_id: String,
     cols: u16,
     rows: u16,
-    core_state: tauri::State<'_, crate::core::MaestroCore>,
+    core_state: tauri::State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<(), crate::core::error::CoreError> {
     core_state.inner().pty_resize(session_id, cols, rows)
 }
@@ -320,18 +325,18 @@ pub fn pty_resize(
 #[command]
 pub fn pty_kill(
     session_id: String,
-    core_state: tauri::State<'_, crate::core::MaestroCore>,
+    core_state: tauri::State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<(), crate::core::error::CoreError> {
     core_state.inner().pty_kill(session_id)
 }
 
 #[command]
-pub fn pty_kill_all(core_state: tauri::State<'_, crate::core::MaestroCore>) {
+pub fn pty_kill_all(core_state: tauri::State<'_, std::sync::Arc<crate::core::MaestroCore>>) {
     core_state.inner().pty_kill_all();
 }
 
 #[command]
-pub fn pty_cleanup_dead_sessions(core_state: tauri::State<'_, crate::core::MaestroCore>) -> usize {
+pub fn pty_cleanup_dead_sessions(core_state: tauri::State<'_, std::sync::Arc<crate::core::MaestroCore>>) -> usize {
     core_state.inner().pty_cleanup_dead_sessions()
 }
 

@@ -46,7 +46,7 @@ impl MaestroCore {
         engine_id: String,
         profile_id: Option<String>,
     ) -> Result<EnginePreflightResult, error::CoreError> {
-        crate::engine::engine_preflight_core(engine_id, profile_id, self.config.get())
+        crate::engine::engine_preflight_core(engine_id, profile_id, (*self.config.get()).clone())
             .await
             .map_err(error::CoreError::from)
     }
@@ -55,7 +55,7 @@ impl MaestroCore {
         &self,
         engine_id: String,
     ) -> Result<EngineModelListResult, error::CoreError> {
-        crate::engine::engine_list_models_core(engine_id, self.config.get())
+        crate::engine::engine_list_models_core(engine_id, (*self.config.get()).clone())
             .await
             .map_err(error::CoreError::from)
     }
@@ -68,7 +68,7 @@ impl MaestroCore {
         crate::engine::cleanup_session_for_task_engine_switch(
             engine_id,
             session_id,
-            self.config.get(),
+            (*self.config.get()).clone(),
             &self.pty_state,
         )
         .map_err(error::CoreError::from)

@@ -73,7 +73,7 @@ export default defineConfig(async () => ({
       : undefined,
     watch: {
       // 3. tell Vite to ignore watching `src-tauri` and other backend-generated folders
-      ignored: ["**/src-tauri/**", "**/.maestro-cli/**", "**/.git/**", "**/.bmad/**"],
+      ignored: ["**/src-tauri/**", "**/.maestro-cli/**", "**/.git/**", "**/.maestro/**"],
     },
   },
 }));

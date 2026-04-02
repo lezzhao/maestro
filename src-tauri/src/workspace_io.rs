@@ -1,17 +1,17 @@
-use crate::scoped_fs::ScopedWorkspace;
+use crate::scoped_fs::ScopedFS;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone)]
 pub struct WorkspaceIo {
-    scoped: ScopedWorkspace,
+    scoped: ScopedFS,
 }
 
 impl WorkspaceIo {
     pub fn new(project_path: &Path) -> Result<Self, String> {
         Ok(Self {
-            scoped: ScopedWorkspace::new(project_path)?,
+            scoped: ScopedFS::new(project_path)?,
         })
     }
 
@@ -103,6 +103,6 @@ fn ensure_parent(path: &Path) -> Result<(), String> {
 
 fn backup_path(path: &Path) -> PathBuf {
     let mut raw: OsString = path.as_os_str().to_os_string();
-    raw.push(".bmad-bak");
+    raw.push(".maestro-bak");
     PathBuf::from(raw)
 }

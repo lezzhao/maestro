@@ -4,6 +4,8 @@ pub mod cli_chat_runner;
 pub mod cli_output_forwarder;
 pub mod cli_verification;
 pub mod maestro_engine;
+pub mod control_frame;
+pub mod orchestrator;
 
 use std::fmt;
 

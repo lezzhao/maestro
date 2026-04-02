@@ -13,7 +13,7 @@ impl MaestroCore {
         request: crate::task_state::TaskCreateRequest,
     ) -> Result<crate::task_state::TaskCreateResult, error::CoreError> {
         let config = self.config.get();
-        let db_path = crate::task_state::bmad_db_path(app)?;
+        let db_path = crate::task_state::maestro_db_path(app)?;
         let workspace_boundary = if request.workspace_boundary.is_empty() {
             let project_path = config.project.path.clone();
             if project_path.is_empty() {
@@ -90,7 +90,7 @@ impl MaestroCore {
                     field: "event_type".to_string(),
                     message: format!("invalid event: {}", request.event_type),
                 })?;
-        let db_path = crate::task_state::bmad_db_path(app)?;
+        let db_path = crate::task_state::maestro_db_path(app)?;
         let io = self.workspace_io()?;
         let to_state = crate::task_state::transition(
             &db_path,
@@ -113,7 +113,7 @@ impl MaestroCore {
 
     /// Use-Case: Delete task and broadcast state event.
     pub fn task_delete(&self, app: &AppHandle, task_id: String) -> Result<(), error::CoreError> {
-        let db_path = crate::task_state::bmad_db_path(app)?;
+        let db_path = crate::task_state::maestro_db_path(app)?;
         crate::task_state::delete_task(&db_path, &task_id)?;
         self.deleted_task_ids
             .lock()
@@ -136,7 +136,7 @@ impl MaestroCore {
     }
 
     pub fn task_list(&self, app: &AppHandle) -> Result<Vec<TaskRecordPayload>, error::CoreError> {
-        let db_path = crate::task_state::bmad_db_path(app)?;
+        let db_path = crate::task_state::maestro_db_path(app)?;
         crate::task_state::list_tasks(&db_path)
     }
 
@@ -145,7 +145,7 @@ impl MaestroCore {
         app: &AppHandle,
         request: crate::task_state::TaskGetStateRequest,
     ) -> Result<Option<String>, error::CoreError> {
-        let db_path = crate::task_state::bmad_db_path(app)?;
+        let db_path = crate::task_state::maestro_db_path(app)?;
         crate::task_state::get_task_state(&db_path, &request.task_id)
     }
 
@@ -154,7 +154,7 @@ impl MaestroCore {
         app: &AppHandle,
         request: crate::task_state::TaskUpdateRequest,
     ) -> Result<(), error::CoreError> {
-        let db_path = crate::task_state::bmad_db_path(app)?;
+        let db_path = crate::task_state::maestro_db_path(app)?;
         crate::task_state::update_task(&db_path, &request)?;
 
         // 重新拉取最新任务快照，并发出明确的更新事件
@@ -208,5 +208,11 @@ impl MaestroCore {
             );
         }
         Ok(())
+    }
+
+    pub fn get_active_assistant_msg_id(&self, task_id: Option<&str>) -> Option<String> {
+        let tid = task_id?;
+        let db_path = crate::task_state::maestro_db_path_core().ok()?;
+        crate::task_repository::get_latest_assistant_message_id(&db_path, tid).ok().flatten()
     }
 }

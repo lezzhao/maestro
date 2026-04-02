@@ -2,7 +2,7 @@
 //! Workspaces are top-level containers that group tasks and bind a working directory.
 
 use crate::core::error::CoreError;
-use crate::task_state::bmad_db_path;
+use crate::task_state::maestro_db_path;
 use serde::{Deserialize, Serialize};
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -182,7 +182,7 @@ pub fn create_workspace(
     db_path: &std::path::Path,
     req: &WorkspaceCreateRequest,
 ) -> Result<Workspace, CoreError> {
-    let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
+    let conn = crate::task_repository::db_connection(db_path)?;
     crate::task_repository::ensure_tables(&conn)?;
     ensure_workspace_schema(&conn)?;
 
@@ -230,7 +230,7 @@ pub fn create_workspace(
 }
 
 pub fn list_workspaces(db_path: &std::path::Path) -> Result<Vec<Workspace>, CoreError> {
-    let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
+    let conn = crate::task_repository::db_connection(db_path)?;
     crate::task_repository::ensure_tables(&conn)?;
     ensure_workspace_schema(&conn)?;
 
@@ -274,7 +274,7 @@ pub fn update_workspace(
     db_path: &std::path::Path,
     req: &WorkspaceUpdateRequest,
 ) -> Result<Workspace, CoreError> {
-    let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
+    let conn = crate::task_repository::db_connection(db_path)?;
     crate::task_repository::ensure_tables(&conn)?;
     ensure_workspace_schema(&conn)?;
 
@@ -342,7 +342,7 @@ pub fn update_workspace(
 }
 
 pub fn get_workspace_by_id(db_path: &std::path::Path, id: &str) -> Result<Workspace, CoreError> {
-    let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
+    let conn = crate::task_repository::db_connection(db_path)?;
     ensure_workspace_schema(&conn)?;
 
     let mut stmt = conn
@@ -378,7 +378,7 @@ pub fn get_workspace_by_id(db_path: &std::path::Path, id: &str) -> Result<Worksp
 }
 
 pub fn delete_workspace(db_path: &std::path::Path, workspace_id: &str) -> Result<(), CoreError> {
-    let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
+    let conn = crate::task_repository::db_connection(db_path)?;
     crate::task_repository::ensure_tables(&conn)?;
     ensure_workspace_schema(&conn)?;
 
@@ -412,7 +412,7 @@ pub async fn workspace_create(
     app: tauri::AppHandle,
     request: WorkspaceCreateRequest,
 ) -> Result<Workspace, CoreError> {
-    let db_path = bmad_db_path(&app)?;
+    let db_path = maestro_db_path(&app)?;
     let ws = create_workspace(&db_path, &request)?;
     // Emit event so frontend can sync
     crate::agent_state::emit_state_update(
@@ -426,7 +426,7 @@ pub async fn workspace_create(
 
 #[tauri::command]
 pub async fn workspace_list(app: tauri::AppHandle) -> Result<Vec<Workspace>, CoreError> {
-    let db_path = bmad_db_path(&app)?;
+    let db_path = maestro_db_path(&app)?;
     list_workspaces(&db_path)
 }
 
@@ -435,7 +435,7 @@ pub async fn workspace_update(
     app: tauri::AppHandle,
     request: WorkspaceUpdateRequest,
 ) -> Result<Workspace, CoreError> {
-    let db_path = bmad_db_path(&app)?;
+    let db_path = maestro_db_path(&app)?;
     let ws = update_workspace(&db_path, &request)?;
     crate::agent_state::emit_state_update(
         Some(&app),
@@ -451,7 +451,7 @@ pub async fn workspace_delete(
     app: tauri::AppHandle,
     workspace_id: String,
 ) -> Result<(), CoreError> {
-    let db_path = bmad_db_path(&app)?;
+    let db_path = maestro_db_path(&app)?;
     delete_workspace(&db_path, &workspace_id)?;
     crate::agent_state::emit_state_update(
         Some(&app),
@@ -469,7 +469,7 @@ mod tests {
 
     fn temp_db_path() -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("test_bmad_state.db");
+        let path = dir.path().join("test_maestro_state.db");
         (dir, path)
     }
 
@@ -483,7 +483,7 @@ mod tests {
             color: Some("#6366f1".to_string()),
             preferred_engine_id: Some("cursor".to_string()),
             preferred_profile_id: None,
-            spec_provider: Some("bmad".to_string()),
+            spec_provider: Some("maestro".to_string()),
             spec_mode: None,
             spec_target_ide: None,
             settings: None,
@@ -558,7 +558,7 @@ mod tests {
                 .expect("create task");
 
         // Associate task with workspace
-        let conn = rusqlite::Connection::open(&db_path).expect("open db");
+        let conn = crate::task_repository::db_connection(&db_path).expect("open db");
         conn.execute(
             "UPDATE tasks SET workspace_id = ?1 WHERE id = ?2",
             rusqlite::params![ws.id, task.id],
@@ -570,7 +570,7 @@ mod tests {
         delete_workspace(&db_path, &ws.id).expect("delete workspace");
 
         // Task should still exist but workspace_id = NULL
-        let conn = rusqlite::Connection::open(&db_path).expect("open db");
+        let conn = crate::task_repository::db_connection(&db_path).expect("open db");
         let ws_id: Option<String> = conn
             .query_row(
                 "SELECT workspace_id FROM tasks WHERE id = ?1",
@@ -589,7 +589,7 @@ mod tests {
     fn workspace_delete_not_found() {
         let (_dir, db_path) = temp_db_path();
         // Ensure tables exist
-        let conn = rusqlite::Connection::open(&db_path).expect("open");
+        let conn = crate::task_repository::db_connection(&db_path).expect("open");
         crate::task_repository::ensure_tables(&conn).expect("tables");
         ensure_workspace_schema(&conn).expect("schema");
         drop(conn);

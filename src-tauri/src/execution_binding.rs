@@ -11,11 +11,12 @@
 //! (command, args, env, headless_args, etc.) + api_key runtime-injected from config.
 //! Executor does NOT use live profile for critical params; command/args/env come from snapshot.
 
+use crate::agent_state::AppEventHandle;
 use crate::config::AppConfig;
 use crate::core::error::CoreError;
 use crate::task_runtime::{resolve_task_runtime_context, ResolvedRuntimeContext, RuntimeSnapshot};
-use crate::task_state::{self, bmad_db_path};
-use tauri::AppHandle;
+use crate::task_state::{self, maestro_db_path_core};
+use std::sync::Arc;
 
 /// Opaque execution preparation result. Workflow/chat consume this without knowing
 /// whether it came from task binding or config resolution.
@@ -29,11 +30,11 @@ pub struct PreparedExecution {
 /// Ensures a runtime snapshot exists for the given task.
 /// If it doesn't exist, resolves the live context and freezes it.
 pub fn ensure_runtime_snapshot(
-    app: &AppHandle,
+    _event_handle: Arc<dyn AppEventHandle>,
     task_id: &str,
     config: &AppConfig,
 ) -> Result<String, CoreError> {
-    let db_path = bmad_db_path(app)?;
+    let db_path = maestro_db_path_core()?;
 
     let binding = task_state::get_task_runtime_binding(&db_path, task_id)?.ok_or_else(|| {
         CoreError::NotFound {
@@ -104,7 +105,7 @@ pub fn prepare_execution_binding_with_path(
 /// - When task_id is Some and non-empty and app is Some: uses prepare_execution_binding path.
 /// - Otherwise: resolves from config (ad-hoc execution).
 pub fn resolve_execution(
-    app: Option<&AppHandle>,
+    event_handle: Arc<dyn AppEventHandle>,
     engine_id: &str,
     profile_id: Option<&str>,
     execution_mode: &str,
@@ -112,10 +113,10 @@ pub fn resolve_execution(
     source: &str,
     config: &AppConfig,
 ) -> Result<PreparedExecution, CoreError> {
-    if let (Some(app_handle), Some(tid)) = (app, task_id) {
+    if let Some(tid) = task_id {
         if !tid.is_empty() {
             let execution_id = format!("{}-{}", source, uuid::Uuid::new_v4());
-            let ctx = prepare_execution_binding(app_handle, &execution_id, tid, config)?;
+            let ctx = prepare_execution_binding(event_handle, &execution_id, tid, config)?;
             return Ok(PreparedExecution {
                 context: ctx,
                 execution_id: Some(execution_id),
@@ -184,6 +185,7 @@ pub(crate) fn resolve_execution_from_config(
         exit_timeout_ms: p.exit_timeout_ms,
         resolved_from: crate::task_runtime::RuntimeResolvedFrom::ConfigFallback,
         settings: None,
+        system_prompt: None,
     })
 }
 
@@ -235,15 +237,15 @@ fn ensure_runtime_snapshot_with_path(
 /// 2. Records ExecutionBinding.
 /// 3. Returns the resolved runtime context for execution.
 pub fn prepare_execution_binding(
-    app: &AppHandle,
+    event_handle: Arc<dyn AppEventHandle>,
     execution_id: &str,
     task_id: &str,
     config: &AppConfig,
 ) -> Result<ResolvedRuntimeContext, CoreError> {
-    let db_path = bmad_db_path(app)?;
+    let db_path = maestro_db_path_core()?;
 
     // 1. Ensure snapshot
-    let snapshot_id = ensure_runtime_snapshot(app, task_id, config)?;
+    let snapshot_id = ensure_runtime_snapshot(event_handle, task_id, config)?;
 
     // 2. Resolve to get final ctx for execution (this will load from the snapshot since we just bound it)
     let ctx = resolve_task_runtime_context(&db_path, task_id, config)?;
@@ -271,7 +273,7 @@ mod tests {
 
     fn temp_db_path() -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("test_bmad_state.db");
+        let path = dir.path().join("test_maestro_state.db");
         (dir, path)
     }
 

@@ -7,7 +7,7 @@ pub fn insert_execution_binding(
     db_path: &Path,
     binding: &crate::task_runtime::ExecutionBinding,
 ) -> Result<(), CoreError> {
-    let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
+    let conn = crate::task_repository::db_connection(db_path).map_err(crate::task_repository::db_err)?;
     crate::task_repository::ensure_tables(&conn)?;
     conn.execute(
         "INSERT INTO execution_bindings (execution_id, task_id, snapshot_id, engine_id, profile_id, created_at)

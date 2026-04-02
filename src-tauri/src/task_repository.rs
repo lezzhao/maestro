@@ -1,4 +1,4 @@
-//! Task CRUD and schema for bmad_state.db.
+//! Task CRUD and schema for maestro_state.db.
 //! All SQL for tasks and state_transitions tables lives here.
 
 use crate::agent_state::TaskRecordPayload;
@@ -20,6 +20,14 @@ pub(crate) fn db_err(e: impl std::fmt::Display) -> CoreError {
     CoreError::Db {
         message: e.to_string(),
     }
+}
+
+pub(crate) fn db_connection(db_path: &Path) -> Result<rusqlite::Connection, CoreError> {
+    let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
+    conn.execute("PRAGMA journal_mode = WAL;", []).map_err(db_err)?;
+    conn.execute("PRAGMA synchronous = NORMAL;", []).map_err(db_err)?;
+    conn.execute("PRAGMA busy_timeout = 5000;", []).map_err(db_err)?;
+    Ok(conn)
 }
 
 /// Runtime binding info for a task (engine, profile, optional snapshot).
@@ -138,7 +146,39 @@ pub fn ensure_tables(conn: &rusqlite::Connection) -> Result<(), CoreError> {
             snapshot_id TEXT NOT NULL,
             engine_id TEXT NOT NULL,
             profile_id TEXT,
+            mode TEXT NOT NULL,
+            source TEXT NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS conversations (
+            id TEXT PRIMARY KEY,
+            task_id TEXT,
+            title TEXT NOT NULL,
+            engine_id TEXT NOT NULL,
+            profile_id TEXT,
+            message_count INTEGER DEFAULT 0,
+            summary TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS conversation_messages (
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            status TEXT,
+            meta TEXT,
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS memories (
+            id TEXT PRIMARY KEY,
+            task_id TEXT,
+            content TEXT NOT NULL,
+            category TEXT NOT NULL,  -- preference, fact, decision, context
+            importance INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
         "#,
     )
@@ -220,7 +260,7 @@ pub fn create_task(
     workspace_id: Option<&str>,
     settings: Option<&str>,
 ) -> Result<CreateTaskResult, CoreError> {
-    let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
+    let conn = db_connection(db_path)?;
     ensure_tables(&conn)?;
 
     let id = uuid::Uuid::new_v4().to_string();
@@ -248,7 +288,7 @@ pub fn update_task_engine(
     engine_id: &str,
     profile_id: Option<&str>,
 ) -> Result<(), CoreError> {
-    let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
+    let conn = db_connection(db_path)?;
     ensure_tables(&conn)?;
     conn.execute(
         "UPDATE tasks SET engine_id = ?1, profile_id = ?2, runtime_snapshot_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?3",
@@ -266,7 +306,7 @@ pub fn update_task_engine(
 
 /// Delete a task from the database.
 pub fn delete_task(db_path: &Path, task_id: &str) -> Result<(), CoreError> {
-    let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
+    let conn = db_connection(db_path)?;
     ensure_tables(&conn)?;
     conn.execute(
         "DELETE FROM tasks WHERE id = ?1",
@@ -287,7 +327,7 @@ pub fn get_task_runtime_binding(
     db_path: &Path,
     task_id: &str,
 ) -> Result<Option<TaskRuntimeBinding>, CoreError> {
-    let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
+    let conn = db_connection(db_path)?;
     ensure_tables(&conn)?;
     let mut stmt = conn
         .prepare("SELECT engine_id, profile_id, runtime_snapshot_id FROM tasks WHERE id = ?1")
@@ -313,7 +353,7 @@ pub fn update_task_runtime_snapshot(
     task_id: &str,
     snapshot_id: Option<&str>,
 ) -> Result<(), CoreError> {
-    let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
+    let conn = db_connection(db_path)?;
     ensure_tables(&conn)?;
     conn.execute(
         "UPDATE tasks SET runtime_snapshot_id = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
@@ -333,11 +373,11 @@ pub fn update_task_runtime_snapshot(
 
 /// List all tasks from DB.
 pub fn list_tasks(db_path: &Path) -> Result<Vec<TaskRecordPayload>, CoreError> {
-    let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
+    let conn = db_connection(db_path)?;
     ensure_tables(&conn)?;
     let mut stmt = conn
         .prepare(
-            "SELECT id, title, description, engine_id, current_state, workspace_boundary, profile_id, workspace_id, settings, runtime_snapshot_id, created_at, updated_at FROM tasks ORDER BY updated_at DESC",
+            r#"SELECT id, title, description, engine_id, current_state, workspace_boundary, profile_id, workspace_id, settings, runtime_snapshot_id, created_at, updated_at FROM tasks ORDER BY updated_at DESC"#,
         )
         .map_err(db_err)?;
     let rows = stmt
@@ -369,7 +409,7 @@ pub fn list_tasks(db_path: &Path) -> Result<Vec<TaskRecordPayload>, CoreError> {
 
 /// Get current task state from DB.
 pub fn get_task_state(db_path: &Path, task_id: &str) -> Result<Option<String>, CoreError> {
-    let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
+    let conn = db_connection(db_path)?;
     ensure_tables(&conn)?;
     let mut stmt = conn
         .prepare("SELECT current_state FROM tasks WHERE id = ?1")
@@ -387,7 +427,7 @@ pub fn get_task_record(
     db_path: &Path,
     task_id: &str,
 ) -> Result<Option<TaskRecordPayload>, CoreError> {
-    let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
+    let conn = db_connection(db_path)?;
     ensure_tables(&conn)?;
 
     let mut stmt = conn
@@ -427,7 +467,7 @@ pub fn update_task(
     db_path: &Path,
     req: &crate::task_state::TaskUpdateRequest,
 ) -> Result<(), CoreError> {
-    let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
+    let conn = db_connection(db_path)?;
     ensure_tables(&conn)?;
 
     let mut sets = Vec::new();
@@ -462,12 +502,33 @@ pub fn update_task(
         return Ok(());
     }
 
-    sets.push("updated_at = CURRENT_TIMESTAMP");
+    sets.push(r#"updated_at = CURRENT_TIMESTAMP"#);
     params.push(Box::new(req.id.clone()));
 
-    let sql = format!("UPDATE tasks SET {} WHERE id = ?", sets.join(", "));
+    let sql = format!(r#"UPDATE tasks SET {} WHERE id = ?"#, sets.join(", "));
     let params_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
 
     conn.execute(&sql, params_refs.as_slice()).map_err(db_err)?;
     Ok(())
+}
+
+/// Get the most recent assistant message ID for a specific task's active conversation.
+pub fn get_latest_assistant_message_id(db_path: &Path, task_id: &str) -> Result<Option<String>, CoreError> {
+    let conn = db_connection(db_path)?;
+    ensure_tables(&conn)?;
+
+    let mut stmt = conn.prepare(
+        "SELECT m.id FROM conversation_messages m
+         JOIN conversations c ON m.conversation_id = c.id
+         WHERE c.task_id = ?1 AND m.role = 'assistant'
+         ORDER BY m.timestamp DESC LIMIT 1"
+    ).map_err(db_err)?;
+
+    let mut rows = stmt.query(rusqlite::params![task_id]).map_err(db_err)?;
+    if let Some(row) = rows.next().map_err(db_err)? {
+        let id: String = row.get(0).map_err(db_err)?;
+        Ok(Some(id))
+    } else {
+        Ok(None)
+    }
 }

@@ -50,7 +50,7 @@ pub fn update_task_runtime_context(
 
     let profile_id = resolve_profile_id_for_update(config, engine_id, profile_id);
 
-    let db_path = task_state::bmad_db_path(app).map_err(|e| e.to_string())?;
+    let db_path = task_state::maestro_db_path(app).map_err(|e| e.to_string())?;
     task_state::update_task_engine(&db_path, task_id, engine_id, profile_id.as_deref())
         .map_err(|e| e.to_string())?;
 
@@ -69,7 +69,7 @@ pub fn update_task_runtime_context(
 
 /// Explicitly invalidate the runtime snapshot for a task.
 pub fn invalidate_runtime_snapshot(app: &AppHandle, task_id: &str) -> Result<(), String> {
-    let db_path = task_state::bmad_db_path(app).map_err(|e| e.to_string())?;
+    let db_path = task_state::maestro_db_path(app).map_err(|e| e.to_string())?;
     task_state::update_task_runtime_snapshot(&db_path, task_id, None).map_err(|e| e.to_string())?;
     Ok(())
 }

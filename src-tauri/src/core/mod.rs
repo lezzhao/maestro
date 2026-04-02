@@ -40,8 +40,14 @@ use crate::config::{AppConfig, AppConfigState};
 use crate::headless::HeadlessProcessState;
 use crate::process::ProcessMonitorState;
 use crate::pty::PtyManagerState;
+use std::sync::{Mutex, Arc};
+use tokio::sync::oneshot;
+use crate::mcp::service::McpService;
+use crate::safety::SafetyManager;
+use crate::tools::registry::ToolRegistry;
 use std::collections::HashSet;
-use std::sync::Mutex;
+
+pub type ApprovalSender = oneshot::Sender<bool>;
 
 pub struct MaestroCore {
     pub config: AppConfigState,
@@ -49,16 +55,26 @@ pub struct MaestroCore {
     pub process_monitor: ProcessMonitorState,
     pub headless_state: HeadlessProcessState,
     pub(crate) deleted_task_ids: Mutex<HashSet<String>>,
+    pub mcp_service: Arc<McpService>,
+    pub safety_manager: Arc<SafetyManager>,
+    pub tool_registry: Arc<ToolRegistry>,
 }
 
 impl MaestroCore {
     pub fn new(config: AppConfig) -> Self {
+        let mcp_service = Arc::new(McpService::new());
+        let safety_manager = Arc::new(SafetyManager::new());
+        let tool_registry = Arc::new(ToolRegistry::new(mcp_service.clone()));
+
         Self {
             config: AppConfigState::new(config),
             pty_state: PtyManagerState::default(),
             process_monitor: ProcessMonitorState::default(),
             headless_state: HeadlessProcessState::default(),
             deleted_task_ids: Mutex::new(HashSet::new()),
+            mcp_service,
+            safety_manager,
+            tool_registry,
         }
     }
 

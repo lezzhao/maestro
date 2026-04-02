@@ -53,7 +53,7 @@ impl MaestroCore {
                 id: id.to_string(),
             })?;
         if let Some(path) = record.log_path {
-            // Logs are typically in global ~/.bmad/sessions, not scoped to workspace,
+            // Logs are typically in global ~/.maestro/sessions, not scoped to workspace,
             // so we keep using std::fs::read_to_string here.
             let text = std::fs::read_to_string(path).map_err(|e| error::CoreError::Io {
                 message: format!("read execution log failed: {e}"),
@@ -98,7 +98,7 @@ impl MaestroCore {
             }
         }
         if changed {
-            crate::run_persistence::rewrite_run_records(&io, &records).map_err(|e| {
+            crate::run_persistence::rewrite_run_records(&io, &records, None).map_err(|e| {
                 error::CoreError::Io {
                     message: format!("rewrite run records failed: {e}"),
                 }

@@ -3,7 +3,7 @@
 
 use crate::agent_state::TaskRecordPayload;
 use crate::core::error::CoreError;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tauri::Manager;
 
 pub use crate::task_lifecycle::{transition, TaskEvent, TaskState};
@@ -156,23 +156,43 @@ pub fn update_task(db_path: &Path, req: &TaskUpdateRequest) -> Result<(), CoreEr
     crate::task_repository::update_task(db_path, req)
 }
 
-/// Resolve bmad_state.db path.
-pub(crate) fn bmad_db_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, CoreError> {
+/// Resolve maestro_state.db path (Headless-compatible).
+pub fn maestro_db_path_core() -> Result<PathBuf, CoreError> {
+    let home = dirs::home_dir().ok_or_else(|| CoreError::Io {
+        message: "Could not find home directory".to_string(),
+    })?;
+    let dir = home.join(".maestro");
+    if !dir.exists() {
+        std::fs::create_dir_all(&dir).map_err(|e| CoreError::Io {
+            message: format!("create .maestro dir: {e}"),
+        })?;
+    }
+    Ok(dir.join("maestro_state.db"))
+}
+
+/// Resolve maestro_state.db path.
+pub(crate) fn maestro_db_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, CoreError> {
     let path_resolver = app.path();
     let dir = path_resolver
         .app_data_dir()
         .or_else(|_| path_resolver.app_config_dir())
-        .map_err(|e| CoreError::Io {
-            message: format!("app dir: {e}"),
-        })?;
+        .map_err(|_| {
+            // Fallback to headless path if app dirs fail.
+            CoreError::Io {
+                message: "fallback to home".to_string(),
+            }
+        });
 
-    if !dir.exists() {
-        std::fs::create_dir_all(&dir).map_err(|e| CoreError::Io {
-            message: format!("create app dir: {e}"),
-        })?;
+    if let Ok(d) = dir {
+        if !d.exists() {
+            std::fs::create_dir_all(&d).map_err(|e| CoreError::Io {
+                message: format!("create app dir: {e}"),
+            })?;
+        }
+        Ok(d.join("maestro_state.db"))
+    } else {
+        maestro_db_path_core()
     }
-
-    Ok(dir.join("bmad_state.db"))
 }
 
 /// Get task's runtime binding (engine_id, profile_id, runtime_snapshot_id).
@@ -202,7 +222,7 @@ mod tests {
 
     fn temp_db_path() -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("test_bmad_state.db");
+        let path = dir.path().join("test_maestro_state.db");
         (dir, path)
     }
 

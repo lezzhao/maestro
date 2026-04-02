@@ -2,6 +2,7 @@
 
 use crate::core::error::CoreError;
 use crate::task_state::{self, TaskCreateRequest, TaskCreateResult, TaskRuntimeBinding};
+use crate::agent_state::TauriEventHandle;
 use tauri::Manager;
 
 #[tauri::command]
@@ -59,7 +60,7 @@ pub async fn task_get_runtime_binding(
     app: tauri::AppHandle,
     request: TaskGetRuntimeBindingRequest,
 ) -> Result<Option<TaskRuntimeBinding>, CoreError> {
-    let db_path = task_state::bmad_db_path(&app)?;
+    let db_path = task_state::maestro_db_path(&app)?;
     task_state::get_task_runtime_binding(&db_path, &request.task_id)
 }
 
@@ -72,12 +73,15 @@ pub async fn task_refresh_runtime_snapshot(
         .map_err(CoreError::from)?;
     let core = app.state::<crate::core::MaestroCore>();
     let cfg = core.config.get();
-    let _ = crate::execution_binding::ensure_runtime_snapshot(&app, &request.task_id, &cfg)
-        .map_err(|e| CoreError::SystemError {
-            message: format!("refresh snapshot failed: {:?}", e),
-        })?;
+    let _ = crate::execution_binding::ensure_runtime_snapshot(
+        TauriEventHandle::arc(app.clone()),
+        &request.task_id,
+        &cfg
+    ).map_err(|e| CoreError::SystemError {
+        message: format!("refresh snapshot failed: {:?}", e),
+    })?;
 
-    let db_path = task_state::bmad_db_path(&app)?;
+    let db_path = task_state::maestro_db_path(&app)?;
     if let Ok(Some(binding)) = task_state::get_task_runtime_binding(&db_path, &request.task_id) {
         crate::agent_state::emit_state_update(
             Some(&app),

@@ -41,7 +41,7 @@ impl ProcessMonitorState {
 #[command]
 pub fn process_get_stats(
     session_id: Option<String>,
-    core_state: tauri::State<'_, crate::core::MaestroCore>,
+    core_state: tauri::State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> ProcessStats {
     let pty_state = &core_state.inner().pty_state;
     let os_pid = session_id
@@ -78,7 +78,7 @@ pub fn process_start_monitor(
     app: AppHandle,
     session_id: Option<String>,
     interval_ms: Option<u64>,
-    core_state: tauri::State<'_, crate::core::MaestroCore>,
+    core_state: tauri::State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<(), String> {
     let interval = interval_ms.unwrap_or(2000).max(500);
     let core = core_state.inner();
@@ -150,6 +150,6 @@ pub fn process_start_monitor(
 }
 
 #[command]
-pub fn process_stop_monitor(core_state: tauri::State<'_, crate::core::MaestroCore>) {
+pub fn process_stop_monitor(core_state: tauri::State<'_, std::sync::Arc<crate::core::MaestroCore>>) {
     core_state.inner().process_monitor.stop_all();
 }

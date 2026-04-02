@@ -97,7 +97,7 @@ pub fn take_git_snapshot(io: &WorkspaceIo, task_id: &str, to_state: &str) -> Opt
     if status.stdout.is_empty() {
         return None;
     }
-    let msg = format!("[bmad auto-snapshot] Task {} -> {}", task_id, to_state);
+    let msg = format!("[maestro auto-snapshot] Task {} -> {}", task_id, to_state);
     let commit = Command::new("git")
         .args(["add", "."])
         .current_dir(project_path)
@@ -148,8 +148,8 @@ pub fn transition(
         None
     };
 
-    let conn = rusqlite::Connection::open(db_path).map_err(|e| CoreError::Db {
-        message: format!("open db failed: {e}"),
+    let conn = crate::task_repository::db_connection(db_path).map_err(|e| crate::core::error::CoreError::Db {
+        message: e.to_string(),
     })?;
     crate::task_repository::ensure_tables(&conn)?;
 

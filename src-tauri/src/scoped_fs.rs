@@ -13,7 +13,7 @@ mod tests {
         std::fs::write(root.join("a.txt"), "a").unwrap();
         std::fs::write(sub.join("b.txt"), "b").unwrap();
 
-        let ws = ScopedWorkspace::new(&root).unwrap();
+        let ws = ScopedFS::new(&root).unwrap();
         let a = ws.resolve_in_scope("a.txt").unwrap();
         assert!(a.ends_with("a.txt"));
         let b = ws.resolve_in_scope("sub/b.txt").unwrap();
@@ -31,7 +31,7 @@ mod tests {
     fn test_resolve_new_relative_path_in_scope() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().to_path_buf();
-        let ws = ScopedWorkspace::new(&root).unwrap();
+        let ws = ScopedFS::new(&root).unwrap();
 
         let new_file = ws.resolve_in_scope("nested/new.txt").unwrap();
         assert_eq!(new_file, root.join("nested/new.txt"));
@@ -41,7 +41,7 @@ mod tests {
     fn test_resolve_new_absolute_path_outside_scope_should_fail() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().to_path_buf();
-        let ws = ScopedWorkspace::new(&root).unwrap();
+        let ws = ScopedFS::new(&root).unwrap();
 
         let outside = root
             .parent()
@@ -63,18 +63,18 @@ mod tests {
         let link = root.join("leak.txt");
         unix_fs::symlink(&outside_file, &link).unwrap();
 
-        let ws = ScopedWorkspace::new(&root).unwrap();
+        let ws = ScopedFS::new(&root).unwrap();
         assert!(ws.resolve_in_scope("leak.txt").is_err());
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct ScopedWorkspace {
+pub struct ScopedFS {
     root: PathBuf,
     canonical_root: PathBuf,
 }
 
-impl ScopedWorkspace {
+impl ScopedFS {
     pub fn new(root: impl AsRef<Path>) -> Result<Self, String> {
         let root = root.as_ref().to_path_buf();
         if !root.exists() || !root.is_dir() {
@@ -95,40 +95,47 @@ impl ScopedWorkspace {
 
     pub fn resolve_in_scope(&self, relative_or_abs: &str) -> Result<PathBuf, String> {
         let requested = PathBuf::from(relative_or_abs);
+        
+        // 1. Determine the absolute "candidate" path without resolving symlinks yet
         let candidate = if requested.is_absolute() {
-            requested
+            requested.clone()
         } else {
             self.root.join(&requested)
         };
+
+        // 2. Canonicalize as much as possible.
+        // If it exists, canonicalize the whole thing.
+        // If it doesn't exist, canonicalize the parent.
         if candidate.exists() {
             let canonical = candidate
                 .canonicalize()
-                .map_err(|e| format!("canonicalize file path failed: {e}"))?;
+                .map_err(|e| format!("Path resolution failed: {e}"))?;
+            
             if !canonical.starts_with(&self.canonical_root) {
-                return Err("file path is outside current project".to_string());
+                return Err(format!("Access denied: path '{}' is outside the project scope.", relative_or_abs));
             }
             Ok(canonical)
         } else {
-            // For new files: reject paths that could escape (contain "..")
-            if candidate
-                .components()
-                .any(|c| c == std::path::Component::ParentDir)
-            {
-                return Err("file path is outside current project".to_string());
+            // For non-existent files, we must ensure the path doesn't "try" to escape
+            // even before it's created.
+            
+            // Check for ".." components manually first to prevent clever tricks
+            if candidate.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+                return Err("Access denied: path contains parent directory references ('..').".into());
             }
-            // For non-existing targets: anchor scope check on nearest existing parent.
+
+            // Check if the nearest existing ancestor is within the scope
             let mut ancestor = candidate.as_path();
             while !ancestor.exists() {
-                ancestor = ancestor
-                    .parent()
-                    .ok_or_else(|| "file path is outside current project".to_string())?;
+                ancestor = ancestor.parent().ok_or_else(|| "Access denied: path escaped filesystem root.".to_string())?;
             }
-            let canonical_ancestor = ancestor
-                .canonicalize()
-                .map_err(|e| format!("canonicalize file path failed: {e}"))?;
+
+            let canonical_ancestor = ancestor.canonicalize().map_err(|e| format!("Ancestor resolution failed: {e}"))?;
+            
             if !canonical_ancestor.starts_with(&self.canonical_root) {
-                return Err("file path is outside current project".to_string());
+                return Err(format!("Access denied: path '{}' would be created outside the project scope.", relative_or_abs));
             }
+
             Ok(candidate)
         }
     }

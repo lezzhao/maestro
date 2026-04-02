@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 fn temp_db_path() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("tempdir");
-    let path = dir.path().join("test_bmad_state.db");
+    let path = dir.path().join("test_maestro_state.db");
     (dir, path)
 }
 
@@ -36,6 +36,7 @@ fn create_test_config() -> AppConfig {
         icon: "".to_string(),
         profiles: profiles.clone(),
         active_profile_id: "default".to_string(),
+        category: None,
         legacy_profile: mock_profile("default"),
     };
 
@@ -170,6 +171,7 @@ fn breakage_contract_resolved_from_json_snake_case() {
         exit_command: None,
         exit_timeout_ms: None,
         settings: None,
+        system_prompt: None,
         resolved_from: RuntimeResolvedFrom::ConfigFallback,
     };
     let json = serde_json::to_value(&ctx).expect("serialize");
@@ -204,6 +206,7 @@ fn breakage_contract_resolved_runtime_context_json_has_execution_fields() {
         exit_command: Some("ctrl-c".to_string()),
         exit_timeout_ms: Some(crate::constants::DEFAULT_EXIT_TIMEOUT_MS),
         settings: None,
+        system_prompt: None,
         resolved_from: RuntimeResolvedFrom::Snapshot,
     };
     let json = serde_json::to_value(&ctx).expect("serialize");

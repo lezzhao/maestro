@@ -1,53 +1,35 @@
-use crate::api_provider;
-use crate::api_provider::{ApiProviderError, ApiProviderMessage};
 use crate::core::events::StringStream;
 use crate::plugin_engine::maestro_engine::ApiChatRequest;
 use crate::plugin_engine::EngineError;
+use crate::plugin_engine::orchestrator::AgentOrchestrator;
+use crate::core::MaestroCore;
+use crate::agent_state::AppEventHandle;
 use tokio_util::sync::CancellationToken;
-
 use std::sync::Arc;
 
-fn map_api_provider_error(error: ApiProviderError) -> EngineError {
-    match error {
-        ApiProviderError::Config(message) => EngineError::Config(message),
-        ApiProviderError::Execution(message) => EngineError::Execution(message),
-    }
-}
-
-fn to_api_provider_messages(
-    messages: Vec<crate::workflow::types::ChatApiMessage>,
-) -> Vec<ApiProviderMessage> {
-    messages
-        .into_iter()
-        .map(|message| ApiProviderMessage {
-            role: message.role,
-            content: message.content,
-        })
-        .collect()
-}
-
 pub async fn run_api_chat(
+    event_handle: Arc<dyn AppEventHandle>,
+    core: Arc<MaestroCore>,
     request: ApiChatRequest,
     cancel_token: CancellationToken,
     on_data: Arc<dyn StringStream>,
-) -> Result<(), EngineError> {
-    let ApiChatRequest {
-        provider,
-        base_url,
-        api_key,
-        model,
-        messages,
-    } = request;
-    let provider_messages = to_api_provider_messages(messages);
-    api_provider::stream_chat(
-        &provider,
-        &base_url,
-        &api_key,
-        &model,
-        &provider_messages,
+) -> Result<String, EngineError> {
+    // 1. Sync MCP servers with latest config before running
+    // This ensures that any config changes are reflected in the persistent service.
+    let config = core.config.get();
+    if let Err(e) = core.mcp_service.sync_with_config(&config).await {
+        let _ = on_data.send_string(format!("\u{0}NOTICE:MCP Sync Error: {e}"));
+    }
+
+    // 2. Initialize Orchestrator
+    let mut orchestrator = AgentOrchestrator::prepare(
+        event_handle,
+        core.clone(),
+        request,
         cancel_token,
-        on_data,
-    )
-    .await
-    .map_err(map_api_provider_error)
+        on_data.clone(),
+    ).await?;
+
+    // 3. Execute the interaction loop
+    orchestrator.run().await
 }
