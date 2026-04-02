@@ -212,6 +212,8 @@ pub struct ChatSpawnRequest {
     pub engine_id: String,
     pub profile_id: Option<String>,
     pub task_id: Option<String>,
+    pub conversation_id: Option<String>,
+    pub message_ids: Option<Vec<String>>,
     pub cols: Option<u16>,
     pub rows: Option<u16>,
 }
@@ -238,9 +240,19 @@ pub struct ChatSessionMeta {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatApiAttachment {
+    pub name: String,
+    pub path: String,
+    pub mime_type: String,
+    pub data: String, // Base64 encoded data
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatApiMessage {
     pub role: String,
     pub content: String,
+    #[serde(default)]
+    pub attachments: Option<Vec<ChatApiAttachment>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -248,12 +260,15 @@ pub struct ChatApiRequest {
     pub engine_id: String,
     pub profile_id: Option<String>,
     pub task_id: Option<String>,
+    pub conversation_id: Option<String>,
     #[serde(default)]
     pub message_ids: Vec<String>,
     #[serde(default)]
     pub messages: Vec<ChatApiMessage>,
+    pub pinned_files: Option<Vec<String>>,
     pub max_input_tokens: Option<usize>,
     pub max_messages: Option<usize>,
+    pub attachments: Option<Vec<ChatApiAttachment>>,
 }
 
 #[derive(Debug, Clone, Serialize)]

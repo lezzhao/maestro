@@ -1,20 +1,33 @@
-mod sse;
+pub mod sse;
+pub mod sse_util;
+pub mod openai;
+pub mod anthropic;
 
 use crate::core::events::StringStream;
-use futures::StreamExt;
+use crate::tools::{ToolCall, ToolDefinition};
 use reqwest::Client;
 use serde_json::json;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use tokio::sync::Mutex as TokioMutex;
 use tokio_util::sync::CancellationToken;
 
-pub use sse::AnthropicEvent;
+#[derive(Debug, Clone)]
+pub struct ApiProviderAttachment {
+    #[allow(dead_code)]
+    pub name: String,
+    pub mime_type: String,
+    pub data: String, // Base64
+}
 
 #[derive(Debug, Clone)]
 pub struct ApiProviderMessage {
     pub role: String,
     pub content: String,
+    pub attachments: Option<Vec<ApiProviderAttachment>>,
+    pub tool_calls: Option<Vec<ToolCall>>,
+    pub tool_call_id: Option<String>, // for "tool" role
 }
 
 #[derive(Debug, Clone)]
@@ -50,295 +63,150 @@ pub trait ApiProvider: Send + Sync {
         api_key: &'a str,
         model: &'a str,
         messages: &'a [ApiProviderMessage],
+        tools: Option<&'a [ToolDefinition]>,
+        system_prompt: Option<String>,
         cancel_token: CancellationToken,
         on_data: &'a Arc<dyn StringStream>,
     ) -> Pin<Box<dyn Future<Output = Result<(), ApiProviderError>> + Send + 'a>>;
+
+    #[allow(clippy::too_many_arguments)]
+    #[allow(dead_code)]
+    fn chat<'a>(
+        &'a self,
+        client: &'a Client,
+        base_url: &'a str,
+        api_key: &'a str,
+        model: &'a str,
+        messages: &'a [ApiProviderMessage],
+        tools: Option<&'a [ToolDefinition]>,
+        system_prompt: Option<String>,
+    ) -> Pin<Box<dyn Future<Output = Result<String, ApiProviderError>> + Send + 'a>> {
+        let cancel_token = CancellationToken::new();
+        let collector = Arc::new(BufferedStringStream::new());
+        let collector_clone = collector.clone();
+        
+        Box::pin(async move {
+            self.stream_chat(
+                client, 
+                base_url, 
+                api_key, 
+                model, 
+                messages, 
+                tools, 
+                system_prompt, 
+                cancel_token, 
+                &(collector_clone as Arc<dyn StringStream>)
+            ).await?;
+            Ok(collector.get_full_text().await)
+        })
+    }
 }
 
-fn normalize_base_url(input: &str) -> String {
+/// A StringStream adapter that buffers all streamed text for later retrieval.
+#[allow(dead_code)]
+pub struct BufferedStringStream {
+    buffer: TokioMutex<String>,
+}
+
+impl BufferedStringStream {
+    #[allow(dead_code)]
+    pub fn new() -> Self {
+        Self {
+            buffer: TokioMutex::new(String::new()),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub async fn get_full_text(&self) -> String {
+        self.buffer.lock().await.clone()
+    }
+}
+
+impl StringStream for BufferedStringStream {
+    fn send_string(&self, data: String) -> Result<(), String> {
+        // Use try_lock since we're in a sync context
+        match self.buffer.try_lock() {
+            Ok(mut buf) => {
+                buf.push_str(&data);
+                Ok(())
+            }
+            Err(_) => Ok(()), // Skip if lock contention (unlikely)
+        }
+    }
+}
+
+pub fn normalize_base_url(input: &str) -> String {
     input.trim().trim_end_matches('/').to_string()
 }
 
-fn normalize_messages(messages: &[ApiProviderMessage]) -> Vec<serde_json::Value> {
-    messages
-        .iter()
-        .filter_map(|m| {
-            let role = m.role.trim();
-            let content = m.content.trim();
-            if role.is_empty() || content.is_empty() {
-                return None;
-            }
-            Some(json!({
-                "role": role,
-                "content": content
-            }))
-        })
-        .collect()
-}
-
-async fn stream_openai_compatible(
-    client: &Client,
-    base_url: &str,
-    api_key: &str,
-    model: &str,
+pub fn normalize_messages(
     messages: &[ApiProviderMessage],
-    cancel_token: CancellationToken,
-    on_data: &Arc<dyn StringStream>,
-) -> Result<(), ApiProviderError> {
-    let endpoint = format!("{}/chat/completions", normalize_base_url(base_url));
-    let body = json!({
-        "model": model,
-        "messages": normalize_messages(messages),
-        "stream": true
-    });
-    let response = client
-        .post(endpoint)
-        .header("Authorization", format!("Bearer {api_key}"))
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| ApiProviderError::Execution(format!("请求失败: {e}")))?;
-    let status = response.status();
-    if !status.is_success() {
-        let text = response.text().await.unwrap_or_default();
-        return Err(ApiProviderError::Execution(format!(
-            "HTTP {}: {}",
-            status.as_u16(),
-            text
-        )));
-    }
-
-    let mut stream = response.bytes_stream();
-    let mut buffer = String::new();
-    let mut is_reasoning = false;
-    loop {
-        tokio::select! {
-            _ = cancel_token.cancelled() => {
-                if is_reasoning {
-                    let _ = on_data.send_string("\n</think>\n".to_string());
-                }
-                return Err(ApiProviderError::Execution("请求已取消".into()));
-            }
-            next = stream.next() => {
-                match next {
-                    Some(Ok(bytes)) => {
-                        let chunk = String::from_utf8_lossy(&bytes);
-                        buffer.push_str(&chunk);
-                        while let Some((content, reasoning, done)) = sse::parse_openai_line(&mut buffer) {
-                            if done {
-                                if is_reasoning {
-                                    let _ = on_data.send_string("\n</think>\n".to_string());
-                                }
-                                return Ok(());
-                            }
-                            if let Some(r_text) = reasoning {
-                                if !is_reasoning {
-                                    is_reasoning = true;
-                                    on_data.send_string(format!("<think>\n{r_text}"))?;
-                                } else {
-                                    on_data.send_string(r_text)?;
-                                }
-                            }
-                            if let Some(c_text) = content {
-                                if is_reasoning {
-                                    is_reasoning = false;
-                                    on_data.send_string(format!("\n</think>\n{c_text}"))?;
-                                } else {
-                                    on_data.send_string(c_text)?;
-                                }
-                            }
-                        }
-                    }
-                    Some(Err(e)) => return Err(ApiProviderError::Execution(format!("读取流失败: {e}"))),
-                    None => {
-                        if is_reasoning {
-                            let _ = on_data.send_string("\n</think>\n".to_string());
-                        }
-                        return Ok(());
-                    }
-                }
-            }
+    system_prompt: Option<String>,
+) -> Vec<serde_json::Value> {
+    let mut out = Vec::new();
+    if let Some(prompt) = system_prompt {
+        if !prompt.trim().is_empty() {
+            out.push(json!({
+                "role": "system",
+                "content": prompt.trim()
+            }));
         }
     }
-}
-
-fn flush_anthropic_event(
-    event: &AnthropicEvent,
-    on_data: &Arc<dyn StringStream>,
-) -> Result<bool, ApiProviderError> {
-    if event.is_complete() {
-        return Ok(true);
-    }
-    if let Some(text) = event.extract_content()? {
-        on_data.send_string(text)?;
-    }
-    Ok(false)
-}
-
-async fn stream_anthropic(
-    client: &Client,
-    base_url: &str,
-    api_key: &str,
-    model: &str,
-    messages: &[ApiProviderMessage],
-    cancel_token: CancellationToken,
-    on_data: &Arc<dyn StringStream>,
-) -> Result<(), ApiProviderError> {
-    let endpoint = format!("{}/v1/messages", normalize_base_url(base_url));
-    let body = json!({
-        "model": model,
-        "messages": normalize_messages(messages),
-        "max_tokens": 4096,
-        "stream": true
-    });
-    let response = client
-        .post(endpoint)
-        .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| ApiProviderError::Execution(format!("请求失败: {e}")))?;
-    let status = response.status();
-    if !status.is_success() {
-        let text = response.text().await.unwrap_or_default();
-        return Err(ApiProviderError::Execution(format!(
-            "HTTP {}: {}",
-            status.as_u16(),
-            text
-        )));
-    }
-
-    let mut stream = response.bytes_stream();
-    let mut buffer = String::new();
-    let mut current_event = String::new();
-    let mut current_data: Vec<String> = Vec::new();
-    loop {
-        tokio::select! {
-            _ = cancel_token.cancelled() => {
-                return Err(ApiProviderError::Execution("请求已取消".into()));
-            }
-            next = stream.next() => {
-                match next {
-                    Some(Ok(bytes)) => {
-                        let chunk = String::from_utf8_lossy(&bytes);
-                        buffer.push_str(&chunk);
-                        while let Some(pos) = buffer.find('\n') {
-                            let raw_line = buffer[..pos].to_string();
-                            buffer.drain(..=pos);
-                            if sse::parse_anthropic_line(&raw_line, &mut current_event, &mut current_data) {
-                                let event = AnthropicEvent {
-                                    event_type: std::mem::take(&mut current_event),
-                                    data_lines: std::mem::take(&mut current_data),
-                                };
-                                if flush_anthropic_event(&event, on_data)? {
-                                    return Ok(());
-                                }
+    for m in messages {
+        let role = m.role.trim();
+        let content_text = m.content.trim();
+        
+        let content_value = if let Some(attachments) = &m.attachments {
+            if attachments.is_empty() {
+                json!(content_text)
+            } else {
+                let mut parts = Vec::new();
+                if !content_text.is_empty() {
+                    parts.push(json!({
+                        "type": "text",
+                        "text": content_text
+                    }));
+                }
+                for att in attachments {
+                    if att.mime_type.starts_with("image/") {
+                        parts.push(json!({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": format!("data:{};base64,{}", att.mime_type, att.data)
                             }
-                        }
-                    }
-                    Some(Err(e)) => return Err(ApiProviderError::Execution(format!("读取流失败: {e}"))),
-                    None => {
-                        // Process any remaining buffer (last chunk may lack trailing newline)
-                        while let Some(pos) = buffer.find('\n') {
-                            let raw_line = buffer[..pos].to_string();
-                            buffer.drain(..=pos);
-                            if sse::parse_anthropic_line(&raw_line, &mut current_event, &mut current_data) {
-                                let event = AnthropicEvent {
-                                    event_type: std::mem::take(&mut current_event),
-                                    data_lines: std::mem::take(&mut current_data),
-                                };
-                                if flush_anthropic_event(&event, on_data)? {
-                                    return Ok(());
-                                }
-                            }
-                        }
-                        // Handle last line without newline (e.g. "data: {...}")
-                        if !buffer.is_empty() {
-                            let raw_line = std::mem::take(&mut buffer);
-                            if sse::parse_anthropic_line(&raw_line, &mut current_event, &mut current_data) {
-                                let event = AnthropicEvent {
-                                    event_type: std::mem::take(&mut current_event),
-                                    data_lines: std::mem::take(&mut current_data),
-                                };
-                                if flush_anthropic_event(&event, on_data)? {
-                                    return Ok(());
-                                }
-                            }
-                        }
-                        let event = AnthropicEvent {
-                            event_type: std::mem::take(&mut current_event),
-                            data_lines: std::mem::take(&mut current_data),
-                        };
-                        if flush_anthropic_event(&event, on_data)? {
-                            return Ok(());
-                        }
-                        return Ok(());
+                        }));
                     }
                 }
+                json!(parts)
             }
+        } else {
+            json!(content_text)
+        };
+
+        let mut msg = json!({
+            "role": role,
+            "content": content_value
+        });
+
+        if let Some(tool_calls) = &m.tool_calls {
+            let tc_json = tool_calls.iter().map(|tc| json!({
+                "id": tc.id,
+                "type": "function",
+                "function": {
+                    "name": tc.name,
+                    "arguments": tc.arguments
+                }
+            })).collect::<Vec<_>>();
+            msg["tool_calls"] = serde_json::Value::Array(tc_json);
         }
+
+        if let Some(tid) = &m.tool_call_id {
+            msg["tool_call_id"] = json!(tid);
+        }
+
+        out.push(msg);
     }
-}
-
-pub struct OpenAiProvider;
-
-impl ApiProvider for OpenAiProvider {
-    fn id(&self) -> &str {
-        "openai"
-    }
-
-    fn stream_chat<'a>(
-        &'a self,
-        client: &'a Client,
-        base_url: &'a str,
-        api_key: &'a str,
-        model: &'a str,
-        messages: &'a [ApiProviderMessage],
-        cancel_token: CancellationToken,
-        on_data: &'a Arc<dyn StringStream>,
-    ) -> Pin<Box<dyn Future<Output = Result<(), ApiProviderError>> + Send + 'a>> {
-        Box::pin(stream_openai_compatible(
-            client,
-            base_url,
-            api_key,
-            model,
-            messages,
-            cancel_token,
-            on_data,
-        ))
-    }
-}
-
-pub struct AnthropicProvider;
-
-impl ApiProvider for AnthropicProvider {
-    fn id(&self) -> &str {
-        "anthropic"
-    }
-
-    fn stream_chat<'a>(
-        &'a self,
-        client: &'a Client,
-        base_url: &'a str,
-        api_key: &'a str,
-        model: &'a str,
-        messages: &'a [ApiProviderMessage],
-        cancel_token: CancellationToken,
-        on_data: &'a Arc<dyn StringStream>,
-    ) -> Pin<Box<dyn Future<Output = Result<(), ApiProviderError>> + Send + 'a>> {
-        Box::pin(stream_anthropic(
-            client,
-            base_url,
-            api_key,
-            model,
-            messages,
-            cancel_token,
-            on_data,
-        ))
-    }
+    out
 }
 
 pub struct ApiProviderRegistry {
@@ -350,8 +218,8 @@ impl ApiProviderRegistry {
         let mut registry = Self {
             providers: std::collections::HashMap::new(),
         };
-        registry.register(Box::new(AnthropicProvider));
-        registry.register(Box::new(OpenAiProvider));
+        registry.register(Box::new(anthropic::AnthropicProvider));
+        registry.register(Box::new(openai::OpenAiProvider));
         registry
     }
 
@@ -376,8 +244,10 @@ pub async fn stream_chat(
     api_key: &str,
     model: &str,
     messages: &[ApiProviderMessage],
+    tools: Option<&[ToolDefinition]>,
+    system_prompt: Option<String>,
     cancel_token: CancellationToken,
-    on_data: Arc<dyn StringStream>,
+    on_data: &Arc<dyn StringStream>,
 ) -> Result<(), ApiProviderError> {
     if api_key.trim().is_empty() {
         return Err(ApiProviderError::Config("API Key 未配置".into()));
@@ -408,8 +278,10 @@ pub async fn stream_chat(
             api_key,
             model,
             messages,
+            tools,
+            system_prompt,
             cancel_token,
-            &on_data,
+            on_data,
         ),
     )
     .await;

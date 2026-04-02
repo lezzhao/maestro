@@ -2,10 +2,10 @@ use super::archive::save_archive;
 use super::history::persist_engine_history;
 use super::types::*;
 use super::util::*;
+use crate::agent_state::{AppEventHandle, TauriEventHandle};
 use crate::core::error::CoreError;
 use crate::core::events::EventStream;
 use crate::core::execution::{Execution, ExecutionMode};
-use crate::core::MaestroCore;
 use crate::execution_binding::prepare_execution_binding;
 use crate::pty::PtyManagerState;
 use crate::run_persistence::{append_run_record, current_time_ms};
@@ -117,6 +117,7 @@ fn extract_verification_summary(
     output: &str,
     step_success: bool,
     duration_ms: u128,
+    i18n: &crate::i18n::I18n,
 ) -> Option<VerificationSummary> {
     let framework = detect_framework(output)?;
     let (total_cases, passed_cases, failed_cases, skipped_cases) = parse_case_counts(output);
@@ -138,10 +139,10 @@ fn extract_verification_summary(
                 skipped_cases: 0,
                 duration_ms: Some(duration_ms),
                 suites: vec![],
-                raw_summary: Some("检测到测试框架输出，但未解析到结构化计数".to_string()),
+                raw_summary: Some(i18n.t("test_no_structured")),
             }),
             source: Some("text-parser".to_string()),
-            notes: Some("请检查原始输出确认测试结果".to_string()),
+            notes: Some(i18n.t("check_raw_output")),
         });
     }
     let success = step_success && failed_cases == 0 && failed_suites == 0;
@@ -217,7 +218,7 @@ async fn execute_workflow_step(
 ) -> Result<(WorkflowStepResult, String), CoreError> {
     let step_started = Instant::now();
     let prepared = crate::execution_binding::resolve_execution(
-        None,
+        TauriEventHandle::noop(), // workflow steps don't strictly need event handle for resolve yet
         &step.engine,
         step.profile_id.as_deref(),
         "workflow",
@@ -227,6 +228,7 @@ async fn execute_workflow_step(
     )?;
     let resolved = prepared.context;
 
+    let i18n = cfg.i18n();
     emitter
         .send_event(
             "workflow://progress",
@@ -236,7 +238,7 @@ async fn execute_workflow_step(
                 total_steps,
                 engine: step.engine.clone(),
                 status: "starting".to_string(),
-                message: "starting step".to_string(),
+                message: i18n.t("workflow_starting_step"),
                 token_estimate: None,
             })
             .map_err(|e| CoreError::Serialization {
@@ -261,7 +263,9 @@ async fn execute_workflow_step(
                 total_steps,
                 engine: step.engine.clone(),
                 status: "running".to_string(),
-                message: format!("starting step {} with {}", step_index + 1, step.engine),
+                message: i18n.t("workflow_running_step")
+                    .replace("{}", &(step_index + 1).to_string())
+                    .replace("{}", &step.engine),
                 token_estimate: None,
             })
             .map_err(|e| CoreError::Serialization {
@@ -366,7 +370,7 @@ async fn execute_workflow_step(
                 let success = exited_ok && !timed_out;
                 let duration_ms = step_started.elapsed().as_millis();
                 let verification =
-                    extract_verification_summary(&message, success && matched, duration_ms);
+                    extract_verification_summary(&message, success && matched, duration_ms, &i18n);
 
                 WorkflowStepResult {
                     engine: step.engine.clone(),
@@ -539,6 +543,7 @@ async fn execute_workflow_step(
                 &final_output,
                 matched,
                 step_started.elapsed().as_millis(),
+                &i18n,
             ),
             output: final_output,
         }
@@ -555,11 +560,11 @@ async fn execute_workflow_step(
                 engine: step.engine.clone(),
                 status: "done".to_string(),
                 message: if result.success && result.completion_matched {
-                    "step completed".to_string()
+                    i18n.t("workflow_step_completed")
                 } else if result.success {
-                    "step done but completion signal not matched".to_string()
+                    i18n.t("workflow_step_not_matched")
                 } else {
-                    "step failed".to_string()
+                    i18n.t("workflow_step_failed")
                 },
                 token_estimate: Some(token_estimate),
             })
@@ -581,14 +586,19 @@ async fn execute_workflow_step(
 pub async fn workflow_run_step(
     app: AppHandle,
     request: StepRunRequest,
-    core_state: State<'_, MaestroCore>,
+    core_state: State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<StepRunResult, CoreError> {
     core_state
-        .workflow_run_step(Some(app.clone()), Arc::new(app.clone()), request)
+        .workflow_run_step(
+            TauriEventHandle::arc(app.clone()),
+            Arc::new(app.clone()),
+            request,
+        )
         .await
 }
 
 pub async fn workflow_run_step_core(
+    _event_handle: Arc<dyn AppEventHandle>,
     emitter: Arc<dyn EventStream>,
     request: StepRunRequest,
     cfg: &crate::config::AppConfig,
@@ -652,20 +662,25 @@ pub async fn workflow_run_step_core(
 pub async fn workflow_run(
     app: AppHandle,
     request: WorkflowRunRequest,
-    core_state: State<'_, MaestroCore>,
+    core_state: State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<WorkflowRunResult, CoreError> {
     core_state
-        .workflow_run(Some(app.clone()), Arc::new(app.clone()), request)
+        .workflow_run(
+            TauriEventHandle::arc(app.clone()),
+            Arc::new(app.clone()),
+            request,
+        )
         .await
 }
 
 pub async fn workflow_run_core(
-    app: Option<tauri::AppHandle>,
+    event_handle: Arc<dyn AppEventHandle>,
     emitter: Arc<dyn EventStream>,
     request: WorkflowRunRequest,
     cfg: &crate::config::AppConfig,
     pty_state: &PtyManagerState,
 ) -> Result<WorkflowRunResult, CoreError> {
+    let i18n = cfg.i18n();
     let workflow_name = request.name.clone();
     let total = request.steps.len();
     if total == 0 {
@@ -678,10 +693,10 @@ pub async fn workflow_run_core(
     let now_ms = current_time_ms().unwrap_or_default();
     let execution_id = format!("workflow-{workflow_name}-{now_ms}");
 
-    // When task_id exists and app is available, ensure execution binding before run
-    if let (Some(app_handle), Some(task_id)) = (app.as_ref(), request.task_id.as_ref()) {
+    // When task_id exists, ensure execution binding before run
+    if let Some(task_id) = request.task_id.as_ref() {
         if !task_id.is_empty() {
-            prepare_execution_binding(app_handle, &execution_id, task_id, cfg)?;
+            prepare_execution_binding(event_handle.clone(), &execution_id, task_id, cfg)?;
         }
     }
 
@@ -752,7 +767,7 @@ pub async fn workflow_run_core(
                 .map(|s| s.engine.clone())
                 .unwrap_or_default(),
             status: "finished".to_string(),
-            message: "workflow completed".to_string(),
+            message: i18n.t("workflow_completed"),
             token_estimate: None,
         })
         .unwrap_or_default(),
@@ -785,7 +800,7 @@ pub async fn workflow_run_core(
         execution.fail_with("workflow failed".to_string(), output_preview);
     }
     if let Ok(io) = WorkspaceIo::new(&std::path::PathBuf::from(&cfg.project.path)) {
-        let _ = append_run_record(&io, &execution);
+        let _ = append_run_record(&io, &execution, None);
     }
 
     Ok(run_result)
