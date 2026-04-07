@@ -304,7 +304,9 @@ function ChatMessageItemBase({ message, labels, liveTranscript, isHighlighted, o
       transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
       className={cn(
         "group relative flex w-full gap-4 py-3 px-6 transition-all duration-400 font-mono text-[12.5px]",
-        isUser ? "bg-transparent" : "bg-bg-surface/[0.02] border-y border-border-muted/[0.02] my-0.5",
+        isAssistant
+          ? "bg-bg-surface/2 border-border-muted/2 shadow-primary/5 hover:ring-primary/20"
+          : "bg-primary/5 border-primary/20 shadow-primary/5 hover:ring-primary/40",
         isHighlighted && "bg-primary/5 ring-1 ring-primary/20 shadow-[0_0_20px_rgba(var(--primary-rgb),0.1)] z-10 scale-[1.005]"
       )}
     >
@@ -363,9 +365,20 @@ function ChatMessageItemBase({ message, labels, liveTranscript, isHighlighted, o
                 <span className="inline-block w-2 h-3.5 ml-1 bg-text-muted animate-pulse align-text-bottom opacity-50" />
               </div>
             ) : isAssistant && message.status === "error" && !message.content.trim() ? (
-              <div className="flex items-center gap-2 py-2 px-3 border border-rose-500/10 text-rose-500 text-[11px] font-bold rounded-lg bg-rose-500/5">
-                <AlertTriangle size={14} />
-                <span>{t("err_execution_check_logs")}</span>
+              <div className="flex flex-col gap-2 p-3 border border-rose-500/20 text-rose-400 text-[11px] font-bold rounded-xl bg-rose-500/5 backdrop-blur-sm">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle size={14} className="text-rose-500" />
+                  <span>{t("err_execution_check_logs")}</span>
+                </div>
+                {onRetry && (
+                  <button
+                    onClick={() => onRetry(message.id)}
+                    className="mt-1 flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-500/20 transition-all font-black uppercase tracking-widest text-[9px]"
+                  >
+                    <RotateCcw size={12} />
+                    {t("diagnose_and_fix")}
+                  </button>
+                )}
               </div>
             ) : isAssistant ? (
               <>

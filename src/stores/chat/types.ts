@@ -31,6 +31,9 @@ export type ChatState = {
   conversationsByTask: Record<string, Conversation[]>;
   activeConversationId: Record<string, string | null>;
   
+  // Task State Token (Fix 3)
+  taskStateToken: Record<string, string>;
+
   // Pending permission (New)
   pendingPermissionRequest: PermissionRequest | null;
 };
@@ -55,6 +58,7 @@ export type ChatActions = {
   setActiveRunId: (taskId: string, runId: string | null) => void;
   setActiveAssistantMsgId: (taskId: string, messageId: string | null) => void;
   setExecutionPhase: (taskId: string, phase: "idle" | "connecting" | "sending" | "streaming" | "completed" | "error") => void;
+  setTaskStateToken: (taskId: string, token: string) => void;
 
   addMessage: (taskId: string, message: ChatMessage) => void;
   setMessages: (taskId: string, messages: ChatMessage[]) => void;
@@ -87,7 +91,7 @@ export type ChatActions = {
   
   // Permission actions (New)
   setPendingPermissionRequest: (request: PermissionRequest | null) => void;
-  resolvePermission: (approved: boolean) => Promise<void>;
+  resolvePermission: (approved: boolean, editedArguments?: string) => Promise<void>;
 
   getTaskMessages: (taskId: string | null) => ChatMessage[];
   getTaskPendingAttachments: (taskId: string | null) => ChatAttachment[];
