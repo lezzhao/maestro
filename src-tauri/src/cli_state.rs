@@ -1,6 +1,6 @@
 use crate::core::execution::{Execution, ExecutionStatus};
 use crate::core::MaestroCore;
-use crate::run_persistence::{read_run_records, rewrite_run_records};
+use crate::storage::run_persistence::{read_run_records, rewrite_run_records};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
@@ -32,11 +32,11 @@ pub struct CliPruneResult {
     pub deleted_logs: usize,
 }
 
-fn resolve_workspace_io(core: &MaestroCore) -> Result<crate::workspace_io::WorkspaceIo, String> {
+fn resolve_workspace_io(core: &MaestroCore) -> Result<crate::infra::workspace_io::WorkspaceIo, String> {
     core.workspace_io().map_err(|e| e.to_string())
 }
 
-fn cli_log_dir(io: &crate::workspace_io::WorkspaceIo) -> PathBuf {
+fn cli_log_dir(io: &crate::infra::workspace_io::WorkspaceIo) -> PathBuf {
     io.resolve(".maestro-cli/logs")
         .unwrap_or_else(|_| PathBuf::from(".maestro-cli/logs"))
 }
@@ -107,10 +107,12 @@ fn map_run_records(
 
 #[command]
 pub fn cli_list_sessions(
+    app: tauri::AppHandle,
     engine_id: Option<String>,
-    core_state: State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<Vec<CliSessionListItem>, String> {
-    let io = resolve_workspace_io(core_state.inner())?;
+    let core = app.try_state::<std::sync::Arc<MaestroCore>>()
+        .ok_or_else(|| "Core state not initialized".to_string())?;
+    let io = resolve_workspace_io(core.inner())?;
     let log_dir = cli_log_dir(&io);
     let run_records = read_run_records(&io).unwrap_or_default();
     Ok(map_run_records(
@@ -122,12 +124,14 @@ pub fn cli_list_sessions(
 
 #[command]
 pub fn cli_read_session_logs(
+    app: tauri::AppHandle,
     engine_id: String,
     session_id: Option<String>,
     _limit: Option<usize>,
-    core_state: State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<String, String> {
-    let io = resolve_workspace_io(core_state.inner())?;
+    let core = app.try_state::<std::sync::Arc<MaestroCore>>()
+        .ok_or_else(|| "Core state not initialized".to_string())?;
+    let io = resolve_workspace_io(core.inner())?;
     let run_records = read_run_records(&io).unwrap_or_default();
 
     let target = if let Some(id) = session_id {
@@ -160,12 +164,14 @@ pub fn cli_read_session_logs(
 
 #[command]
 pub fn cli_prune_sessions(
+    app: tauri::AppHandle,
     engine_id: Option<String>,
     status: Option<String>,
     older_than_hours: Option<u64>,
-    core_state: State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<CliPruneResult, String> {
-    let io = resolve_workspace_io(core_state.inner())?;
+    let core = app.try_state::<std::sync::Arc<MaestroCore>>()
+        .ok_or_else(|| "Core state not initialized".to_string())?;
+    let io = resolve_workspace_io(core.inner())?;
     let log_dir = cli_log_dir(&io);
     let run_records = read_run_records(&io).unwrap_or_default();
 
@@ -209,8 +215,14 @@ pub fn cli_prune_sessions(
 }
 
 #[command]
-pub fn cli_reconcile_active_sessions(core_state: State<'_, std::sync::Arc<crate::core::MaestroCore>>) -> Result<usize, String> {
-    let io = resolve_workspace_io(core_state.inner())?;
+pub fn cli_reconcile_active_sessions(app: tauri::AppHandle) -> Result<usize, String> {
+    let core = if let Some(c) = app.try_state::<std::sync::Arc<MaestroCore>>() {
+        c
+    } else {
+        return Ok(0);
+    };
+    let io = resolve_workspace_io(core.inner())?;
+
     let mut reconciled = 0;
 
     let run_records = read_run_records(&io).unwrap_or_default();
