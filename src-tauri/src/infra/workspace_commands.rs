@@ -2,7 +2,7 @@
 //! Workspaces are top-level containers that group tasks and bind a working directory.
 
 use crate::core::error::CoreError;
-use crate::task_state::maestro_db_path;
+use crate::task::state::maestro_db_path;
 use serde::{Deserialize, Serialize};
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -90,7 +90,7 @@ pub struct WorkspaceUpdateRequest {
 
 // ── DB helpers (shared from task_repository) ──────────────────────────
 
-use crate::task_repository::{db_err, sqlite_datetime_to_ms};
+use crate::task::repository::{db_err, sqlite_datetime_to_ms};
 
 /// Ensure workspaces table exists.
 pub fn ensure_workspace_table(conn: &rusqlite::Connection) -> Result<(), CoreError> {
@@ -182,8 +182,8 @@ pub fn create_workspace(
     db_path: &std::path::Path,
     req: &WorkspaceCreateRequest,
 ) -> Result<Workspace, CoreError> {
-    let conn = crate::task_repository::db_connection(db_path)?;
-    crate::task_repository::ensure_tables(&conn)?;
+    let conn = crate::task::repository::db_connection(db_path)?;
+    crate::task::repository::ensure_tables(&conn)?;
     ensure_workspace_schema(&conn)?;
 
     let id = uuid::Uuid::new_v4().to_string();
@@ -230,8 +230,8 @@ pub fn create_workspace(
 }
 
 pub fn list_workspaces(db_path: &std::path::Path) -> Result<Vec<Workspace>, CoreError> {
-    let conn = crate::task_repository::db_connection(db_path)?;
-    crate::task_repository::ensure_tables(&conn)?;
+    let conn = crate::task::repository::db_connection(db_path)?;
+    crate::task::repository::ensure_tables(&conn)?;
     ensure_workspace_schema(&conn)?;
 
     let mut stmt = conn
@@ -274,8 +274,8 @@ pub fn update_workspace(
     db_path: &std::path::Path,
     req: &WorkspaceUpdateRequest,
 ) -> Result<Workspace, CoreError> {
-    let conn = crate::task_repository::db_connection(db_path)?;
-    crate::task_repository::ensure_tables(&conn)?;
+    let conn = crate::task::repository::db_connection(db_path)?;
+    crate::task::repository::ensure_tables(&conn)?;
     ensure_workspace_schema(&conn)?;
 
     // Build dynamic SET clause for provided fields
@@ -342,7 +342,7 @@ pub fn update_workspace(
 }
 
 pub fn get_workspace_by_id(db_path: &std::path::Path, id: &str) -> Result<Workspace, CoreError> {
-    let conn = crate::task_repository::db_connection(db_path)?;
+    let conn = crate::task::repository::db_connection(db_path)?;
     ensure_workspace_schema(&conn)?;
 
     let mut stmt = conn
@@ -378,8 +378,8 @@ pub fn get_workspace_by_id(db_path: &std::path::Path, id: &str) -> Result<Worksp
 }
 
 pub fn delete_workspace(db_path: &std::path::Path, workspace_id: &str) -> Result<(), CoreError> {
-    let conn = crate::task_repository::db_connection(db_path)?;
-    crate::task_repository::ensure_tables(&conn)?;
+    let conn = crate::task::repository::db_connection(db_path)?;
+    crate::task::repository::ensure_tables(&conn)?;
     ensure_workspace_schema(&conn)?;
 
     conn.execute(
@@ -420,6 +420,7 @@ pub async fn workspace_create(
         crate::agent_state::AgentStateUpdate::WorkspaceCreated {
             workspace: ws.clone(),
         },
+        None,
     );
     Ok(ws)
 }
@@ -442,6 +443,7 @@ pub async fn workspace_update(
         crate::agent_state::AgentStateUpdate::WorkspaceUpdated {
             workspace: ws.clone(),
         },
+        None,
     );
     Ok(ws)
 }
@@ -456,6 +458,7 @@ pub async fn workspace_delete(
     crate::agent_state::emit_state_update(
         Some(&app),
         crate::agent_state::AgentStateUpdate::WorkspaceDeleted { workspace_id },
+        None,
     );
     Ok(())
 }
@@ -554,11 +557,11 @@ mod tests {
 
         // Create a task associated with this workspace
         let task =
-            crate::task_state::create_task(&db_path, "Task1", "", "cursor", "{}", None, None, None)
+            crate::task::state::create_task(&db_path, "Task1", "", "cursor", "{}", None, None, None)
                 .expect("create task");
 
         // Associate task with workspace
-        let conn = crate::task_repository::db_connection(&db_path).expect("open db");
+        let conn = crate::task::repository::db_connection(&db_path).expect("open db");
         conn.execute(
             "UPDATE tasks SET workspace_id = ?1 WHERE id = ?2",
             rusqlite::params![ws.id, task.id],
@@ -570,7 +573,7 @@ mod tests {
         delete_workspace(&db_path, &ws.id).expect("delete workspace");
 
         // Task should still exist but workspace_id = NULL
-        let conn = crate::task_repository::db_connection(&db_path).expect("open db");
+        let conn = crate::task::repository::db_connection(&db_path).expect("open db");
         let ws_id: Option<String> = conn
             .query_row(
                 "SELECT workspace_id FROM tasks WHERE id = ?1",
@@ -589,8 +592,8 @@ mod tests {
     fn workspace_delete_not_found() {
         let (_dir, db_path) = temp_db_path();
         // Ensure tables exist
-        let conn = crate::task_repository::db_connection(&db_path).expect("open");
-        crate::task_repository::ensure_tables(&conn).expect("tables");
+        let conn = crate::task::repository::db_connection(&db_path).expect("open");
+        crate::task::repository::ensure_tables(&conn).expect("tables");
         ensure_workspace_schema(&conn).expect("schema");
         drop(conn);
 

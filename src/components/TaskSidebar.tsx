@@ -1,18 +1,20 @@
 import { Plus, MessageSquare, Trash2 } from "lucide-react";
 import { useTaskStoreState } from "../hooks/use-app-store-selectors";
+import { useTaskActions } from "../hooks/useTaskActions";
 import { useTranslation } from "../i18n";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 
 export function TaskSidebar() {
   const { t } = useTranslation();
-  const { tasks: allTasks, activeWorkspaceId, activeTaskId, addTask, removeTask, setActiveTaskId } =
+  const { tasks: allTasks, activeWorkspaceId, activeTaskId, removeTask, setActiveTaskId } =
     useTaskStoreState();
+  const { handleAddTask } = useTaskActions();
 
   const tasks = allTasks.filter(t => (t.workspaceId || null) === (activeWorkspaceId || null));
 
   const handleNewTask = () => {
-    void addTask("");
+    void handleAddTask("");
   };
 
   const formatDate = (ts: number) => {

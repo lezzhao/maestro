@@ -1,6 +1,6 @@
 use crate::agent_state::PersistedMessagePayload;
 use crate::core::error::CoreError;
-use crate::task_repository::{db_err, ensure_tables, sqlite_datetime_to_ms};
+use crate::task::repository::{db_err, ensure_tables, sqlite_datetime_to_ms};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use uuid::Uuid;
@@ -26,7 +26,7 @@ pub fn create_conversation(
     engine_id: &str,
     profile_id: Option<&str>,
 ) -> Result<String, CoreError> {
-    let conn = crate::task_repository::db_connection(db_path)?;
+    let conn = crate::task::repository::db_connection(db_path)?;
     ensure_tables(&conn)?;
 
     let id = Uuid::new_v4().to_string();
@@ -62,7 +62,7 @@ pub fn list_conversations(
     db_path: &Path,
     task_id: Option<&str>,
 ) -> Result<Vec<ConversationRecord>, CoreError> {
-    let conn = crate::task_repository::db_connection(db_path)?;
+    let conn = crate::task::repository::db_connection(db_path)?;
     ensure_tables(&conn)?;
 
     let (sql, params): (&str, Box<dyn rusqlite::types::ToSql>) = if let Some(tid) = task_id {
@@ -98,7 +98,7 @@ pub fn append_message(
     conversation_id: &str,
     msg: &PersistedMessagePayload,
 ) -> Result<(), CoreError> {
-    let conn = crate::task_repository::db_connection(db_path)?;
+    let conn = crate::task::repository::db_connection(db_path)?;
     ensure_tables(&conn)?;
 
     let meta_json = msg.meta.as_ref().map(|v| v.to_string());
@@ -140,7 +140,7 @@ pub fn load_conversation_messages(
     db_path: &Path,
     conversation_id: &str,
 ) -> Result<Vec<PersistedMessagePayload>, CoreError> {
-    let conn = crate::task_repository::db_connection(db_path)?;
+    let conn = crate::task::repository::db_connection(db_path)?;
     ensure_tables(&conn)?;
 
     let mut stmt = conn
@@ -162,7 +162,7 @@ pub fn load_conversation_messages(
 }
 
 pub fn delete_conversation(db_path: &Path, id: &str) -> Result<(), CoreError> {
-    let conn = crate::task_repository::db_connection(db_path)?;
+    let conn = crate::task::repository::db_connection(db_path)?;
     ensure_tables(&conn)?;
     conn.execute(
         "DELETE FROM conversations WHERE id = ?1",
@@ -173,7 +173,7 @@ pub fn delete_conversation(db_path: &Path, id: &str) -> Result<(), CoreError> {
 }
 
 pub fn update_conversation_title(db_path: &Path, id: &str, title: &str) -> Result<(), CoreError> {
-    let conn = crate::task_repository::db_connection(db_path)?;
+    let conn = crate::task::repository::db_connection(db_path)?;
     ensure_tables(&conn)?;
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
     conn.execute(
@@ -200,7 +200,7 @@ pub async fn conversation_create(
     app: tauri::AppHandle,
     request: ConversationCreateRequest,
 ) -> Result<String, CoreError> {
-    let db_path = crate::task_state::maestro_db_path(&app)?;
+    let db_path = crate::task::state::maestro_db_path(&app)?;
     create_conversation(
         &db_path,
         request.task_id.as_deref(),
@@ -215,7 +215,7 @@ pub async fn conversation_list(
     app: tauri::AppHandle,
     task_id: Option<String>,
 ) -> Result<Vec<ConversationRecord>, CoreError> {
-    let db_path = crate::task_state::maestro_db_path(&app)?;
+    let db_path = crate::task::state::maestro_db_path(&app)?;
     list_conversations(&db_path, task_id.as_deref())
 }
 
@@ -224,7 +224,7 @@ pub async fn conversation_load_messages(
     app: tauri::AppHandle,
     conversation_id: String,
 ) -> Result<Vec<PersistedMessagePayload>, CoreError> {
-    let db_path = crate::task_state::maestro_db_path(&app)?;
+    let db_path = crate::task::state::maestro_db_path(&app)?;
     load_conversation_messages(&db_path, &conversation_id)
 }
 
@@ -233,7 +233,7 @@ pub async fn conversation_delete(
     app: tauri::AppHandle,
     conversation_id: String,
 ) -> Result<(), CoreError> {
-    let db_path = crate::task_state::maestro_db_path(&app)?;
+    let db_path = crate::task::state::maestro_db_path(&app)?;
     delete_conversation(&db_path, &conversation_id)
 }
 
@@ -243,7 +243,7 @@ pub async fn conversation_update_title(
     conversation_id: String,
     title: String,
 ) -> Result<(), CoreError> {
-    let db_path = crate::task_state::maestro_db_path(&app)?;
+    let db_path = crate::task::state::maestro_db_path(&app)?;
     update_conversation_title(&db_path, &conversation_id, &title)
 }
 #[tauri::command]
@@ -251,7 +251,7 @@ pub async fn conversation_generate_title(
     app: tauri::AppHandle,
     conversation_id: String,
 ) -> Result<String, CoreError> {
-    let db_path = crate::task_state::maestro_db_path(&app)?;
+    let db_path = crate::task::state::maestro_db_path(&app)?;
     let messages = load_conversation_messages(&db_path, &conversation_id)?;
 
     if messages.is_empty() {

@@ -1,4 +1,4 @@
-use crate::scoped_fs::ScopedFS;
+use crate::infra::scoped_fs::ScopedFS;
 use std::sync::Arc;
 use crate::tools::ToolBox;
 use crate::tools::builtin;

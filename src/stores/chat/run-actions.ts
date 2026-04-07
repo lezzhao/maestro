@@ -163,6 +163,10 @@ export const createRunActions = (
   setMaxAutoRetries: (maxAutoRetries: number) => set(() => ({ maxAutoRetries })),
   incrementAutoRetry: () => set((state: ChatStore) => ({ autoRetryCount: state.autoRetryCount + 1 })),
   resetAutoRetry: () => set(() => ({ autoRetryCount: 0 })),
+  setTaskStateToken: (taskId: string, token: string) =>
+    set((state: ChatStore) => ({
+      taskStateToken: { ...state.taskStateToken, [taskId]: token },
+    })),
 
   getTaskRuns: (taskId: string | null) => {
     if (!taskId) return EMPTY_RUNS;

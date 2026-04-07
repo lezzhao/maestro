@@ -38,7 +38,7 @@ impl MaestroCore {
         &self,
     ) -> Result<Vec<crate::core::execution::Execution>, error::CoreError> {
         let io = self.workspace_io()?;
-        let records = crate::run_persistence::read_run_records(&io).unwrap_or_default();
+        let records = crate::storage::run_persistence::read_run_records(&io).unwrap_or_default();
         Ok(records)
     }
 
@@ -67,7 +67,7 @@ impl MaestroCore {
     pub fn reconcile(&self) -> Result<(), error::CoreError> {
         let io = self.workspace_io()?;
         let mut records =
-            crate::run_persistence::read_run_records(&io).map_err(|e| error::CoreError::Io {
+            crate::storage::run_persistence::read_run_records(&io).map_err(|e| error::CoreError::Io {
                 message: format!("read run records failed: {e}"),
             })?;
         let mut changed = false;
@@ -98,7 +98,7 @@ impl MaestroCore {
             }
         }
         if changed {
-            crate::run_persistence::rewrite_run_records(&io, &records, None).map_err(|e| {
+            crate::storage::run_persistence::rewrite_run_records(&io, &records, None).map_err(|e| {
                 error::CoreError::Io {
                     message: format!("rewrite run records failed: {e}"),
                 }

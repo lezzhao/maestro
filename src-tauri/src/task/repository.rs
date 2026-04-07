@@ -24,9 +24,9 @@ pub(crate) fn db_err(e: impl std::fmt::Display) -> CoreError {
 
 pub(crate) fn db_connection(db_path: &Path) -> Result<rusqlite::Connection, CoreError> {
     let conn = rusqlite::Connection::open(db_path).map_err(db_err)?;
-    conn.execute("PRAGMA journal_mode = WAL;", []).map_err(db_err)?;
-    conn.execute("PRAGMA synchronous = NORMAL;", []).map_err(db_err)?;
-    conn.execute("PRAGMA busy_timeout = 5000;", []).map_err(db_err)?;
+    conn.pragma_update(None, "journal_mode", "WAL").map_err(db_err)?;
+    conn.pragma_update(None, "synchronous", "NORMAL").map_err(db_err)?;
+    conn.pragma_update(None, "busy_timeout", 5000).map_err(db_err)?;
     Ok(conn)
 }
 
@@ -39,156 +39,8 @@ pub struct TaskRuntimeBinding {
     pub runtime_snapshot_id: Option<String>,
 }
 
-/// Ensure profile_id column exists (migration for existing DBs).
-fn ensure_profile_id_column(conn: &rusqlite::Connection) -> Result<(), CoreError> {
-    let count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name='profile_id'",
-            [],
-            |r| r.get(0),
-        )
-        .map_err(db_err)?;
-    if count == 0 {
-        conn.execute("ALTER TABLE tasks ADD COLUMN profile_id TEXT", [])
-            .map_err(db_err)?;
-    }
-    Ok(())
-}
-
-/// Ensure runtime_snapshot_id column exists (migration for profile snapshot support).
-fn ensure_runtime_snapshot_id_column(conn: &rusqlite::Connection) -> Result<(), CoreError> {
-    let count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name='runtime_snapshot_id'",
-            [],
-            |r| r.get(0),
-        )
-        .map_err(db_err)?;
-    if count == 0 {
-        conn.execute("ALTER TABLE tasks ADD COLUMN runtime_snapshot_id TEXT", [])
-            .map_err(db_err)?;
-    }
-    Ok(())
-}
-
-/// Ensure settings column exists (for cascading custom config).
-fn ensure_settings_column(conn: &rusqlite::Connection) -> Result<(), CoreError> {
-    let count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name='settings'",
-            [],
-            |r| r.get(0),
-        )
-        .map_err(db_err)?;
-    if count == 0 {
-        conn.execute("ALTER TABLE tasks ADD COLUMN settings TEXT", [])
-            .map_err(db_err)?;
-    }
-    Ok(())
-}
-
-/// Ensure workspace_id column exists (for workspace association).
-fn ensure_workspace_id_column(conn: &rusqlite::Connection) -> Result<(), CoreError> {
-    let count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('tasks') WHERE name='workspace_id'",
-            [],
-            |r| r.get(0),
-        )
-        .map_err(db_err)?;
-    if count == 0 {
-        conn.execute("ALTER TABLE tasks ADD COLUMN workspace_id TEXT", [])
-            .map_err(db_err)?;
-    }
-    Ok(())
-}
-
-/// Ensure tasks and state_transitions tables exist.
-/// Migration columns are checked only AFTER table creation (for existing DBs).
 pub fn ensure_tables(conn: &rusqlite::Connection) -> Result<(), CoreError> {
-    conn.execute_batch(
-        r#"
-        CREATE TABLE IF NOT EXISTS tasks (
-            id TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            description TEXT NOT NULL,
-            engine_id TEXT NOT NULL,
-            current_state TEXT NOT NULL,
-            workspace_boundary TEXT NOT NULL,
-            profile_id TEXT,
-            workspace_id TEXT,
-            settings TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE TABLE IF NOT EXISTS state_transitions (
-            id TEXT PRIMARY KEY,
-            task_id TEXT NOT NULL,
-            from_state TEXT NOT NULL,
-            to_state TEXT NOT NULL,
-            triggered_by TEXT NOT NULL,
-            git_snapshot_hash TEXT,
-            context_reasoning TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE TABLE IF NOT EXISTS runtime_snapshots (
-            id TEXT PRIMARY KEY,
-            task_id TEXT NOT NULL,
-            engine_id TEXT NOT NULL,
-            profile_id TEXT,
-            payload_json TEXT NOT NULL,
-            reason TEXT NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE TABLE IF NOT EXISTS execution_bindings (
-            execution_id TEXT PRIMARY KEY,
-            task_id TEXT NOT NULL,
-            snapshot_id TEXT NOT NULL,
-            engine_id TEXT NOT NULL,
-            profile_id TEXT,
-            mode TEXT NOT NULL,
-            source TEXT NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE TABLE IF NOT EXISTS conversations (
-            id TEXT PRIMARY KEY,
-            task_id TEXT,
-            title TEXT NOT NULL,
-            engine_id TEXT NOT NULL,
-            profile_id TEXT,
-            message_count INTEGER DEFAULT 0,
-            summary TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE TABLE IF NOT EXISTS conversation_messages (
-            id TEXT PRIMARY KEY,
-            conversation_id TEXT NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT NOT NULL,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            status TEXT,
-            meta TEXT,
-            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
-        );
-        CREATE TABLE IF NOT EXISTS memories (
-            id TEXT PRIMARY KEY,
-            task_id TEXT,
-            content TEXT NOT NULL,
-            category TEXT NOT NULL,  -- preference, fact, decision, context
-            importance INTEGER DEFAULT 1,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-        "#,
-    )
-    .map_err(db_err)?;
-    // Migration: add columns for existing DBs that predate these fields
-    ensure_profile_id_column(conn)?;
-    ensure_runtime_snapshot_id_column(conn)?;
-    ensure_settings_column(conn)?;
-    ensure_workspace_id_column(conn)?;
-    Ok(())
+    crate::storage::migrations::run_migrations(conn)
 }
 
 /// Insert a state transition record.
@@ -465,7 +317,7 @@ pub fn get_task_record(
 
 pub fn update_task(
     db_path: &Path,
-    req: &crate::task_state::TaskUpdateRequest,
+    req: &crate::task::state::TaskUpdateRequest,
 ) -> Result<(), CoreError> {
     let conn = db_connection(db_path)?;
     ensure_tables(&conn)?;

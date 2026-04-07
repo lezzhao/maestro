@@ -8,13 +8,17 @@ export function useAgentExecutor(
   const currentClientRef = useRef<ExecutionClient | null>(null);
 
   const startExecution = useCallback(
-    async (request: Record<string, unknown>) => {
+    async (taskId: string, request: Record<string, unknown>) => {
       if (currentClientRef.current) {
         await currentClientRef.current.stop();
       }
-      const client = new ExecutionClient(executionMode, onEvent);
+      // Generate a unique token for this execution cycle (Fix 3)
+      const cycleId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      const client = new ExecutionClient(taskId, cycleId, executionMode, onEvent);
       currentClientRef.current = client;
-      return await client.start(request);
+      
+      const result = await client.start({ ...request, state_token: cycleId });
+      return { ...result, cycleId };
     },
     [executionMode, onEvent]
   );

@@ -11,6 +11,8 @@ import {
   Info
 } from "lucide-react";
 import { Button } from "../ui/button";
+import { useAsyncCallback } from "../../hooks/use-async-callback";
+import { Z_INDEX } from "../../constants";
 import { type ProviderMetadata as ProviderMarketItem } from "../../config/provider-registry";
 import type { AuthScheme, EngineConfig } from "../../types";
 
@@ -24,28 +26,15 @@ interface ProviderConfigDrawerProps {
 export function ProviderConfigDrawer({ provider, onClose, onSave, onVerify }: ProviderConfigDrawerProps) {
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
-  const [isVerifying, setIsVerifying] = useState(false);
   const [verifyStatus, setVerifyStatus] = useState<"idle" | "success" | "error">("idle");
   const [verifyMessage, setVerifyMessage] = useState("");
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState("");
 
-  useEffect(() => {
-    if (provider) {
-       // Reset state when provider changes
-       setApiKey("");
-       setBaseUrl(provider.defaultBaseUrl || "");
-       setVerifyStatus("idle");
-       setAvailableModels([]);
-    }
-  }, [provider]);
-
-  if (!provider) return null;
-
-  const handleVerify = async () => {
-    setIsVerifying(true);
-    setVerifyStatus("idle");
-    try {
+  const { execute: handleVerify, isLoading: isVerifying } = useAsyncCallback(
+    async () => {
+      if (!provider) return;
+      setVerifyStatus("idle");
       const auth: AuthScheme = {
         type: "api_key",
         config: { api_key: apiKey, is_secret: true }
@@ -61,53 +50,69 @@ export function ProviderConfigDrawer({ provider, onClose, onSave, onVerify }: Pr
         setVerifyStatus("error");
         setVerifyMessage(res.message);
       }
-    } catch (e) {
-      setVerifyStatus("error");
-      setVerifyMessage(String(e));
-    } finally {
-      setIsVerifying(false);
-    }
-  };
+    },
+    { errorMessagePrefix: "verify_failed" }
+  );
 
-  const handleSave = async () => {
-    const config: EngineConfig = {
-        id: provider.id,
-        plugin_type: "api",
-        display_name: provider.name,
-        icon: provider.logo,
-        category: provider.category,
-        active_profile_id: "default",
-        profiles: {
-            default: {
-                id: "default",
-                display_name: "Default Profile",
-                command: provider.id,
-                args: [],
-                env: {},
-                supports_headless: true,
-                headless_args: [],
-                api_provider: provider.id,
-                api_base_url: baseUrl || null,
-                api_key: apiKey || null,
-                model: selectedModel || null,
-                auth: {
-                    type: "api_key",
-                    config: { 
-                      api_key: apiKey,
-                      key_prefix: undefined, 
-                      is_secret: true 
-                    }
-                }
-            }
-        },
-    };
-    await onSave(config);
-    onClose();
-  };
+  const { execute: handleSave, isLoading: isSaving, error: saveError, setError: setSaveError } = useAsyncCallback(
+    async () => {
+      if (!provider) return;
+      const config: EngineConfig = {
+          id: provider.id,
+          plugin_type: "api",
+          display_name: provider.name,
+          icon: provider.logo,
+          category: provider.category,
+          active_profile_id: "default",
+          profiles: {
+              default: {
+                  id: "default",
+                  display_name: "Default Profile",
+                  command: provider.id,
+                  args: [],
+                  env: {},
+                  supports_headless: true,
+                  headless_args: [],
+                  api_provider: provider.id,
+                  api_base_url: baseUrl || null,
+                  api_key: apiKey || null,
+                  model: selectedModel || null,
+                  auth: {
+                      type: "api_key",
+                      config: { 
+                        api_key: apiKey,
+                        key_prefix: undefined, 
+                        is_secret: true 
+                      }
+                  }
+              }
+          },
+      };
+      await onSave(config);
+      onClose();
+    },
+    { errorMessagePrefix: "save_config_failed" }
+  );
+
+  useEffect(() => {
+    if (provider) {
+       // Reset state when provider changes
+       setApiKey("");
+       setBaseUrl(provider.defaultBaseUrl || "");
+       setVerifyStatus("idle");
+       setAvailableModels([]);
+       setSaveError(null);
+    }
+  }, [provider, setSaveError]);
+
+  if (!provider) return null;
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex justify-end overflow-hidden">
+      <div 
+        className="fixed inset-0 flex justify-end overflow-hidden"
+        style={{ zIndex: Z_INDEX.DRAWER }}
+      >
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -205,7 +210,21 @@ export function ProviderConfigDrawer({ provider, onClose, onSave, onVerify }: Pr
                     )}
                 </Button>
 
-                <AnimatePresence mode="wait">
+                 <AnimatePresence mode="wait">
+                  {saveError && (
+                    <motion.div 
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="bg-rose-500/10 border border-rose-500/20 rounded-2xl p-4 flex gap-3 text-rose-500"
+                    >
+                        <AlertCircle size={18} className="shrink-0 mt-0.5" />
+                        <div className="space-y-1 text-[11px]">
+                           <h6 className="font-black uppercase tracking-wide">Save Failed</h6>
+                           <p className="font-medium opacity-80 leading-relaxed font-mono break-all line-clamp-3">{saveError}</p>
+                        </div>
+                    </motion.div>
+                  )}
+
                   {verifyStatus === "success" && (
                     <motion.div 
                         initial={{ opacity: 0, y: 10 }}
@@ -261,10 +280,17 @@ export function ProviderConfigDrawer({ provider, onClose, onSave, onVerify }: Pr
                 </Button>
                 <Button 
                     className="flex-2 h-12 rounded-xl bg-primary hover:bg-primary/90 text-white font-black uppercase tracking-widest text-[11px] shadow-lg shadow-primary/20 disabled:opacity-50"
-                    disabled={verifyStatus !== "success"}
+                    disabled={verifyStatus !== "success" || isSaving}
                     onClick={handleSave}
                 >
-                    Apply & Save
+                    {isSaving ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin mr-2" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>Apply & Save</>
+                    )}
                 </Button>
              </div>
           </div>

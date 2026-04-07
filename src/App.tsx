@@ -22,6 +22,8 @@ import {
 import { setCurrentProjectCommand } from "./hooks/commands/project-commands";
 import { updateWorkspaceCommand } from "./hooks/commands/workspace-commands";
 import { PermissionDialog } from "./components/chat/PermissionDialog";
+import { useTaskActions } from "./hooks/useTaskActions";
+import { Z_INDEX } from "./constants";
 
 function App() {
   const { t } = useTranslation();
@@ -30,8 +32,26 @@ function App() {
   const { activeWorkspaceId, workspaces } = useWorkspaceStoreState();
   const { setProjectPath } = useProjectStoreState();
   const activeWorkspace = useActiveWorkspace();
+  const { handleAddTask } = useTaskActions();
 
   const [commandOpen, setCommandOpen] = useState(false);
+// ... (lines 36-160 skipped for brevity in targetContent but I'll include them in ReplacementContent if needed, actually I'll just use a smaller chunk)
+
+  useEffect(() => {
+    const initSession = async () => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("ui_session_init");
+    };
+    const destroySession = async () => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("ui_session_destroy");
+    };
+
+    void initSession();
+    return () => {
+      void destroySession();
+    };
+  }, []);
 
   useEffect(() => {
     reconcileActiveCliSessionsCommand().catch(console.error);
@@ -162,10 +182,10 @@ function App() {
         title: t("cmd_new_task") || "New Task",
         subtitle: t("cmd_new_task_sub") || "Create a parallel workspace",
         keywords: "task context new parallel",
-        run: () => void useAppStore.getState().addTask(""),
+        run: () => void handleAddTask(""),
       }
     ],
-    [handleOpenProjectPicker, setShowSettings, theme, t],
+    [handleOpenProjectPicker, setShowSettings, theme, t, handleAddTask],
   );
 
   return (
@@ -174,6 +194,7 @@ function App() {
         <Toaster 
           position="top-center" 
           theme={theme === "system" ? "light" : theme}
+          style={{ zIndex: Z_INDEX.TOAST }}
           toastOptions={{
             style: {
               borderRadius: 'var(--radius-sm)',

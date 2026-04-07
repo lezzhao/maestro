@@ -1,7 +1,7 @@
 use super::error;
 use super::MaestroCore;
 use crate::agent_state::{emit_state_update, AgentStateUpdate, TaskRecordPayload};
-use crate::task_runtime_service;
+// No placeholder needed
 use tauri::AppHandle;
 
 impl MaestroCore {
@@ -10,10 +10,10 @@ impl MaestroCore {
     pub fn task_create(
         &self,
         app: &AppHandle,
-        request: crate::task_state::TaskCreateRequest,
-    ) -> Result<crate::task_state::TaskCreateResult, error::CoreError> {
+        request: crate::task::state::TaskCreateRequest,
+    ) -> Result<crate::task::state::TaskCreateResult, error::CoreError> {
         let config = self.config.get();
-        let db_path = crate::task_state::maestro_db_path(app)?;
+        let db_path = crate::task::state::maestro_db_path(app)?;
         let workspace_boundary = if request.workspace_boundary.is_empty() {
             let project_path = config.project.path.clone();
             if project_path.is_empty() {
@@ -32,7 +32,7 @@ impl MaestroCore {
                 message: "profile_id is required for task_create".to_string(),
             })?;
 
-        let created = crate::task_state::create_task(
+        let created = crate::task::state::create_task(
             &db_path,
             &request.title,
             &request.description,
@@ -43,8 +43,8 @@ impl MaestroCore {
             request.settings.as_deref(),
         )?;
         let id = created.id.clone();
-        let current_state = crate::task_state::TaskState::Backlog.as_str().to_string();
-        let result = crate::task_state::TaskCreateResult {
+        let current_state = crate::task::state::TaskState::Backlog.as_str().to_string();
+        let result = crate::task::state::TaskCreateResult {
             id: id.clone(),
             title: request.title.clone(),
             description: request.description.clone(),
@@ -74,6 +74,7 @@ impl MaestroCore {
                     updated_at: created.updated_at_ms,
                 },
             },
+            None,
         );
         Ok(result)
     }
@@ -82,17 +83,17 @@ impl MaestroCore {
     pub fn task_transition(
         &self,
         app: &AppHandle,
-        request: crate::task_state::TaskTransitionRequest,
+        request: crate::task::state::TaskTransitionRequest,
     ) -> Result<String, error::CoreError> {
         let event =
-            crate::task_state::TaskEvent::from_str(&request.event_type, request.event_reason)
+            crate::task::state::TaskEvent::from_str(&request.event_type, request.event_reason)
                 .ok_or_else(|| error::CoreError::ValidationError {
                     field: "event_type".to_string(),
                     message: format!("invalid event: {}", request.event_type),
                 })?;
-        let db_path = crate::task_state::maestro_db_path(app)?;
+        let db_path = crate::task::state::maestro_db_path(app)?;
         let io = self.workspace_io()?;
-        let to_state = crate::task_state::transition(
+        let to_state = crate::task::state::transition(
             &db_path,
             &io,
             &request.task_id,
@@ -107,14 +108,15 @@ impl MaestroCore {
                 from_state: request.from_state,
                 to_state: to_state.clone(),
             },
+            None,
         );
         Ok(to_state)
     }
 
     /// Use-Case: Delete task and broadcast state event.
     pub fn task_delete(&self, app: &AppHandle, task_id: String) -> Result<(), error::CoreError> {
-        let db_path = crate::task_state::maestro_db_path(app)?;
-        crate::task_state::delete_task(&db_path, &task_id)?;
+        let db_path = crate::task::state::maestro_db_path(app)?;
+        crate::task::state::delete_task(&db_path, &task_id)?;
         self.deleted_task_ids
             .lock()
             .unwrap_or_else(|e| {
@@ -123,7 +125,7 @@ impl MaestroCore {
             })
             .insert(task_id.clone());
         if let Ok(io) = self.workspace_io() {
-            let _ = crate::run_persistence::remove_records_by_task_id(&io, &task_id);
+            let _ = crate::storage::run_persistence::remove_records_by_task_id(&io, &task_id);
         }
         let _ = self.pty_state.kill_sessions_by_task(&task_id);
         emit_state_update(
@@ -131,35 +133,36 @@ impl MaestroCore {
             AgentStateUpdate::TaskDeleted {
                 task_id: task_id.clone(),
             },
+            None,
         );
         Ok(())
     }
 
     pub fn task_list(&self, app: &AppHandle) -> Result<Vec<TaskRecordPayload>, error::CoreError> {
-        let db_path = crate::task_state::maestro_db_path(app)?;
-        crate::task_state::list_tasks(&db_path)
+        let db_path = crate::task::state::maestro_db_path(app)?;
+        crate::task::state::list_tasks(&db_path)
     }
 
     pub fn get_task_state(
         &self,
         app: &AppHandle,
-        request: crate::task_state::TaskGetStateRequest,
+        request: crate::task::state::TaskGetStateRequest,
     ) -> Result<Option<String>, error::CoreError> {
-        let db_path = crate::task_state::maestro_db_path(app)?;
-        crate::task_state::get_task_state(&db_path, &request.task_id)
+        let db_path = crate::task::state::maestro_db_path(app)?;
+        crate::task::state::get_task_state(&db_path, &request.task_id)
     }
 
     pub fn task_update(
         &self,
         app: &AppHandle,
-        request: crate::task_state::TaskUpdateRequest,
+        request: crate::task::state::TaskUpdateRequest,
     ) -> Result<(), error::CoreError> {
-        let db_path = crate::task_state::maestro_db_path(app)?;
-        crate::task_state::update_task(&db_path, &request)?;
+        let db_path = crate::task::state::maestro_db_path(app)?;
+        crate::task::state::update_task(&db_path, &request)?;
 
         // 重新拉取最新任务快照，并发出明确的更新事件
-        if let Some(task) = crate::task_repository::get_task_record(&db_path, &request.id)? {
-            emit_state_update(Some(app), AgentStateUpdate::TaskUpdated { task });
+        if let Some(task) = crate::task::repository::get_task_record(&db_path, &request.id)? {
+            emit_state_update(Some(app), AgentStateUpdate::TaskUpdated { task }, None);
         }
         Ok(())
     }
@@ -169,7 +172,7 @@ impl MaestroCore {
     pub fn task_switch_runtime_binding(
         &self,
         app: &AppHandle,
-        request: crate::task_state::TaskSwitchRuntimeBindingRequest,
+        request: crate::task::state::TaskSwitchRuntimeBindingRequest,
     ) -> Result<(), error::CoreError> {
         let config = self.config.get();
         super::task_switch_transaction::execute(app, request, &config, &self.pty_state)
@@ -180,10 +183,10 @@ impl MaestroCore {
     pub fn task_update_runtime_binding(
         &self,
         app: &AppHandle,
-        request: crate::task_state::TaskUpdateRuntimeBindingRequest,
+        request: crate::task::state::TaskUpdateRuntimeBindingRequest,
     ) -> Result<(), error::CoreError> {
         let config = self.config.get();
-        let result = task_runtime_service::update_task_runtime_context(
+        let result = crate::task::runtime_service::update_task_runtime_context(
             app,
             &request.task_id,
             &request.engine_id,
@@ -197,6 +200,7 @@ impl MaestroCore {
                 task_id: request.task_id.clone(),
                 binding: result.binding,
             },
+            None,
         );
         if let Some(ctx) = result.resolved_context {
             emit_state_update(
@@ -205,6 +209,7 @@ impl MaestroCore {
                     task_id: request.task_id,
                     context: ctx,
                 },
+                None,
             );
         }
         Ok(())
@@ -212,7 +217,7 @@ impl MaestroCore {
 
     pub fn get_active_assistant_msg_id(&self, task_id: Option<&str>) -> Option<String> {
         let tid = task_id?;
-        let db_path = crate::task_state::maestro_db_path_core().ok()?;
-        crate::task_repository::get_latest_assistant_message_id(&db_path, tid).ok().flatten()
+        let db_path = crate::task::state::maestro_db_path_core().ok()?;
+        crate::task::repository::get_latest_assistant_message_id(&db_path, tid).ok().flatten()
     }
 }

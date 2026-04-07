@@ -3,7 +3,6 @@ import SyntaxHighlighter from "react-syntax-highlighter/dist/esm/prism-async-lig
 import oneDark from "react-syntax-highlighter/dist/esm/styles/prism/one-dark";
 import { Clipboard, Check, Eye } from "lucide-react";
 import { useAppStore } from "../stores/appStore";
-import { cn } from "../lib/utils";
 import bash from "react-syntax-highlighter/dist/esm/languages/prism/bash";
 import javascript from "react-syntax-highlighter/dist/esm/languages/prism/javascript";
 import json from "react-syntax-highlighter/dist/esm/languages/prism/json";

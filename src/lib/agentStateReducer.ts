@@ -48,6 +48,11 @@ export type AgentStateUpdate =
   | { type: "tool_finished"; task_id: string; message_id: string; tool_name: string; tool_output: string; success: boolean }
   | { type: "message_token_usage"; task_id: string; message_id: string; input_tokens: number; output_tokens: number; total_tokens: number };
 
+export interface AgentStateEvent {
+  payload: AgentStateUpdate;
+  state_token?: string;
+}
+
 type AgentReducerDeps = {
   createRun: (run: TaskRun) => void;
   finishRun: (runId: string, status: "done" | "error" | "stopped", error?: string | null) => void;
@@ -78,6 +83,7 @@ type AgentReducerDeps = {
   setTaskRunning: (taskId: string, running: boolean) => void;
   setExecutionPhase: (taskId: string, phase: "idle" | "connecting" | "sending" | "streaming" | "completed" | "error") => void;
   setPendingPermissionRequest: (request: import("../stores/chat/types").PermissionRequest | null) => void;
+  getTaskStateToken: (taskId: string) => string | undefined;
 };
 
 function toTaskRecordPatch(task: TaskRecord): Partial<import("../types").TaskViewState> {
@@ -93,7 +99,21 @@ function toTaskRecordPatch(task: TaskRecord): Partial<import("../types").TaskVie
   };
 }
 
-export function applyAgentStateUpdate(payload: AgentStateUpdate, deps: AgentReducerDeps) {
+export function applyAgentStateUpdate(event: AgentStateEvent, deps: AgentReducerDeps) {
+  const { payload, state_token } = event;
+
+  // 1. Stale state guard: Check state_token for task-scoped events
+  if (state_token && "task_id" in payload) {
+    const taskId = (payload as { task_id: string }).task_id;
+    const currentToken = deps.getTaskStateToken(taskId);
+    if (currentToken && state_token !== currentToken) {
+      console.warn(
+        `[AgentStateSync] Ignoring stale event ${payload.type} for task ${taskId}. Expected ${currentToken}, got ${state_token}`
+      );
+      return;
+    }
+  }
+
   switch (payload.type) {
     case "execution_started":
       deps.setTaskRunning(payload.task_id, true);

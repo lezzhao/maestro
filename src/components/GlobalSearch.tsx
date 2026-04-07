@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Search, File, X, Loader2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { useAppUiState } from "../hooks/use-app-store-selectors";
 import { useAppStore } from "../stores/appStore";
 import { useTranslation } from "../i18n";
@@ -37,6 +38,7 @@ export function GlobalSearch() {
       setResults(matches);
     } catch (e) {
       console.error("Search failed:", e);
+      toast.error(`Search failed: ${String(e)}`);
     } finally {
       setIsSearching(false);
     }

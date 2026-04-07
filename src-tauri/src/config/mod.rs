@@ -270,6 +270,8 @@ pub struct AppConfig {
     pub mcp_servers: BTreeMap<String, McpServerConfig>,
     #[serde(default = "default_config_version")]
     pub version: String,
+    #[serde(default = "default_max_concurrent_tasks")]
+    pub max_concurrent_tasks: usize,
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }
@@ -282,6 +284,10 @@ impl AppConfig {
 
 fn default_config_version() -> String {
     "3.0".to_string()
+}
+
+fn default_max_concurrent_tasks() -> usize {
+    3
 }
 
 impl Default for AppSection {
@@ -461,6 +467,7 @@ impl Default for AppConfig {
             workflows: vec![],
             mcp_servers: BTreeMap::new(),
             version: default_config_version(),
+            max_concurrent_tasks: default_max_concurrent_tasks(),
             extra: BTreeMap::new(),
         }
     }
@@ -598,7 +605,26 @@ pub fn save_config(
     migration::migrate_engine_profiles(&mut config);
     // 1. Update memory FIRST for immediate consistency
     core_state.inner().config.set(config.clone());
+    core_state.run_queue.update_limit(config.max_concurrent_tasks);
     // 2. Write to disk LATER (atomically)
+    write_config_to_disk(&app, &config)?;
+    Ok(())
+}
+
+#[command]
+pub fn update_max_concurrent_tasks(
+    app: AppHandle,
+    count: usize,
+    core_state: tauri::State<'_, Arc<crate::core::MaestroCore>>,
+) -> Result<(), String> {
+    let mut config = (*core_state.inner().config.get()).clone();
+    config.max_concurrent_tasks = count;
+    
+    // Update memory and queue
+    core_state.inner().config.set(config.clone());
+    core_state.run_queue.update_limit(count);
+    
+    // Save to disk
     write_config_to_disk(&app, &config)?;
     Ok(())
 }

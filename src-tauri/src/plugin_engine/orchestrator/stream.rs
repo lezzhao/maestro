@@ -15,6 +15,7 @@ pub struct ToolInterceptStream {
     pub cumulative_cost: Arc<Mutex<f64>>,
     pub model: String,
     pub sensitive_strings: Vec<String>,
+    pub state_token: Option<String>,
 }
 
 impl ToolInterceptStream {
@@ -25,6 +26,7 @@ impl ToolInterceptStream {
         cumulative_cost: Arc<Mutex<f64>>,
         model: String,
         sensitive_strings: Vec<String>,
+        state_token: Option<String>,
     ) -> Self {
         Self {
             event_handle,
@@ -38,6 +40,7 @@ impl ToolInterceptStream {
             cumulative_cost,
             model,
             sensitive_strings,
+            state_token,
         }
     }
 
@@ -74,12 +77,13 @@ impl StringStream for ToolInterceptStream {
             let mut reasoning = self.reasoning_text.lock().unwrap();
             reasoning.push_str(&data);
             if let (Some(tid), Some(mid)) = (&self.task_id, &*self.message_id.lock().unwrap()) {
-                self.event_handle.emit_state_update(
+                self.event_handle.emit_state_update_with_token(
                     AgentStateUpdate::Reasoning {
                         task_id: tid.clone(),
                         message_id: mid.clone(),
                         content: reasoning.clone(),
                     },
+                    self.state_token.clone(),
                 );
             }
             return Ok(());
@@ -110,7 +114,7 @@ impl StringStream for ToolInterceptStream {
                      *self.cumulative_cost.lock().unwrap() += cost;
 
                      if let (Some(tid), Some(mid)) = (&self.task_id, &*self.message_id.lock().unwrap()) {
-                        self.event_handle.emit_state_update(
+                        self.event_handle.emit_state_update_with_token(
                             AgentStateUpdate::MessageTokenUsage {
                                 task_id: tid.clone(),
                                 message_id: mid.clone(),
@@ -118,6 +122,7 @@ impl StringStream for ToolInterceptStream {
                                 output_tokens: u.completion_tokens,
                                 total_tokens: u.total_tokens,
                             },
+                            self.state_token.clone(),
                         );
                     }
                 }

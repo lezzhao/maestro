@@ -1,4 +1,4 @@
-use crate::scoped_fs::ScopedFS;
+use crate::infra::scoped_fs::ScopedFS;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};

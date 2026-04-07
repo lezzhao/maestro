@@ -6,8 +6,9 @@
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useChatStore } from "../stores/chatStore";
-import type { AgentStateUpdate } from "../lib/agentStateReducer";
+import type { AgentStateEvent } from "../lib/agentStateReducer";
 import { useBatchedAppender } from "./useBatchedAppender";
+import { useAppStore } from "../stores/appStore";
 import {
   bootstrapAgentState,
   createAgentStateUpdateApplier,
@@ -24,30 +25,31 @@ export function useAgentStateSync() {
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     let bootstrapping = true;
-    const bufferedUpdates: AgentStateUpdate[] = [];
+    const bufferedUpdates: AgentStateEvent[] = [];
     const applyUpdate = createAgentStateUpdateApplier(
       appendTranscriptChunk,
       appendMessageChunk,
     );
-    const applyUpdateWithFlush = (payload: AgentStateUpdate) => {
+    const applyUpdateWithFlush = (event: AgentStateEvent) => {
+      const { payload } = event;
       if (payload.type === "run_finished" || payload.type === "execution_cancelled") {
         flushTranscript();
         flushMessage();
       }
-      applyUpdate(payload);
+      applyUpdate(event);
     };
 
     const setup = async () => {
       try {
         // Subscribe first to avoid missing updates while loading initial snapshot.
-        unlisten = await listen<AgentStateUpdate>("agent://state-update", (event) => {
-          const payload = event.payload;
-          if (!payload || typeof payload !== "object") return;
+        unlisten = await listen<AgentStateEvent>("agent://state-update", (e) => {
+          const event = e.payload;
+          if (!event || typeof event !== "object" || !event.payload) return;
           if (bootstrapping) {
-            bufferedUpdates.push(payload);
+            bufferedUpdates.push(event);
             return;
           }
-          applyUpdateWithFlush(payload);
+          applyUpdateWithFlush(event);
         });
 
         await bootstrapAgentState();
@@ -59,6 +61,9 @@ export function useAgentStateSync() {
           }
           bufferedUpdates.length = 0;
         }
+
+        // Global bootstrap complete
+        useAppStore.getState().setBootstrapped(true);
       } catch (err) {
         console.error("[useAgentStateSync] Failed to setup listener:", err);
       }

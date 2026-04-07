@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { applyAgentStateUpdate, toTaskViewModel, type AgentStateUpdate } from "./agentStateReducer";
+import { applyAgentStateUpdate, toTaskViewModel, type AgentStateEvent } from "./agentStateReducer";
 import type { ChatMessage, TaskRecord, TaskRun, TaskViewModel } from "../types";
 
 function mockTaskRecord(id: string, overrides?: Partial<TaskRecord>) {
@@ -81,6 +81,8 @@ function makeDeps(seedTasks: TaskViewModel[] = [], activeTaskId: string | null =
       })),
       setTaskRunning: vi.fn(),
       setExecutionPhase: vi.fn(),
+      setPendingPermissionRequest: vi.fn(),
+      getTaskStateToken: vi.fn(() => undefined),
     },
   };
 }
@@ -92,13 +94,13 @@ describe("agentStateReducer integration", () => {
     const h = makeDeps([taskA], "a");
 
     applyAgentStateUpdate(
-      { type: "task_created", task: mockTaskRecord("b") },
+      { payload: { type: "task_created", task: mockTaskRecord("b") } },
       h.deps,
     );
     expect(h.state.tasks.map((t) => t.id)).toEqual(["b", "a"]);
 
     applyAgentStateUpdate(
-      { type: "task_deleted", task_id: "a" },
+      { payload: { type: "task_deleted", task_id: "a" } },
       h.deps,
     );
     expect(h.state.tasks.map((t) => t.id)).toEqual(["b"]);
@@ -110,22 +112,24 @@ describe("agentStateReducer integration", () => {
 
   it("handles run lifecycle and transcript append", () => {
     const h = makeDeps();
-    const updates: AgentStateUpdate[] = [
+    const updates: AgentStateEvent[] = [
       {
-        type: "run_created",
-        task_id: "t1",
-        run: {
-          id: "run-1",
+        payload: {
+          type: "run_created",
           task_id: "t1",
-          engine_id: "cursor",
-          mode: "cli",
-          status: "running",
-          created_at: Date.now(),
-          started_at: Date.now(),
-        },
+          run: {
+            id: "run-1",
+            task_id: "t1",
+            engine_id: "cursor",
+            mode: "cli",
+            status: "running",
+            created_at: Date.now(),
+            started_at: Date.now(),
+          },
+        }
       },
-      { type: "execution_output_chunk", task_id: "t1", run_id: "run-1", chunk: "hello" },
-      { type: "run_finished", task_id: "t1", run_id: "run-1", status: "done" },
+      { payload: { type: "execution_output_chunk", task_id: "t1", run_id: "run-1", chunk: "hello" } },
+      { payload: { type: "run_finished", task_id: "t1", run_id: "run-1", status: "done" } },
     ];
 
     for (const u of updates) {
@@ -142,29 +146,31 @@ describe("agentStateReducer integration", () => {
     const h = makeDeps();
     applyAgentStateUpdate(
       {
-        type: "messages_updated",
-        task_id: "t2",
-        messages: [
-          {
-            id: "m1",
-            role: "assistant",
-            content: "ok",
-            meta: {
-              choice: {
-                title: "需要选择",
-                description: "请选择下一步操作",
-                status: "pending",
-                options: [
-                  {
-                    id: "open-settings",
-                    label: "打开设置",
-                    action: { kind: "open_settings" },
-                  },
-                ],
+        payload: {
+          type: "messages_updated",
+          task_id: "t2",
+          messages: [
+            {
+              id: "m1",
+              role: "assistant",
+              content: "ok",
+              meta: {
+                choice: {
+                  title: "需要选择",
+                  description: "请选择下一步操作",
+                  status: "pending",
+                  options: [
+                    {
+                      id: "open-settings",
+                      label: "打开设置",
+                      action: { kind: "open_settings" },
+                    },
+                  ],
+                },
               },
             },
-          },
-        ],
+          ],
+        }
       },
       h.deps,
     );
@@ -177,7 +183,7 @@ describe("agentStateReducer integration", () => {
   it("maps execution_cancelled to stopped run status", () => {
     const h = makeDeps();
     applyAgentStateUpdate(
-      { type: "execution_cancelled", task_id: "t3", run_id: "run-3" },
+      { payload: { type: "execution_cancelled", task_id: "t3", run_id: "run-3" } },
       h.deps,
     );
     expect(h.finishedRuns).toEqual([{ runId: "run-3", status: "stopped", error: null }]);
@@ -187,26 +193,28 @@ describe("agentStateReducer integration", () => {
     const h = makeDeps();
     applyAgentStateUpdate(
       {
-        type: "message_appended",
-        task_id: "t4",
-        message: {
-          id: "m-choice",
-          role: "system",
-          content: "需要操作",
-          meta: {
-            choice: {
-              title: "修复 CLI 问题",
-              status: "pending",
-              options: [
-                {
-                  id: "open-settings",
-                  label: "打开设置",
-                  action: { kind: "open_settings" },
-                },
-              ],
+        payload: {
+          type: "message_appended",
+          task_id: "t4",
+          message: {
+            id: "m-choice",
+            role: "system",
+            content: "需要操作",
+            meta: {
+              choice: {
+                title: "修复 CLI 问题",
+                status: "pending",
+                options: [
+                  {
+                    id: "open-settings",
+                    label: "打开设置",
+                    action: { kind: "open_settings" },
+                  },
+                ],
+              },
             },
           },
-        },
+        }
       },
       h.deps,
     );
@@ -219,10 +227,12 @@ describe("agentStateReducer integration", () => {
 
     applyAgentStateUpdate(
       {
-        type: "choice_resolved",
-        task_id: "t5",
-        message_id: "m-resolve",
-        option_id: "open-settings",
+        payload: {
+          type: "choice_resolved",
+          task_id: "t5",
+          message_id: "m-resolve",
+          option_id: "open-settings",
+        }
       },
       h.deps,
     );
@@ -237,14 +247,16 @@ describe("agentStateReducer integration", () => {
 
     applyAgentStateUpdate(
       {
-        type: "task_runtime_binding_changed",
-        task_id: "a",
-        binding: {
-          engineId: "claude",
-          profileId: "test_profile",
-          runtimeSnapshotId: "snap-1",
-          sessionId: null,
-        },
+        payload: {
+          type: "task_runtime_binding_changed",
+          task_id: "a",
+          binding: {
+            engineId: "claude",
+            profileId: "test_profile",
+            runtimeSnapshotId: "snap-1",
+            sessionId: null,
+          },
+        }
       },
       h.deps,
     );
@@ -279,13 +291,15 @@ describe("agentStateReducer integration", () => {
 
     applyAgentStateUpdate(
       {
-        type: "task_updated",
-        task: {
-          ...mockTaskRecord("a"),
-          title: "task-a-updated",
-          current_state: "DONE",
-          settings: "{\"mode\":\"review\"}",
-        },
+        payload: {
+          type: "task_updated",
+          task: {
+            ...mockTaskRecord("a"),
+            title: "task-a-updated",
+            current_state: "DONE",
+            settings: "{\"mode\":\"review\"}",
+          },
+        }
       },
       h.deps,
     );
@@ -307,10 +321,12 @@ describe("agentStateReducer integration", () => {
 
     applyAgentStateUpdate(
       {
-        type: "task_state_changed",
-        task_id: "a",
-        from_state: "BACKLOG",
-        to_state: "IN_PROGRESS",
+        payload: {
+          type: "task_state_changed",
+          task_id: "a",
+          from_state: "BACKLOG",
+          to_state: "IN_PROGRESS",
+        }
       },
       h.deps,
     );
@@ -331,14 +347,16 @@ describe("agentStateReducer integration", () => {
 
     applyAgentStateUpdate(
       {
-        type: "task_runtime_binding_changed",
-        task_id: "a",
-        binding: {
-          engineId: "gemini",
-          profileId: null,
-          runtimeSnapshotId: null,
-          sessionId: null,
-        },
+        payload: {
+          type: "task_runtime_binding_changed",
+          task_id: "a",
+          binding: {
+            engineId: "gemini",
+            profileId: null,
+            runtimeSnapshotId: null,
+            sessionId: null,
+          },
+        }
       },
       h.deps,
     );

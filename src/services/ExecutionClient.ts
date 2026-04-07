@@ -8,37 +8,29 @@ import {
   stopExecutionCommand,
 } from "./execution-commands";
 import {
-  CTRL_DONE,
-  CTRL_ERROR,
-  CTRL_EXIT,
-  CTRL_RUN_ID,
-  CTRL_VERIFICATION,
-  CTRL_TOKEN_USAGE,
   isControlChunk,
-  parseErrorChunk,
-  parseExitCodeChunk,
-  parseRunIdChunk,
-  parseVerificationChunk,
-  parseTokenUsageChunk,
-  CTRL_TOOL_APPROVAL_REQUEST,
-  parseToolApprovalRequestChunk,
+  parseStreamFrame,
+  type StreamFrame,
 } from "../lib/utils/controlChunks";
 import type { VerificationSummary } from "../types";
 
 export type ExecutionEvent =
-  | { type: "runId"; runId: string }
-  | { type: "text"; text: string }
-  | { type: "verification"; verification: VerificationSummary }
-  | { type: "tokenUsage"; usage: { approx_input_tokens: number; approx_output_tokens: number } }
-  | { type: "done"; exitCode?: number | null }
-  | { type: "toolApprovalRequest"; request: { requestId: string; toolName: string; arguments: string } }
-  | { type: "error"; message: string };
+  | { type: "runId"; runId: string; cycleId: string }
+  | { type: "text"; text: string; cycleId: string }
+  | { type: "verification"; verification: VerificationSummary; cycleId: string }
+  | { type: "tokenUsage"; usage: { approx_input_tokens: number; approx_output_tokens: number }; cycleId: string }
+  | { type: "done"; exitCode?: number | null; cycleId: string }
+  | { type: "toolApprovalRequest"; request: { requestId: string; toolName: string; arguments: string }; cycleId: string }
+  | { type: "error"; message: string; cycleId: string };
 
 export class ExecutionClient {
   private execId: string | null = null;
+  private currentRunId: string | null = null;
   private isStopped = false;
 
   constructor(
+    private taskId: string,
+    private cycleId: string,
     private mode: "api" | "cli",
     private onEvent: (event: ExecutionEvent) => void
   ) {}
@@ -66,65 +58,60 @@ export class ExecutionClient {
     if (this.isStopped) return;
 
     if (isControlChunk(chunk)) {
-      if (chunk.startsWith(CTRL_RUN_ID)) {
-        const runId = parseRunIdChunk(chunk);
-        if (runId) this.onEvent({ type: "runId", runId });
-        return;
-      }
-      if (chunk.startsWith(CTRL_DONE)) {
-        this.onEvent({ type: "done" });
-        return;
-      }
-      if (chunk.startsWith(CTRL_EXIT)) {
-        const exitCode = parseExitCodeChunk(chunk);
-        if (exitCode === 0) {
-          this.onEvent({ type: "done", exitCode });
-        } else {
-          this.onEvent({
-            type: "error",
-            message:
-              exitCode === null
-                ? "命令执行失败（未知退出码）"
-                : `命令执行失败（退出码：${exitCode}）`,
-          });
-        }
-        return;
-      }
-      if (chunk.startsWith(CTRL_ERROR)) {
-        this.onEvent({ type: "error", message: parseErrorChunk(chunk) });
-        return;
-      }
-      if (chunk.startsWith(CTRL_VERIFICATION)) {
-        const verification = parseVerificationChunk<VerificationSummary>(chunk);
-        if (verification) {
-          this.onEvent({ type: "verification", verification });
-        }
-        return;
-      }
-      if (chunk.startsWith(CTRL_TOKEN_USAGE)) {
-        const usage = parseTokenUsageChunk<{ approx_input_tokens: number; approx_output_tokens: number }>(chunk);
-        if (usage) {
-          this.onEvent({ type: "tokenUsage", usage });
-        }
-        return;
-      }
-      if (chunk.startsWith(CTRL_TOOL_APPROVAL_REQUEST)) {
-        const request = parseToolApprovalRequestChunk<{ requestId: string; toolName: string; arguments: string }>(chunk);
-        if (request) {
-          this.onEvent({ type: "toolApprovalRequest", request });
-        }
-        return;
-      }
-    }
+      const frame: StreamFrame | null = parseStreamFrame(chunk);
+      if (!frame) return;
 
-    if (this.mode === "api") {
-      this.onEvent({ type: "text", text: chunk });
+      // Internal state tracking for the current run (Fix 3)
+      if (frame.type === "run_id") {
+        this.currentRunId = frame.payload;
+        console.debug(`[ExecutionClient] Starting run: ${this.currentRunId} for task: ${this.taskId}`);
+      }
+
+      switch (frame.type) {
+        case "run_id":
+          this.onEvent({ type: "runId", runId: frame.payload, cycleId: this.cycleId });
+          break;
+        case "done":
+          this.onEvent({ type: "done", cycleId: this.cycleId });
+          break;
+        case "exit": {
+          const exitCode = frame.payload;
+          if (exitCode === 0) {
+            this.onEvent({ type: "done", exitCode, cycleId: this.cycleId });
+          } else {
+            this.onEvent({
+              type: "error",
+              message: `命令执行失败（退出码：${exitCode}）`,
+              cycleId: this.cycleId,
+            });
+          }
+          break;
+        }
+        case "error":
+          this.onEvent({ type: "error", message: frame.payload, cycleId: this.cycleId });
+          break;
+        case "verification":
+          this.onEvent({ type: "verification", verification: frame.payload, cycleId: this.cycleId });
+          break;
+        case "token_usage":
+          this.onEvent({ type: "tokenUsage", usage: frame.payload, cycleId: this.cycleId });
+          break;
+        case "tool_approval_request":
+          this.onEvent({ type: "toolApprovalRequest", request: frame.payload, cycleId: this.cycleId });
+          break;
+      }
       return;
     }
 
+    if (this.mode === "api") {
+      this.onEvent({ type: "text", text: chunk, cycleId: this.cycleId });
+      return;
+    }
+
+    // CLI mode terminal handling
     const decoded = decodeTransportEscapes(chunk);
     const normalized = normalizeTerminalChunk(decoded) || extractReadableTerminalChunk(decoded);
     if (!normalized) return;
-    this.onEvent({ type: "text", text: normalized });
+    this.onEvent({ type: "text", text: normalized, cycleId: this.cycleId });
   }
 }

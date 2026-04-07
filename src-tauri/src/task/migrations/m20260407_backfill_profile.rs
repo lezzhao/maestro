@@ -1,19 +1,10 @@
-//! One-time migration: backfill profile_id for tasks with empty profile_id.
-//! Required before removing engine.active_profile_id fallback. See docs/MIGRATION_FALLBACK_REMOVAL.md.
-
 use crate::config::AppConfig;
 use crate::core::error::CoreError;
-use crate::task_repository;
 use std::path::Path;
 
-/// Backfill profile_id for all tasks that have empty profile_id.
-/// Uses engine.active_profile_id or first profile from engine config.
-/// Idempotent: safe to run multiple times.
-pub fn migrate_backfill_task_profile_id(
-    db_path: &Path,
-    config: &AppConfig,
-) -> Result<usize, CoreError> {
-    let tasks = task_repository::list_tasks(db_path)?;
+/// Migration 1: Backfill profile_id for all tasks.
+pub fn migrate(db_path: &Path, config: &AppConfig) -> Result<usize, CoreError> {
+    let tasks = crate::task::repository::list_tasks(db_path)?;
     let mut updated = 0;
     for task in tasks {
         let profile_id_empty = task
@@ -37,7 +28,7 @@ pub fn migrate_backfill_task_profile_id(
         } else {
             continue;
         };
-        task_repository::update_task_engine(db_path, &task.id, &task.engine_id, Some(&profile_id))?;
+        crate::task::repository::update_task_engine(db_path, &task.id, &task.engine_id, Some(&profile_id))?;
         updated += 1;
     }
     Ok(updated)

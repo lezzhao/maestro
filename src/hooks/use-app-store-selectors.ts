@@ -60,7 +60,12 @@ export function useTaskStoreState() {
     updateTaskRecord: state.updateTaskRecord,
     updateTaskRuntimeBinding: state.updateTaskRuntimeBinding,
     setTaskResolvedRuntimeContext: state.setTaskResolvedRuntimeContext,
+    isBootstrapped: state.isBootstrapped,
   })));
+}
+
+export function useBootstrapState() {
+  return useAppStore((state) => state.isBootstrapped);
 }
 
 export function useProjectStoreState() {

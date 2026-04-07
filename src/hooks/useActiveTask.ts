@@ -11,7 +11,7 @@ export function useActiveTask(): {
   activeTaskId: string | null;
   activeTask: AppTask | undefined;
 } {
-  const { tasks, activeTaskId, activeWorkspaceId, setActiveTaskId } = useTaskStoreState();
+  const { tasks, activeTaskId, activeWorkspaceId, setActiveTaskId, isBootstrapped } = useTaskStoreState();
 
   const activeTask = useMemo(
     () => tasks.find((t) => t.id === activeTaskId),
@@ -19,10 +19,11 @@ export function useActiveTask(): {
   );
 
   useEffect(() => {
+    if (!isBootstrapped) return;
     if (activeTask && (activeTask.workspaceId || null) !== (activeWorkspaceId || null)) {
       setActiveTaskId(null);
     }
-  }, [activeTask, activeWorkspaceId, setActiveTaskId]);
+  }, [activeTask, activeWorkspaceId, setActiveTaskId, isBootstrapped]);
 
   return { activeTaskId, activeTask };
 }

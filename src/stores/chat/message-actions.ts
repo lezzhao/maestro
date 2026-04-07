@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { ChatMessage } from "../../types";
 import { ChatStore, MAX_MESSAGES } from "./types";
 
@@ -54,7 +55,10 @@ export const createMessageActions = (
         invoke("chat_resolve_pending_tool", {
           request_id: option.action.requestId,
           approved: option.action.approved
-        }).catch(err => console.error("Failed to resolve pending tool:", err));
+        }).catch(err => {
+          console.error("Failed to resolve pending tool:", err);
+          toast.error(`Choice Resolution Failed: ${String(err)}`);
+        });
       }
 
       const next = list.slice();

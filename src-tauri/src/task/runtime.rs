@@ -7,7 +7,7 @@
 
 use crate::config::{AppConfig, EngineProfile};
 use crate::core::error::CoreError;
-use crate::task_state::{self, maestro_db_path, TaskRuntimeBinding};
+use crate::task::state::{maestro_db_path, TaskRuntimeBinding};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -180,6 +180,8 @@ pub struct ExecutionBinding {
     pub snapshot_id: String,
     pub engine_id: String,
     pub profile_id: Option<String>,
+    pub mode: String,
+    pub source: String,
     pub created_at: String,
 }
 
@@ -208,7 +210,7 @@ fn resolve_task_runtime_context_inner(
     task_id: &str,
     cfg: &AppConfig,
 ) -> Result<ResolvedRuntimeContext, CoreError> {
-    let task = crate::task_repository::get_task_record(db_path, task_id)?.ok_or_else(|| {
+    let task = crate::task::repository::get_task_record(db_path, task_id)?.ok_or_else(|| {
         CoreError::NotFound {
             resource: "task".to_string(),
             id: task_id.to_string(),
@@ -219,7 +221,7 @@ fn resolve_task_runtime_context_inner(
 
     // 1. Workspace Settings
     if let Some(ref ws_id) = task.workspace_id {
-        if let Ok(ws) = crate::workspace_commands::get_workspace_by_id(db_path, ws_id) {
+        if let Ok(ws) = crate::infra::workspace_commands::get_workspace_by_id(db_path, ws_id) {
             if let Some(ws_json) = &ws.settings {
                 if let Ok(serde_json::Value::Object(map)) = serde_json::from_str(ws_json) {
                     merged_settings.extend(map);
@@ -257,7 +259,7 @@ fn resolve_task_runtime_context_inner(
     if let Some(ref snapshot_id) = binding.runtime_snapshot_id {
         if !snapshot_id.trim().is_empty() {
             if let Ok(Some(payload)) =
-                crate::snapshot_repository::get_runtime_snapshot_payload(db_path, snapshot_id)
+                crate::storage::snapshot_repository::get_runtime_snapshot_payload(db_path, snapshot_id)
             {
                 return Ok(ResolvedRuntimeContext {
                     task_id: task_id.to_string(),
@@ -394,8 +396,8 @@ pub fn create_snapshot_and_pin_task(
         reason: "manual_freeze".to_string(),
         created_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
     };
-    crate::snapshot_repository::insert_runtime_snapshot(&db_path, &snapshot)?;
-    task_state::update_task_runtime_snapshot(&db_path, task_id, Some(&snapshot_id))?;
+    crate::storage::snapshot_repository::insert_runtime_snapshot(&db_path, &snapshot)?;
+    crate::task::state::update_task_runtime_snapshot(&db_path, task_id, Some(&snapshot_id))?;
     Ok(())
 }
 
@@ -413,7 +415,7 @@ pub fn resolve_task_runtime_context_for_app(
 mod tests {
     use super::*;
     use crate::config::{EngineConfig, EngineProfile};
-    use crate::snapshot_repository;
+    use crate::storage::snapshot_repository;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
 
@@ -437,7 +439,7 @@ mod tests {
     #[test]
     fn resolve_uses_task_profile_id_when_valid() {
         let (_dir, db_path) = temp_db_path();
-        let task_id = task_state::create_task(
+        let task_id = crate::task::state::create_task(
             &db_path,
             "Task",
             "",
@@ -478,7 +480,7 @@ mod tests {
     #[test]
     fn resolve_falls_back_to_active_profile_when_task_profile_empty() {
         let (_dir, db_path) = temp_db_path();
-        let task_id = task_state::create_task(&db_path, "Task", "", "eng1", "{}", None, None, None)
+        let task_id = crate::task::state::create_task(&db_path, "Task", "", "eng1", "{}", None, None, None)
             .expect("create_task")
             .id;
 
@@ -508,7 +510,7 @@ mod tests {
     #[test]
     fn resolve_uses_snapshot_when_task_has_runtime_snapshot_id() {
         let (_dir, db_path) = temp_db_path();
-        let task_id = task_state::create_task(
+        let task_id = crate::task::state::create_task(
             &db_path,
             "Task",
             "",
@@ -550,9 +552,9 @@ mod tests {
             reason: "first_execution".to_string(),
             created_at: String::new(),
         };
-        snapshot_repository::insert_runtime_snapshot(&db_path, &snapshot)
+        crate::storage::snapshot_repository::insert_runtime_snapshot(&db_path, &snapshot)
             .expect("insert_runtime_snapshot");
-        task_state::update_task_runtime_snapshot(&db_path, &task_id, Some(&snapshot_id))
+        crate::task::state::update_task_runtime_snapshot(&db_path, &task_id, Some(&snapshot_id))
             .expect("update_task_runtime_snapshot");
 
         let mut profiles = BTreeMap::new();

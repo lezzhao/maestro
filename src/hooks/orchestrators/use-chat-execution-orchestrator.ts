@@ -64,6 +64,7 @@ export function useChatExecutionOrchestrator({
   const setExecutionPhase = useChatStore((s) => s.setExecutionPhase);
   const activeRunId = useChatStore((s) => s.taskActiveRunId[activeTaskId ?? "global"]);
   const setActiveRunId = useChatStore((s) => s.setActiveRunId);
+  const setTaskStateToken = useChatStore((s) => s.setTaskStateToken);
   const setActiveAssistantMsgId = useChatStore((s) => s.setActiveAssistantMsgId);
   const activeConversationId = useChatStore((s) => s.activeConversationId[activeTaskId ?? "global"]);
   const pinnedFiles = useAppStore((s) => s.pinnedFiles);
@@ -115,7 +116,18 @@ export function useChatExecutionOrchestrator({
       (event: ExecutionEvent) => {
         if (!activeTaskId) return;
 
+        // Verify cycle identity to prevent stale state updates (Fix 3)
+        const currentToken = useChatStore.getState().taskStateToken[activeTaskId];
+        if (event.cycleId !== currentToken) {
+          console.warn(`[Orchestrator] Ignoring stale event for task ${activeTaskId}: expected ${currentToken}, got ${event.cycleId}`);
+          return;
+        }
+
         switch (event.type) {
+          case "text":
+            // Optional: handled assistant message appending here if not done elsewhere
+            // For now, most text flow is handled by ChatStore internally or via other events
+            break;
           case "verification":
             if (activeRunId) {
               setRunVerification(activeRunId, event.verification);
@@ -345,8 +357,12 @@ export function useChatExecutionOrchestrator({
               is_continuation: cliContinuationRef.current,
             };
 
-        const result = await startExecution(request);
+        const result = await startExecution(activeTaskId, request);
         const runId = result.run_id || `run-pending-${Date.now()}`;
+        
+        // Set state token to match the new execution cycle (Fix 3)
+        setTaskStateToken(activeTaskId, result.cycleId);
+        
         setActiveRunId(activeTaskId, runId);
         updateTaskRuntimeBinding(activeTaskId, { activeExecId: result.exec_id, activeRunId: runId });
       } catch (error) {
@@ -368,6 +384,7 @@ export function useChatExecutionOrchestrator({
       saveLastConversation,
       setActiveAssistantMsgId,
       setActiveRunId,
+      setTaskStateToken,
       setExecutionPhase,
       setTaskRunning,
       startExecution,
@@ -554,11 +571,13 @@ export function useChatExecutionOrchestrator({
       if (activeTask?.sessionId) {
         await stopSession({ session_id: activeTask.sessionId });
       }
+      toast.success(t("execution_stopped"));
     } catch (error) {
       console.error("Error stopping execution:", error);
+      toast.error(`${t("stop_failed")}: ${String(error)}`);
     }
     clearQueue();
-  }, [activeTaskId, clearQueue, stopExecution, stopSession, tasks]);
+  }, [activeTaskId, clearQueue, stopExecution, stopSession, tasks, t]);
 
   const removePendingAttachment = useCallback(
     (path: string) => {

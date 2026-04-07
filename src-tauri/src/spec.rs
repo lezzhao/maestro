@@ -1,6 +1,6 @@
 use crate::config::SpecProviderMaestro;
-use crate::scoped_fs::ScopedFS;
-use crate::workspace_io::WorkspaceIo;
+use crate::infra::scoped_fs::ScopedFS;
+use crate::infra::workspace_io::WorkspaceIo;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use tauri::command;

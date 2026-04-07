@@ -36,7 +36,7 @@ export function useAppShortcuts(
         const activeTask = appState.tasks.find(t => t.id === activeTaskId);
         
         // Find current engine/profile. Use conservative fallback if not available
-        const engineId = activeTask?.resolvedRuntimeContext?.engineId || activeTask?.engineId || appState.engineConfigs?.[0]?.id || "opencode";
+        const engineId = activeTask?.resolvedRuntimeContext?.engineId || activeTask?.engineId || Object.keys(appState.engines)[0] || "opencode";
         const profileId = activeTask?.resolvedRuntimeContext?.profileId || activeTask?.profileId;
         
         chatState.createNewConversation(activeTaskId, engineId, profileId);

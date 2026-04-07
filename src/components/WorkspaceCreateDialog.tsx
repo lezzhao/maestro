@@ -4,6 +4,8 @@ import { FolderOpen, X, MessageSquare, FolderTree } from "lucide-react";
 import { useProjectStoreState, useTaskStoreState, useWorkspaceStoreState } from "../hooks/use-app-store-selectors";
 import { setCurrentProjectCommand } from "../hooks/commands/project-commands";
 import { createWorkspaceCommand } from "../hooks/commands/workspace-commands";
+import { useAsyncCallback } from "../hooks/use-async-callback";
+import { Z_INDEX } from "../constants";
 import { Button } from "./ui/button";
 import { cn } from "../lib/utils";
 
@@ -25,7 +27,6 @@ export function WorkspaceCreateDialog({ open, onClose }: WorkspaceCreateDialogPr
   const [name, setName] = useState("");
   const [workingDirectory, setWorkingDirectory] = useState("");
   const [color, setColor] = useState(WORKSPACE_COLORS[0]);
-  const [creating, setCreating] = useState(false);
 
   const handlePickDirectory = useCallback(async () => {
     try {
@@ -43,10 +44,10 @@ export function WorkspaceCreateDialog({ open, onClose }: WorkspaceCreateDialogPr
     }
   }, [name]);
 
-  const handleCreate = useCallback(async () => {
-    if (!name.trim()) return;
-    setCreating(true);
-    try {
+  const { execute: handleCreate, isLoading: creating, error } = useAsyncCallback(
+    async () => {
+      if (!name.trim()) return;
+      
       const ws = await createWorkspaceCommand({
         name: name.trim(),
         workingDirectory: workingDirectory || null,
@@ -59,109 +60,134 @@ export function WorkspaceCreateDialog({ open, onClose }: WorkspaceCreateDialogPr
         specTargetIde: null,
         settings: null,
       });
+
+      // Sequence is critical for task creation context
+      // We pass ws.id explicitly to addTask to avoid Zustand state sync delay
       addWorkspace(ws);
       setActiveWorkspaceId(ws.id);
-      await setCurrentProjectCommand(workingDirectory.trim() || "");
-      setProjectPath(workingDirectory.trim());
-      void addTask("Initial Task").catch(console.error);
+      
+      // Only set project path if it exists (Agent Mode)
+      if (workingDirectory.trim()) {
+        await setCurrentProjectCommand(workingDirectory.trim());
+        setProjectPath(workingDirectory.trim());
+      } else {
+        // Clear project path for Pure API mode to avoid contamination
+        setProjectPath("");
+      }
+
+      await addTask("Initial Task", ws.id);
+      
       setName("");
       setWorkingDirectory("");
       onClose();
-    } catch (e) {
-      console.error("Failed to create workspace:", e);
-    } finally {
-      setCreating(false);
-    }
-  }, [name, workingDirectory, color, addWorkspace, setActiveWorkspaceId, setProjectPath, addTask, onClose]);
+    },
+    { errorMessagePrefix: "workspace_create_fail" }
+  );
 
   if (!open) return null;
 
   const isPureChat = !workingDirectory;
 
   return (
-    <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-bg-base/60 backdrop-blur-xl animate-in fade-in duration-300">
-      <div className="w-[400px] bg-bg-surface border border-border-muted rounded-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-        {/* Simple Header */}
-        <div className="flex items-center justify-between px-6 pt-6 pb-2">
-          <h2 className="text-lg font-bold text-text-main tracking-tight">新建 Workspace</h2>
-          <button onClick={onClose} className="text-text-muted hover:text-text-main p-1.5 rounded-full hover:bg-bg-subtle transition-colors">
-            <X size={18} />
+    <div 
+      className="fixed inset-0 flex items-center justify-center p-4 bg-black/40 backdrop-blur-md animate-in fade-in duration-500"
+      style={{ zIndex: Z_INDEX.DIALOG }}
+    >
+      <div className="w-[440px] bg-bg-surface border border-border-muted/20 rounded-3xl shadow-[0_32px_64px_-16px_rgba(0,0,0,0.4)] overflow-hidden animate-in zoom-in-[0.98] slide-in-from-bottom-4 duration-300">
+        {/* Premium Header */}
+        <div className="flex items-center justify-between px-8 pt-8 pb-4">
+          <div className="space-y-1">
+            <h2 className="text-xl font-black text-text-main tracking-tight uppercase">New Workspace</h2>
+            <p className="text-[10px] font-bold text-text-muted/40 uppercase tracking-widest">Architect your next mission</p>
+          </div>
+          <button onClick={onClose} className="text-text-muted/40 hover:text-text-main p-2 rounded-full hover:bg-bg-subtle transition-all active:scale-90">
+            <X size={20} />
           </button>
         </div>
 
-        <div className="px-6 pb-6 space-y-6">
-          <div className="space-y-4 pt-2">
+        <div className="px-8 pb-8 space-y-8">
+          <div className="space-y-6 pt-2">
+            {/* Error Message */}
+            {error && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 animate-in slide-in-from-top-2 duration-300">
+                <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest">System Error</p>
+                <p className="text-[11px] text-red-400 font-medium leading-relaxed">{error}</p>
+              </div>
+            )}
+
             {/* Project Name */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-text-muted/60 uppercase tracking-widest">名称</label>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-text-muted/50 uppercase tracking-[0.2em] pl-0.5">Title / Metadata</label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="My Project"
-                className="w-full h-10 px-3 text-sm rounded-sm border border-border-muted bg-bg-base/30 text-text-main placeholder:text-text-muted/30 focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all font-medium"
+                placeholder="Phoenix Project..."
+                className="w-full h-12 px-4 text-sm font-bold rounded-2xl border border-border-muted/10 bg-bg-base/30 text-text-main placeholder:text-text-muted/20 focus:outline-none focus:border-primary/40 focus:ring-4 focus:ring-primary/5 transition-all"
                 autoFocus
                 onKeyDown={(e) => e.key === "Enter" && handleCreate()}
               />
             </div>
 
-            {/* Directory */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-text-muted/60 uppercase tracking-wider">
-                工作目录 <span className="text-[10px] opacity-40 lowercase italic font-normal">(可选)</span>
+            {/* Directory Selection */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-text-muted/50 uppercase tracking-[0.2em] pl-0.5">
+                Target Pipeline <span className="opacity-30 normal-case italic font-medium ml-1">(Optional)</span>
               </label>
-                  <div className="flex-2 space-y-3">
+              <div className="flex gap-2">
                 <input
                   type="text"
                   value={workingDirectory}
                   onChange={(e) => setWorkingDirectory(e.target.value)}
-                  placeholder="留空为纯对话模式"
-                  className="flex-1 h-10 px-3 text-[12px] font-mono rounded-sm border border-border-muted bg-bg-base/30 text-text-main placeholder:text-text-muted/20 focus:outline-none focus:border-primary/50 transition-all truncate"
+                  placeholder="Pure Inference Mode"
+                  className="flex-1 h-12 px-4 text-[11px] font-mono font-medium rounded-2xl border border-border-muted/10 bg-bg-base/30 text-text-main placeholder:text-text-muted/20 focus:outline-none focus:border-primary/40 transition-all truncate"
                 />
                 <button
                   type="button"
-                  className="p-2 rounded-sm bg-bg-elevated border border-border-muted text-text-muted hover:text-primary transition-all shadow-sm"
+                  className="w-12 h-12 flex items-center justify-center rounded-2xl bg-bg-elevated border border-border-muted/20 text-text-muted/60 hover:text-primary hover:border-primary/40 transition-all shadow-sm active:scale-95"
                   onClick={() => void handlePickDirectory()}
                 >
-                  <FolderOpen size={16} />
+                  <FolderOpen size={18} />
                 </button>
               </div>
             </div>
 
-            {/* Mode Select Indicator */}
+            {/* Active Core Indicator */}
             <div className={cn(
-              "flex items-center gap-3 p-3 rounded-sm border transition-all",
-              isPureChat ? "bg-amber-500/5 border-amber-500/10" : "bg-emerald-500/5 border-emerald-500/10"
+               "flex items-center gap-4 p-4 rounded-2xl border transition-all duration-500",
+               isPureChat 
+                ? "bg-amber-500/5 border-amber-500/10 shadow-inner" 
+                : "bg-emerald-500/5 border-emerald-500/10 shadow-inner"
             )}>
               <div className={cn(
-                "p-2 rounded-sm",
-                isPureChat ? "bg-amber-500/10 text-amber-600" : "bg-emerald-500/10 text-emerald-600"
+                "w-10 h-10 flex items-center justify-center rounded-xl",
+                isPureChat ? "bg-amber-500/10 text-amber-500" : "bg-emerald-500/10 text-emerald-500"
               )}>
-                {isPureChat ? <MessageSquare size={16} /> : <FolderTree size={16} />}
+                {isPureChat ? <MessageSquare size={18} /> : <FolderTree size={18} />}
               </div>
               <div className="space-y-0.5">
-                 <p className={cn("text-xs font-bold", isPureChat ? "text-amber-600" : "text-emerald-600")}>
-                   {isPureChat ? "纯 API 对话模式" : "工作区 Agent 模式"}
+                 <p className={cn("text-[11px] font-black uppercase tracking-widest", isPureChat ? "text-amber-600/80" : "text-emerald-600/80")}>
+                   {isPureChat ? "Inference Stream" : "Agent Orchestration"}
                  </p>
-                 <p className="text-[10px] text-text-muted leading-tight opacity-60">
-                   {isPureChat ? "无本地文件权限，极速流式对话" : "Agent 拥有本地代码读写与执行权限"}
+                 <p className="text-[10px] text-text-muted/60 font-medium leading-tight">
+                   {isPureChat ? "Zero disk footprint. Ultra-fast LLM interaction." : "Full file-system access with autonomous execution."}
                  </p>
               </div>
             </div>
 
-            {/* Accent Selection */}
-            <div className="space-y-2">
-              <label className="text-[11px] font-bold text-text-muted/60 uppercase tracking-widest pl-0.5">颜色标识</label>
-              <div className="flex flex-wrap gap-2.5">
+            {/* Visual Identity */}
+            <div className="space-y-3">
+              <label className="text-[10px] font-black text-text-muted/50 uppercase tracking-[0.2em] pl-0.5">Branding / Color</label>
+              <div className="flex flex-wrap gap-3">
                 {WORKSPACE_COLORS.map((c) => (
                   <button
                     key={c}
                     onClick={() => setColor(c)}
-                    className="w-5 h-5 rounded-full transition-all group relative"
+                    className="w-6 h-6 rounded-full transition-all group relative saturate-[0.8] hover:saturate-[1.2] hover:scale-110"
                     style={{ backgroundColor: c }}
                   >
                     {color === c && (
-                      <div className="absolute inset-0 rounded-full ring-2 ring-primary ring-offset-2 ring-offset-bg-surface" />
+                      <div className="absolute -inset-1 rounded-full border-2 border-primary/40 animate-in fade-in zoom-in duration-300" />
                     )}
                     <div className="absolute inset-0 rounded-full opacity-0 group-hover:opacity-10 shadow-inner bg-white" />
                   </button>
@@ -170,21 +196,26 @@ export function WorkspaceCreateDialog({ open, onClose }: WorkspaceCreateDialogPr
             </div>
           </div>
 
-          {/* Footer Actions */}
-          <div className="flex gap-2.5 pt-2">
+          {/* Action Hub */}
+          <div className="flex gap-3 pt-4">
             <Button
               variant="ghost"
               onClick={onClose}
-              className="flex-1 h-10 text-xs font-semibold text-text-muted hover:text-text-main rounded-sm"
+              className="flex-1 h-12 text-[10px] font-black uppercase tracking-[0.2em] text-text-muted/40 hover:text-text-main hover:bg-bg-subtle rounded-2xl transition-all"
             >
-              取消
+              System Abort
             </Button>
             <Button
               disabled={!name.trim() || creating}
               onClick={() => void handleCreate()}
-              className="flex-2 h-10 bg-text-main hover:bg-text-main/90 text-bg-surface font-bold text-xs rounded-sm shadow-sm transition-all uppercase tracking-widest"
+              className={cn(
+                "flex-[1.5] h-12 font-black text-[10px] uppercase tracking-[0.2em] rounded-2xl shadow-lg transition-all active:scale-[0.98]",
+                creating 
+                  ? "bg-bg-elevated text-text-muted/40 cursor-wait" 
+                  : "bg-primary text-white hover:bg-primary/90 hover:shadow-primary/20"
+              )}
             >
-              {creating ? "正在初始化..." : "创建并开始"}
+              {creating ? "Launching Core..." : "Initiate Workspace"}
             </Button>
           </div>
         </div>

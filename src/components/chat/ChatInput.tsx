@@ -38,7 +38,7 @@ export const ChatInput = memo(function ChatInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isComposingRef = useRef(false);
   const [isFocused, setIsFocused] = useState(false);
-  const canSend = (input.trim() || pendingAttachments.length > 0) && !sendBlocked;
+  const hasContent = input.trim().length > 0 || pendingAttachments.length > 0;
 
   const onFileClick = () => {
     fileInputRef.current?.click();
@@ -156,7 +156,7 @@ export const ChatInput = memo(function ChatInput({
               if (e.nativeEvent.isComposing || isComposingRef.current || e.keyCode === 229) return;
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                if (canSend) void handleSend();
+                if (hasContent) void handleSend();
               }
             }}
             onFocus={() => setIsFocused(true)}
@@ -171,8 +171,13 @@ export const ChatInput = memo(function ChatInput({
             <div className="flex items-center gap-6">
               {/* Context Status */}
               <div className="flex items-center gap-2 opacity-40 hover:opacity-100 transition-opacity">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"></span>
-                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-text-muted">READY</span>
+                <span className={cn(
+                  "w-1.5 h-1.5 rounded-full transition-all",
+                  sendBlocked ? "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.4)]" : "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"
+                )}></span>
+                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-text-muted">
+                  {sendBlocked ? "BLOCKED" : "READY"}
+                </span>
               </div>
 
               <input
@@ -194,25 +199,25 @@ export const ChatInput = memo(function ChatInput({
             <div className="flex items-center gap-3">
               {!isRunning ? (
                 <button
-                  disabled={!canSend}
+                  disabled={!hasContent}
                   onClick={handleSend}
                   className={cn(
                     "flex items-center justify-center p-2 rounded-full transition-all duration-300",
-                    canSend
+                    hasContent
                       ? "text-primary hover:bg-primary/10 active:scale-90"
                       : "text-text-muted/10 cursor-not-allowed"
                   )}
                 >
-                  <SendHorizontal size={20} className={cn("transition-transform", canSend ? "scale-100" : "scale-90")} />
+                  <SendHorizontal size={20} className={cn("transition-transform", hasContent ? "scale-100" : "scale-90")} />
                 </button>
               ) : (
                 <div className="flex items-center gap-3">
                   <button
                     onClick={handleSend}
-                    disabled={!input.trim() && pendingAttachments.length === 0}
+                    disabled={!hasContent}
                     className={cn(
                       "text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-full transition-all",
-                      (input.trim() || pendingAttachments.length > 0)
+                      hasContent
                         ? "text-primary bg-primary/10"
                         : "text-text-muted/20"
                     )}

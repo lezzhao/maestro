@@ -8,12 +8,13 @@ import {
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { ChoiceDialog } from "../ui/choice-dialog";
-import { useTranslation } from "../../i18n";
 import { cn } from "../../lib/utils";
 import { EngineCard } from "./EngineCard";
 import { SystemDiagnostics } from "./SystemDiagnostics";
-import { ProviderMarketplace, type ProviderMarketItem } from "./ProviderMarketplace";
+import { ProviderMarketplace } from "./ProviderMarketplace";
+import { type ProviderMetadata as ProviderMarketItem } from "../../config/provider-registry";
 import { ProviderConfigDrawer } from "./ProviderConfigDrawer";
+import { GeneralSettings } from "./GeneralSettings";
 import type {
   EngineConfig,
   EngineModelListState,
@@ -72,7 +73,6 @@ export function SettingsView(props: SettingsViewProps) {
     onLangChange,
   } = props;
 
-  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TabType>("marketplace");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [selectedMarketProvider, setSelectedMarketProvider] = useState<ProviderMarketItem | null>(null);
@@ -89,17 +89,6 @@ export function SettingsView(props: SettingsViewProps) {
     });
   }, [engines, showAll]);
 
-  const ControlGroup = ({ title, icon: Icon, children }: { title: string, icon: import("lucide-react").LucideIcon, children: React.ReactNode }) => (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2 px-1">
-        <Icon size={14} className="text-text-muted opacity-50" />
-        <h3 className="text-[11px] font-bold uppercase tracking-widest text-text-muted">{title}</h3>
-      </div>
-      <div className="bg-bg-surface border border-border-muted/10 rounded-2xl divide-y divide-border-muted/10 overflow-hidden">
-        {children}
-      </div>
-    </div>
-  );
 
   return (
     <div className="flex-1 h-full bg-bg-base overflow-y-auto custom-scrollbar p-8 md:p-12 lg:px-24">
@@ -182,48 +171,12 @@ export function SettingsView(props: SettingsViewProps) {
 
           {activeTab === "general" && (
             <div className="space-y-10 animate-in fade-in duration-500">
-                <ControlGroup title="Global Preferences" icon={Settings}>
-                    <div className="flex items-center justify-between p-4 px-6 h-16">
-                    <span className="text-[11px] font-bold uppercase tracking-widest text-text-main/60">{t("theme_label") || "App Theme"}</span>
-                    <div className="flex gap-1 p-0.5 bg-bg-elevated/50 rounded-xl">
-                        {["light", "dark", "system"].map((tOpt) => (
-                        <button 
-                            key={tOpt}
-                            onClick={() => onThemeChange(tOpt as "light" | "dark" | "system")}
-                            className={cn(
-                            "h-8 px-6 text-[10px] uppercase font-black transition-all rounded-lg",
-                            theme === tOpt 
-                                ? "bg-bg-surface text-text-main shadow-sm border border-border-muted/10" 
-                                : "text-text-muted hover:text-text-main hover:bg-bg-elevated/20"
-                            )}
-                        >
-                            {tOpt}
-                        </button>
-                        ))}
-                    </div>
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 px-6 h-16">
-                    <span className="text-[11px] font-bold uppercase tracking-widest text-text-main/60">{t("language_label") || "Language"}</span>
-                    <div className="flex gap-1 p-0.5 bg-bg-elevated/50 rounded-xl">
-                        {[
-                        { id: "zh", label: "中文" },
-                        { id: "en", label: "English" }
-                        ].map((lOpt) => (
-                        <button 
-                            key={lOpt.id}
-                            onClick={() => onLangChange(lOpt.id as "zh" | "en")}
-                            className={cn(
-                            "h-8 px-8 text-[10px] uppercase font-black transition-all rounded-lg",
-                            lang === lOpt.id ? "bg-bg-surface text-text-main shadow-sm border border-border-muted/10" : "text-text-muted hover:text-text-main hover:bg-bg-elevated/20"
-                            )}
-                        >
-                            {lOpt.label}
-                        </button>
-                        ))}
-                    </div>
-                    </div>
-                </ControlGroup>
+                <GeneralSettings 
+                    theme={theme}
+                    onThemeChange={onThemeChange}
+                    lang={lang}
+                    onLangChange={onLangChange}
+                />
 
                 {/* Diagnostics */}
                 {!showAdvanced ? (

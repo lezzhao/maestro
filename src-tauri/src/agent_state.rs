@@ -8,12 +8,21 @@
 //! Frontend consumption priority: resolved context > binding > other. Runtime display
 //! should prefer authoritative resolved context from backend, not self-assemble from binding.
 
-use crate::workspace_commands::Workspace;
+use crate::infra::workspace_commands::Workspace;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 
 pub const AGENT_STATE_UPDATE_EVENT: &str = "agent://state-update";
+
+/// Envelope for agent state update events. Wraps the internally tagged enum to inject global fields like `state_token`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentStateEvent {
+    #[serde(flatten)]
+    pub payload: AgentStateUpdate,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state_token: Option<String>,
+}
 
 /// Payload for agent state update events. Frontend subscribes and updates chatStore/appStore.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,15 +68,16 @@ pub enum AgentStateUpdate {
     },
     TaskRuntimeBindingChanged {
         task_id: String,
-        binding: crate::task_state::TaskRuntimeBinding,
+        binding: crate::task::state::TaskRuntimeBinding,
     },
     TaskRuntimeContextResolved {
         task_id: String,
-        context: crate::task_runtime::ResolvedRuntimeContext,
+        context: crate::task::runtime::ResolvedRuntimeContext,
     },
     ExecutionStarted {
         task_id: String,
         run_id: String,
+        cycle_id: String,
         mode: String,
     },
     ExecutionCancelled {
@@ -104,6 +114,13 @@ pub enum AgentStateUpdate {
         tool_name: String,
         tool_input: String,
         message: String,
+    },
+    PendingQuestion {
+        task_id: String,
+        request_id: String,
+        question_text: String,
+        options: Vec<String>,
+        allow_custom: bool,
     },
     Reasoning {
         task_id: String,
@@ -286,6 +303,7 @@ pub fn resolve_choice_payload(
 /// Trait for emitting application events, decoupling business logic from Tauri.
 pub trait AppEventHandle: Send + Sync {
     fn emit_state_update(&self, payload: AgentStateUpdate);
+    fn emit_state_update_with_token(&self, payload: AgentStateUpdate, token: Option<String>);
 }
 
 /// Default implementation for Tauri applications.
@@ -309,7 +327,11 @@ impl TauriEventHandle {
 
 impl AppEventHandle for TauriEventHandle {
     fn emit_state_update(&self, payload: AgentStateUpdate) {
-        emit_state_update(Some(&self.handle), payload);
+        emit_state_update(Some(&self.handle), payload, None);
+    }
+    
+    fn emit_state_update_with_token(&self, payload: AgentStateUpdate, token: Option<String>) {
+        emit_state_update(Some(&self.handle), payload, token);
     }
 }
 
@@ -318,12 +340,14 @@ pub struct NoopEventHandle;
 
 impl AppEventHandle for NoopEventHandle {
     fn emit_state_update(&self, _payload: AgentStateUpdate) {}
+    fn emit_state_update_with_token(&self, _payload: AgentStateUpdate, _token: Option<String>) {}
 }
 
 /// Emit agent state update to frontend via AppHandle.
-pub fn emit_state_update(app: Option<&AppHandle>, payload: AgentStateUpdate) {
+pub fn emit_state_update(app: Option<&AppHandle>, payload: AgentStateUpdate, state_token: Option<String>) {
     if let Some(handle) = app {
-        match serde_json::to_value(&payload) {
+        let event = AgentStateEvent { payload, state_token };
+        match serde_json::to_value(&event) {
             Ok(value) => {
                 if let Err(e) = handle.emit(AGENT_STATE_UPDATE_EVENT, value) {
                     tracing::error!("agent state event emit failed: {e}");

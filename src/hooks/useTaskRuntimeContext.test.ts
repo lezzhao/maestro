@@ -112,7 +112,7 @@ describe("resolveTaskRuntimeContextFromState", () => {
     expect(result.profileId).toBe("review");
     expect(result.profile?.id).toBe("review");
     // Fallback returns conservative values; do not use for execution decisions
-    expect(result.executionMode).toBe("cli");
+    expect(result.executionMode).toBe("api");
     expect(result.isReady).toBe(false);
   });
 

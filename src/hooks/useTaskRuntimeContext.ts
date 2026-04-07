@@ -73,20 +73,29 @@ export function resolveTaskRuntimeContextFromState(
     return { ...defaultEmpty, engineId, engine };
   }
   let profileId = activeTask.profileId;
-  if (!profileId || !engine.profiles[profileId]) {
+  const profiles = engine.profiles as Record<string, EngineProfile>;
+  if (!profileId || !profiles[profileId]) {
     profileId =
-      engine.active_profile_id && engine.profiles[engine.active_profile_id]
+      engine.active_profile_id && profiles[engine.active_profile_id]
         ? engine.active_profile_id
-        : Object.keys(engine.profiles)[0] || null;
+        : Object.keys(profiles)[0] || null;
   }
-  const profile = profileId ? engine.profiles[profileId] || null : null;
+  const profile = profileId ? profiles[profileId] || null : null;
+  const executionMode = profile?.execution_mode || "cli";
+  const activePreflightKey = profileId ? `${engineId}::${profileId}` : engineId;
+  const activePreflight = enginePreflight[activePreflightKey] || enginePreflight[engineId];
+
+  const isCliReady = Boolean(activePreflight?.command_exists) && Boolean(activePreflight?.auth_ok);
+  const isApiReady = Boolean(profile?.api_key && profile?.api_base_url && profile?.model);
+  const isReady = executionMode === "api" ? isApiReady : isCliReady;
+
   return {
     engineId,
     engine,
     profileId,
     profile,
-    executionMode: "cli" as const,
-    isReady: false,
+    executionMode,
+    isReady,
     isHeadless: false,
   };
 }

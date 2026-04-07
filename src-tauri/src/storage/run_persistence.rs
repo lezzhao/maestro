@@ -1,6 +1,6 @@
 use crate::core::execution::Execution;
 use crate::redact;
-use crate::workspace_io::WorkspaceIo;
+use crate::infra::workspace_io::WorkspaceIo;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::sync::Mutex;

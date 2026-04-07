@@ -6,15 +6,14 @@
 //! if it fails after DB success, resolved_context is None and caller may emit binding-only.
 
 use crate::config::AppConfig;
-use crate::task_runtime::ResolvedRuntimeContext;
-use crate::task_state;
+use crate::task::runtime::ResolvedRuntimeContext;
 use tauri::AppHandle;
 
 /// Result of updating task runtime context. Caller emits events from this.
 /// - binding: always present after successful DB update
 /// - resolved_context: None if resolve failed (e.g. engine/profile not found); caller may still emit binding
 pub struct UpdateTaskRuntimeContextResult {
-    pub binding: crate::task_state::TaskRuntimeBinding,
+    pub binding: crate::task::state::TaskRuntimeBinding,
     pub resolved_context: Option<ResolvedRuntimeContext>,
 }
 
@@ -50,16 +49,16 @@ pub fn update_task_runtime_context(
 
     let profile_id = resolve_profile_id_for_update(config, engine_id, profile_id);
 
-    let db_path = task_state::maestro_db_path(app).map_err(|e| e.to_string())?;
-    task_state::update_task_engine(&db_path, task_id, engine_id, profile_id.as_deref())
+    let db_path = crate::task::state::maestro_db_path(app).map_err(|e| e.to_string())?;
+    crate::task::state::update_task_engine(&db_path, task_id, engine_id, profile_id.as_deref())
         .map_err(|e| e.to_string())?;
 
-    let binding = task_state::get_task_runtime_binding(&db_path, task_id)
+    let binding = crate::task::state::get_task_runtime_binding(&db_path, task_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("task not found: {}", task_id))?;
 
     let resolved_context =
-        crate::task_runtime::resolve_task_runtime_context_for_app(app, task_id, config).ok();
+        crate::task::runtime::resolve_task_runtime_context_for_app(app, task_id, config).ok();
 
     Ok(UpdateTaskRuntimeContextResult {
         binding,
@@ -69,7 +68,7 @@ pub fn update_task_runtime_context(
 
 /// Explicitly invalidate the runtime snapshot for a task.
 pub fn invalidate_runtime_snapshot(app: &AppHandle, task_id: &str) -> Result<(), String> {
-    let db_path = task_state::maestro_db_path(app).map_err(|e| e.to_string())?;
-    task_state::update_task_runtime_snapshot(&db_path, task_id, None).map_err(|e| e.to_string())?;
+    let db_path = crate::task::state::maestro_db_path(app).map_err(|e| e.to_string())?;
+    crate::task::state::update_task_runtime_snapshot(&db_path, task_id, None).map_err(|e| e.to_string())?;
     Ok(())
 }

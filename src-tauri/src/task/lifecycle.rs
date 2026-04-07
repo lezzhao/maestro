@@ -2,7 +2,7 @@
 //! States: BACKLOG -> PLANNING -> IN_PROGRESS -> CODE_REVIEW -> DONE
 
 use crate::core::error::CoreError;
-use crate::workspace_io::WorkspaceIo;
+use crate::infra::workspace_io::WorkspaceIo;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::process::Command;
@@ -148,13 +148,13 @@ pub fn transition(
         None
     };
 
-    let conn = crate::task_repository::db_connection(db_path).map_err(|e| crate::core::error::CoreError::Db {
+    let conn = crate::task::repository::db_connection(db_path).map_err(|e| crate::core::error::CoreError::Db {
         message: e.to_string(),
     })?;
-    crate::task_repository::ensure_tables(&conn)?;
+    crate::task::repository::ensure_tables(&conn)?;
 
     let transition_id = uuid::Uuid::new_v4().to_string();
-    crate::task_repository::insert_state_transition(
+    crate::task::repository::insert_state_transition(
         &conn,
         &transition_id,
         task_id,
@@ -165,7 +165,7 @@ pub fn transition(
         &format!("Transitioned via {:?}", event),
     )?;
 
-    crate::task_repository::update_task_current_state(&conn, task_id, to_str)?;
+    crate::task::repository::update_task_current_state(&conn, task_id, to_str)?;
 
     Ok(to_str.to_string())
 }

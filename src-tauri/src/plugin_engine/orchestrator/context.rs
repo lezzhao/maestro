@@ -1,7 +1,6 @@
 use crate::api_provider::{ApiProviderAttachment, ApiProviderMessage};
 use crate::plugin_engine::maestro_engine::ApiChatRequest;
 use crate::workflow::types::ChatApiMessage;
-use crate::{memory, task_state};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -21,6 +20,7 @@ struct PersistedMessage {
     pub content: String,
 }
 
+#[allow(dead_code)]
 const MAESTRO_SYSTEM_IDENTITY: &str = r#"<identity>
 你是一位顶级全栈工程师与 AI 开发中枢 (Maestro Omni-Agent Orchestrator)。
 你不仅具备卓越的代码编写能力，还擅长多步骤任务编排、环境诊断与自主决策。
@@ -127,14 +127,14 @@ impl ContextManager {
         }).collect();
 
         // 5. Inject Memories (RAG)
-        if let Ok(db_path) = task_state::maestro_db_path_core() {
+        if let Ok(db_path) = crate::task::state::maestro_db_path_core() {
             let query = messages.iter().rev()
                 .find(|m| m.role == "user")
                 .map(|m| m.content.as_str())
                 .unwrap_or("");
             
             if !query.is_empty() {
-                if let Ok(recalled) = memory::recall_memories(&db_path, query, 5) {
+                if let Ok(recalled) = crate::storage::memory::recall_memories(&db_path, query, 5) {
                     if !recalled.is_empty() {
                         let memory_prompt = format!("\n\n[Relevant Memories]:\n{}\n", recalled);
                         system_prompt.push_str(&memory_prompt);

@@ -26,10 +26,19 @@ pub async fn run_api_chat(
         event_handle,
         core.clone(),
         request,
-        cancel_token,
+        cancel_token.clone(),
         on_data.clone(),
     ).await?;
 
-    // 3. Execute the interaction loop
+    // 3. Acquire Execution Permit (Task Queue concurrency control)
+    let _permit = core.run_queue.acquire().await.map_err(|e| EngineError::Execution(e))?;
+
+    // 4. Start watchdog to enforce maximum execution time (10 minutes)
+    let _enforcer = crate::core::completion_enforcer::CompletionEnforcer::spawn(
+        std::time::Duration::from_secs(600),
+        cancel_token,
+    );
+
+    // 5. Execute the interaction loop
     orchestrator.run().await
 }

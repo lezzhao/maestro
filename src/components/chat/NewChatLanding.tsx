@@ -5,15 +5,12 @@ import {
   Search, 
   Cpu, 
   ChevronRight, 
-  CheckCircle2, 
-  AlertCircle,
   Zap,
   ShieldCheck,
   Activity
 } from "lucide-react";
 import { useTranslation } from "../../i18n";
 import { cn } from "../../lib/utils";
-import { useChatStore } from "../../stores/chatStore";
 import { useActiveTask } from "../../hooks/useActiveTask";
 import { useTaskRuntimeContext } from "../../hooks/useTaskRuntimeContext";
 
@@ -24,7 +21,7 @@ interface NewChatLandingProps {
 export function NewChatLanding({ onActionClick }: NewChatLandingProps) {
   const { t } = useTranslation();
   const { activeTaskId } = useActiveTask();
-  const { engineId, engine, profile, isReady } = useTaskRuntimeContext(activeTaskId);
+  const { engineId, engine, isReady } = useTaskRuntimeContext(activeTaskId);
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -42,7 +39,7 @@ export function NewChatLanding({ onActionClick }: NewChatLandingProps) {
     visible: { 
       y: 0, 
       opacity: 1,
-      transition: { duration: 0.5, ease: "easeOut" }
+      transition: { duration: 0.5 }
     }
   };
 

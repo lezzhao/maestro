@@ -92,6 +92,7 @@ pub struct StateUpdateStream {
     pub event_handle: Arc<dyn AppEventHandle>,
     pub task_id: String,
     pub run_id: String,
+    pub state_token: Option<String>,
 }
 
 impl StringStream for StateUpdateStream {
@@ -114,24 +115,26 @@ impl StringStream for StateUpdateStream {
                                 .and_then(|o| o.as_u64())
                                 .unwrap_or(0);
                             
-                            self.event_handle.emit_state_update(
+                            self.event_handle.emit_state_update_with_token(
                                 crate::agent_state::AgentStateUpdate::ExecutionTokenUsage {
                                     task_id: self.task_id.clone(),
                                     run_id: self.run_id.clone(),
                                     input_tokens: input,
                                     output_tokens: output,
                                 },
+                                self.state_token.clone(),
                             );
                         }
                     }
                 }
             } else {
-                self.event_handle.emit_state_update(
+                self.event_handle.emit_state_update_with_token(
                     crate::agent_state::AgentStateUpdate::ExecutionOutputChunk {
                         task_id: self.task_id.clone(),
                         run_id: self.run_id.clone(),
                         chunk: data,
                     },
+                    self.state_token.clone(),
                 );
             }
         }

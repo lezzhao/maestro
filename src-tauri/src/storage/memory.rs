@@ -1,5 +1,5 @@
 use crate::core::error::CoreError;
-use crate::task_repository::db_err;
+use crate::task::repository::db_err;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use uuid::Uuid;
@@ -21,7 +21,7 @@ pub fn create_memory(
     content: &str,
     category: &str,
 ) -> Result<String, CoreError> {
-    let conn = crate::task_repository::db_connection(db_path)?;
+    let conn = crate::task::repository::db_connection(db_path)?;
     let id = Uuid::new_v4().to_string();
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
@@ -39,7 +39,7 @@ pub fn list_memories(
     db_path: &Path,
     task_id: Option<&str>,
 ) -> Result<Vec<MemoryEntry>, CoreError> {
-    let conn = crate::task_repository::db_connection(db_path)?;
+    let conn = crate::task::repository::db_connection(db_path)?;
     let (sql, params): (&str, Box<dyn rusqlite::types::ToSql>) = if let Some(tid) = task_id {
         ("SELECT id, task_id, content, category, importance, created_at FROM memories WHERE task_id = ?1 OR task_id IS NULL ORDER BY created_at DESC", 
          Box::new(tid.to_string()))
@@ -63,7 +63,7 @@ pub fn list_memories(
             content: row.get(2)?,
             category: row.get(3)?,
             importance: row.get(4)?,
-            created_at: crate::task_repository::sqlite_datetime_to_ms(&ts_str),
+            created_at: crate::task::repository::sqlite_datetime_to_ms(&ts_str),
         })
     }).map_err(db_err)?;
 
@@ -76,7 +76,7 @@ pub fn list_memories(
 
 #[allow(dead_code)]
 pub fn delete_memory(db_path: &Path, id: &str) -> Result<(), CoreError> {
-    let conn = crate::task_repository::db_connection(db_path)?;
+    let conn = crate::task::repository::db_connection(db_path)?;
     conn.execute("DELETE FROM memories WHERE id = ?1", [id]).map_err(db_err)?;
     Ok(())
 }

@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use std::fs;
 use tokio_util::sync::CancellationToken;
 use async_trait::async_trait;
-use crate::scoped_fs::ScopedFS;
+use crate::infra::scoped_fs::ScopedFS;
 use std::time::Duration;
 
 pub struct ReadFileTool {

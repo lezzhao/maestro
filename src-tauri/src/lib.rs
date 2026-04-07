@@ -3,44 +3,37 @@ mod api_provider;
 mod cli_state;
 pub mod config;
 pub(crate) mod constants;
-mod conversation;
 pub mod core;
 mod engine;
-pub(crate) mod execution_binding;
-pub(crate) mod execution_binding_repository;
 mod headless;
 pub mod i18n;
+pub mod infra;
 pub mod ipc;
 pub(crate) mod plugin_engine;
 mod process;
-mod project;
 mod pty;
 mod redact;
-mod run_persistence;
-mod memory;
+pub mod storage;
+pub mod task;
 mod tools;
 mod mcp;
-mod scoped_fs;
-pub(crate) mod snapshot_repository;
 mod spec;
 mod safety;
-mod task_commands;
-mod task_lifecycle;
-mod task_migration;
-pub(crate) mod task_repository;
-pub(crate) mod task_runtime;
-mod task_runtime_service;
-pub(crate) mod task_state;
 pub mod workflow;
-pub(crate) mod workspace_commands;
-mod workspace_io;
-
 use std::sync::Arc;
 use cli_state::{
     cli_list_sessions, cli_prune_sessions, cli_read_session_logs, cli_reconcile_active_sessions,
 };
-use config::{get_builtin_roles, load_or_create_config, save_config, verify::verify_llm_connection};
-use conversation::{
+use config::{
+    get_builtin_roles, load_or_create_config, save_config, update_max_concurrent_tasks,
+    verify::verify_llm_connection,
+};
+use crate::infra::project::{
+    project_detect_stack, project_find_symbols, project_git_diff, project_git_status,
+    project_list_files, project_list_files_deep, project_read_file, project_recommend_engine,
+    project_set_current,
+};
+use storage::conversation::{
     conversation_create, conversation_delete, conversation_generate_title, conversation_list,
     conversation_load_messages, conversation_update_title,
 };
@@ -50,16 +43,13 @@ use engine::{
     engine_set_active_profile, engine_switch_session, engine_upsert, engine_upsert_profile,
 };
 use process::{process_get_stats, process_start_monitor, process_stop_monitor};
-use project::{
-    project_detect_stack, project_find_symbols, project_git_diff, project_git_status,
-    project_list_files, project_list_files_deep, project_read_file, project_recommend_engine,
-    project_set_current,
-};
+
+
 use pty::{pty_cleanup_dead_sessions, pty_kill, pty_kill_all, pty_resize, pty_spawn, pty_write};
 use spec::{
     spec_backup, spec_detect, spec_inject, spec_list, spec_preview, spec_remove, spec_restore,
 };
-use task_commands::{
+use crate::task::commands::{
     task_create, task_delete, task_get_runtime_binding, task_get_runtime_context, task_get_state,
     task_list, task_refresh_runtime_snapshot, task_switch_runtime_binding, task_transition,
     task_update, task_update_runtime_binding,
@@ -71,12 +61,13 @@ use workflow::{
     chat_load_last_conversation, chat_save_last_conversation, chat_send, chat_spawn, chat_stop,
     chat_submit_choice, workflow_export_archives, workflow_get_archive,
     workflow_get_engine_history_detail, workflow_get_full_archive, workflow_list_archives,
-    workflow_list_engine_history, workflow_run, workflow_run_step, chat_resolve_pending_tool,
+    workflow_list_engine_history, workflow_run, workflow_run_step, chat_resolve_pending_tool, chat_resolve_pending_question,
+    ui_session_init, ui_session_destroy,
 };
-use workspace_commands::{workspace_create, workspace_delete, workspace_list, workspace_update};
+use crate::infra::workspace_commands::{workspace_create, workspace_delete, workspace_list, workspace_update};
 
-mod file_watcher;
-use file_watcher::{file_watcher_start, file_watcher_stop, FileWatcherState};
+
+use infra::file_watcher::{file_watcher_start, file_watcher_stop, FileWatcherState};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -117,13 +108,14 @@ pub fn run() {
             app.manage(FileWatcherState::new());
 
             let config = load_or_create_config(app.handle().clone())?;
-            app.manage(Arc::new(MaestroCore::new(config.clone())));
-            if let Ok(db_path) = crate::task_state::maestro_db_path(app.handle()) {
-                if let Ok(n) =
-                    crate::task_migration::migrate_backfill_task_profile_id(&db_path, &config)
-                {
+            let core = Arc::new(MaestroCore::new(config.clone()));
+            core.safety_manager.clone().start_reaper();
+            app.manage(core);
+            if let Ok(db_path) = crate::task::state::maestro_db_path(app.handle()) {
+                let manager = crate::task::migrations::MigrationManager::new(&db_path, &config);
+                if let Ok(n) = manager.migrate_all() {
                     if n > 0 {
-                        tracing::info!(count = n, "migration: backfilled profile_id for tasks");
+                        tracing::info!(count = n, "migration: processed incremental updates");
                     }
                 }
             }
@@ -151,6 +143,7 @@ pub fn run() {
                                     engine_id,
                                     result,
                                 },
+                                None,
                             );
                         }
                     }
@@ -215,6 +208,7 @@ pub fn run() {
             chat_load_last_conversation,
             chat_submit_choice,
             chat_resolve_pending_tool,
+            chat_resolve_pending_question,
             cli_list_sessions,
             cli_read_session_logs,
             cli_prune_sessions,
@@ -238,12 +232,15 @@ pub fn run() {
             file_watcher_start,
             file_watcher_stop,
             get_builtin_roles,
+            update_max_concurrent_tasks,
             conversation_create,
             conversation_delete,
             conversation_list,
             conversation_load_messages,
             conversation_update_title,
             conversation_generate_title,
+            ui_session_init,
+            ui_session_destroy,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri app")

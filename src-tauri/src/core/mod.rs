@@ -5,7 +5,7 @@
 //! - execution_app_service: list_executions, cancel_execution, fetch_logs, reconcile, export_archive
 //! - engine_app_service: engine_list, engine_upsert, engine_set_active_profile, engine_upsert_profile, engine_preflight
 //! - workflow_app_service: workflow_run, workflow_run_step, chat_execute_api, chat_execute_cli, chat_spawn
-//! - WorkspaceIo: workspace_io (delegates to crate::workspace_io)
+//! - WorkspaceIo: workspace_io (delegates to crate::infra::workspace_io)
 //!
 //! Dependency direction (one-way; no cycles):
 //!   workflow_app_service → execution_binding (resolve_execution)
@@ -24,6 +24,7 @@ pub mod events;
 pub mod execution;
 pub mod pty_spawn_guard;
 pub mod task_switch_transaction;
+pub mod completion_enforcer;
 
 // Application Services (Facade Splitting)
 pub mod engine_app_service;
@@ -58,6 +59,7 @@ pub struct MaestroCore {
     pub mcp_service: Arc<McpService>,
     pub safety_manager: Arc<SafetyManager>,
     pub tool_registry: Arc<ToolRegistry>,
+    pub run_queue: crate::task::queue::TaskQueue,
 }
 
 impl MaestroCore {
@@ -67,7 +69,7 @@ impl MaestroCore {
         let tool_registry = Arc::new(ToolRegistry::new(mcp_service.clone()));
 
         Self {
-            config: AppConfigState::new(config),
+            config: AppConfigState::new(config.clone()),
             pty_state: PtyManagerState::default(),
             process_monitor: ProcessMonitorState::default(),
             headless_state: HeadlessProcessState::default(),
@@ -75,11 +77,12 @@ impl MaestroCore {
             mcp_service,
             safety_manager,
             tool_registry,
+            run_queue: crate::task::queue::TaskQueue::new(config.max_concurrent_tasks),
         }
     }
 
     /// Use-Case: Get WorkspaceIo instance for current project
-    pub fn workspace_io(&self) -> Result<crate::workspace_io::WorkspaceIo, error::CoreError> {
+    pub fn workspace_io(&self) -> Result<crate::infra::workspace_io::WorkspaceIo, error::CoreError> {
         let path = self.config.get().project.path.clone();
         let project = if path.trim().is_empty() {
             std::env::current_dir().map_err(|e| error::CoreError::Io {
@@ -88,6 +91,6 @@ impl MaestroCore {
         } else {
             std::path::PathBuf::from(path)
         };
-        crate::workspace_io::WorkspaceIo::new(&project).map_err(error::CoreError::from)
+        crate::infra::workspace_io::WorkspaceIo::new(&project).map_err(error::CoreError::from)
     }
 }

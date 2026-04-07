@@ -6,6 +6,8 @@ pub struct WorkflowRunRequest {
     pub steps: Vec<WorkflowRunStep>,
     #[serde(default)]
     pub task_id: Option<String>,
+    #[serde(default)]
+    pub state_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,6 +28,8 @@ pub struct WorkflowProgressEvent {
     pub status: String,
     pub message: String,
     pub token_estimate: Option<TokenEstimate>,
+    #[serde(default)]
+    pub state_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -67,6 +71,8 @@ pub struct StepRunRequest {
     pub step: WorkflowRunStep,
     pub step_index: usize,
     pub total_steps: usize,
+    #[serde(default)]
+    pub state_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -216,6 +222,7 @@ pub struct ChatSpawnRequest {
     pub message_ids: Option<Vec<String>>,
     pub cols: Option<u16>,
     pub rows: Option<u16>,
+    pub state_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -269,12 +276,14 @@ pub struct ChatApiRequest {
     pub max_input_tokens: Option<usize>,
     pub max_messages: Option<usize>,
     pub attachments: Option<Vec<ChatApiAttachment>>,
+    pub state_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ChatExecuteApiResult {
     pub exec_id: String,
     pub run_id: String,
+    pub cycle_id: String,
     pub engine_id: String,
     pub profile_id: String,
 }
@@ -286,12 +295,14 @@ pub struct ChatExecuteCliRequest {
     pub task_id: Option<String>,
     pub prompt: String,
     pub is_continuation: bool,
+    pub state_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ChatExecuteCliResult {
     pub exec_id: String,
     pub run_id: String,
+    pub cycle_id: String,
     pub pid: Option<u32>,
     pub engine_id: String,
     pub profile_id: String,

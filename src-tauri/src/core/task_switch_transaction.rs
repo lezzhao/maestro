@@ -11,8 +11,8 @@
 use crate::agent_state::{emit_state_update, AgentStateUpdate};
 use crate::config::AppConfig;
 use crate::engine;
-use crate::task_runtime_service::{update_task_runtime_context, UpdateTaskRuntimeContextResult};
-use crate::task_state::TaskSwitchRuntimeBindingRequest;
+use crate::task::runtime_service::{update_task_runtime_context, UpdateTaskRuntimeContextResult};
+use crate::task::state::TaskSwitchRuntimeBindingRequest;
 use tauri::AppHandle;
 
 /// Execute task switch runtime binding as an atomic transaction.
@@ -56,6 +56,7 @@ fn emit_events(app: &AppHandle, task_id: &str, result: &UpdateTaskRuntimeContext
             task_id: task_id.to_string(),
             binding: result.binding.clone(),
         },
+        None,
     );
     if let Some(ref ctx) = result.resolved_context {
         emit_state_update(
@@ -64,6 +65,7 @@ fn emit_events(app: &AppHandle, task_id: &str, result: &UpdateTaskRuntimeContext
                 task_id: task_id.to_string(),
                 context: ctx.clone(),
             },
+            None,
         );
     }
 }

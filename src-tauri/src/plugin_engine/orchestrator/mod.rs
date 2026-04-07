@@ -34,12 +34,13 @@ struct AgentEventBus {
     pub(crate) event_handle: Arc<dyn AppEventHandle>,
     pub(crate) on_data: Arc<dyn StringStream>,
     pub(crate) task_id: Option<String>,
+    pub(crate) state_token: Option<String>,
     pub(crate) i18n: crate::i18n::I18n,
 }
 
 impl AgentEventBus {
-    fn new(event_handle: Arc<dyn AppEventHandle>, on_data: Arc<dyn StringStream>, task_id: Option<String>, i18n: crate::i18n::I18n) -> Self {
-        Self { event_handle, on_data, task_id, i18n }
+    fn new(event_handle: Arc<dyn AppEventHandle>, on_data: Arc<dyn StringStream>, task_id: Option<String>, state_token: Option<String>, i18n: crate::i18n::I18n) -> Self {
+        Self { event_handle, on_data, task_id, state_token, i18n }
     }
 
     fn dispatch_lifecycle(&self, event: AgentLifecycle) {
@@ -106,10 +107,10 @@ impl AgentEventBus {
 
     fn dispatch_trace(&self, msg: String) {
         if let Some(tid) = &self.task_id {
-            self.event_handle.emit_state_update(AgentStateUpdate::Trace {
+            self.event_handle.emit_state_update_with_token(AgentStateUpdate::Trace {
                 task_id: tid.clone(),
                 content: msg.clone(),
-            });
+            }, self.state_token.clone());
         }
         let _ = self.on_data.send_string(ControlFrame::Trace(msg).serialize());
     }
@@ -145,10 +146,10 @@ impl AgentOrchestrator {
 
         let cfg_snapshot = core.config.get();
         let context = ContextManager::from_request(&request, root, &cfg_snapshot).await;
-        let executor = ToolExecutor::new(event_handle.clone(), core.clone(), toolbox, cancel_token.clone());
+        let executor = ToolExecutor::new(event_handle.clone(), core.clone(), toolbox, cancel_token.clone(), request.state_token.clone());
 
         let cumulative_cost = Arc::new(Mutex::new(0.0));
-        let bus = AgentEventBus::new(event_handle, on_data, request.task_id.clone(), cfg_snapshot.i18n());
+        let bus = AgentEventBus::new(event_handle, on_data, request.task_id.clone(), request.state_token.clone(), cfg_snapshot.i18n());
 
         let orchestrator = Self {
             core,
@@ -171,11 +172,12 @@ impl AgentOrchestrator {
         if let Some(tid) = &self.request.task_id {
             let run_id = self.request.run_id.clone().unwrap_or_else(|| format!("run-{}", uuid::Uuid::new_v4()));
             
-            self.bus.event_handle.emit_state_update(AgentStateUpdate::ExecutionStarted {
+            self.bus.event_handle.emit_state_update_with_token(AgentStateUpdate::ExecutionStarted {
                 task_id: tid.clone(),
                 run_id: run_id.clone(),
+                cycle_id: self.request.cycle_id.clone().unwrap_or_default(),
                 mode: "api".to_string(),
-            });
+            }, self.request.state_token.clone());
 
             let now_ms = chrono::Utc::now().timestamp_millis();
             let run_payload = crate::agent_state::task_run_from_execution(
@@ -186,18 +188,18 @@ impl AgentOrchestrator {
                 now_ms,
             );
             
-            self.bus.event_handle.emit_state_update(AgentStateUpdate::RunCreated {
+            self.bus.event_handle.emit_state_update_with_token(AgentStateUpdate::RunCreated {
                 task_id: tid.clone(),
                 run: run_payload,
-            });
+            }, self.request.state_token.clone());
         }
     }
 
     fn persist_initial_messages(&self) {
-        if let (Some(conv_id), Ok(db_path)) = (&self.request.conversation_id, crate::task_state::maestro_db_path_core()) {
+        if let (Some(conv_id), Ok(db_path)) = (&self.request.conversation_id, crate::task::state::maestro_db_path_core()) {
             if let Some(last_user_msg) = self.request.messages.iter().rev().find(|m| m.role == "user") {
                 let now_ms = chrono::Utc::now().timestamp_millis();
-                let _ = crate::conversation::append_message(
+                let _ = crate::storage::conversation::append_message(
                     &db_path,
                     conv_id,
                     &crate::agent_state::PersistedMessagePayload {
@@ -264,6 +266,7 @@ impl AgentOrchestrator {
             self.cumulative_cost.clone(),
             self.request.model.clone(),
             vec![self.request.api_key.clone()],
+            self.request.state_token.clone(),
         ));
         
         if let Some(msg_id) = self.core.get_active_assistant_msg_id(self.request.task_id.as_deref()) {
@@ -315,12 +318,12 @@ impl AgentOrchestrator {
     }
 
     async fn finalize(&self) {
-        if let Ok(db_path) = crate::task_state::maestro_db_path_core() {
+        if let Ok(db_path) = crate::task::state::maestro_db_path_core() {
             let last_msg = self.context.messages.last().map(|m| &m.content).cloned().unwrap_or_default();
             
             // 1. Auto-Memory Extraction
             if last_msg.len() > 20 {
-                let _ = crate::memory::create_memory(
+                let _ = crate::storage::memory::create_memory(
                     &db_path,
                     self.request.task_id.as_deref(),
                     &last_msg,
@@ -330,7 +333,7 @@ impl AgentOrchestrator {
 
             // 2. Persist Assistant Message to Conversation DB
             if let Some(conv_id) = &self.request.conversation_id {
-                let _ = crate::conversation::append_message(
+                let _ = crate::storage::conversation::append_message(
                     &db_path,
                     conv_id,
                     &crate::agent_state::PersistedMessagePayload {

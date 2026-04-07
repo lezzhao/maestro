@@ -6,8 +6,8 @@ use crate::core::error::CoreError;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
 
-pub use crate::task_lifecycle::{transition, TaskEvent, TaskState};
-pub use crate::task_repository::{CreateTaskResult, TaskRuntimeBinding};
+pub use crate::task::lifecycle::{transition, TaskEvent, TaskState};
+pub use crate::task::repository::{CreateTaskResult, TaskRuntimeBinding};
 
 // Request/result types for core and task_commands
 #[derive(serde::Deserialize)]
@@ -107,12 +107,12 @@ pub fn update_task_engine(
     engine_id: &str,
     profile_id: Option<&str>,
 ) -> Result<(), CoreError> {
-    crate::task_repository::update_task_engine(db_path, task_id, engine_id, profile_id)
+    crate::task::repository::update_task_engine(db_path, task_id, engine_id, profile_id)
 }
 
 /// Delete a task from the database.
 pub fn delete_task(db_path: &Path, task_id: &str) -> Result<(), CoreError> {
-    crate::task_repository::delete_task(db_path, task_id)
+    crate::task::repository::delete_task(db_path, task_id)
 }
 
 /// Create a new task in the database. Returns the created task id.
@@ -128,7 +128,7 @@ pub fn create_task(
     settings: Option<&str>,
 ) -> Result<CreateTaskResult, CoreError> {
     let initial_state = TaskState::Backlog.as_str();
-    crate::task_repository::create_task(
+    crate::task::repository::create_task(
         db_path,
         title,
         description,
@@ -143,17 +143,17 @@ pub fn create_task(
 
 /// List all tasks in the database.
 pub fn list_tasks(db_path: &Path) -> Result<Vec<TaskRecordPayload>, CoreError> {
-    crate::task_repository::list_tasks(db_path)
+    crate::task::repository::list_tasks(db_path)
 }
 
 /// Get a task's current state from the database.
 pub fn get_task_state(db_path: &Path, task_id: &str) -> Result<Option<String>, CoreError> {
-    crate::task_repository::get_task_state(db_path, task_id)
+    crate::task::repository::get_task_state(db_path, task_id)
 }
 
 /// Update a task in the database.
 pub fn update_task(db_path: &Path, req: &TaskUpdateRequest) -> Result<(), CoreError> {
-    crate::task_repository::update_task(db_path, req)
+    crate::task::repository::update_task(db_path, req)
 }
 
 /// Resolve maestro_state.db path (Headless-compatible).
@@ -200,7 +200,7 @@ pub fn get_task_runtime_binding(
     db_path: &Path,
     task_id: &str,
 ) -> Result<Option<TaskRuntimeBinding>, CoreError> {
-    crate::task_repository::get_task_runtime_binding(db_path, task_id)
+    crate::task::repository::get_task_runtime_binding(db_path, task_id)
 }
 
 /// Update task's runtime_snapshot_id.
@@ -209,10 +209,10 @@ pub fn update_task_runtime_snapshot(
     task_id: &str,
     snapshot_id: Option<&str>,
 ) -> Result<(), CoreError> {
-    crate::task_repository::update_task_runtime_snapshot(db_path, task_id, snapshot_id)
+    crate::task::repository::update_task_runtime_snapshot(db_path, task_id, snapshot_id)
 }
 
-// get_task_by_id removed: use task_repository::get_task_record instead (identical functionality).
+// get_task_by_id removed: use crate::task::repository::get_task_record instead (identical functionality).
 
 #[cfg(test)]
 mod tests {
@@ -267,7 +267,7 @@ mod tests {
     fn test_update_task_engine_task_not_found() {
         let (_dir, db_path) = temp_db_path();
         let conn = rusqlite::Connection::open(&db_path).unwrap();
-        crate::task_repository::ensure_tables(&conn).unwrap();
+        crate::task::repository::ensure_tables(&conn).unwrap();
         drop(conn);
         let err = update_task_engine(&db_path, "nonexistent", "cursor", None).unwrap_err();
         assert!(matches!(err, CoreError::NotFound { resource, .. } if resource == "task"));

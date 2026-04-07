@@ -6,10 +6,10 @@ use crate::agent_state::{AppEventHandle, TauriEventHandle};
 use crate::core::error::CoreError;
 use crate::core::events::EventStream;
 use crate::core::execution::{Execution, ExecutionMode};
-use crate::execution_binding::prepare_execution_binding;
+use crate::storage::execution_binding::prepare_execution_binding;
 use crate::pty::PtyManagerState;
-use crate::run_persistence::{append_run_record, current_time_ms};
-use crate::workspace_io::WorkspaceIo;
+use crate::storage::run_persistence::{append_run_record, current_time_ms};
+use crate::infra::workspace_io::WorkspaceIo;
 use regex::Regex;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
@@ -213,11 +213,12 @@ async fn execute_workflow_step(
     step: &WorkflowRunStep,
     step_index: usize,
     total_steps: usize,
+    state_token: Option<String>,
     cfg: &crate::config::AppConfig,
     pty_state: &PtyManagerState,
 ) -> Result<(WorkflowStepResult, String), CoreError> {
     let step_started = Instant::now();
-    let prepared = crate::execution_binding::resolve_execution(
+    let prepared = crate::storage::execution_binding::resolve_execution(
         TauriEventHandle::noop(), // workflow steps don't strictly need event handle for resolve yet
         &step.engine,
         step.profile_id.as_deref(),
@@ -240,6 +241,7 @@ async fn execute_workflow_step(
                 status: "starting".to_string(),
                 message: i18n.t("workflow_starting_step"),
                 token_estimate: None,
+                state_token: state_token.clone(),
             })
             .map_err(|e| CoreError::Serialization {
                 message: e.to_string(),
@@ -267,6 +269,7 @@ async fn execute_workflow_step(
                     .replace("{}", &(step_index + 1).to_string())
                     .replace("{}", &step.engine),
                 token_estimate: None,
+                state_token: state_token.clone(),
             })
             .map_err(|e| CoreError::Serialization {
                 message: e.to_string(),
@@ -567,6 +570,7 @@ async fn execute_workflow_step(
                     i18n.t("workflow_step_failed")
                 },
                 token_estimate: Some(token_estimate),
+                state_token: state_token.clone(),
             })
             .map_err(|e| CoreError::Serialization {
                 message: e.to_string(),
@@ -612,6 +616,7 @@ pub async fn workflow_run_step_core(
         &request.step,
         step_index,
         total_steps,
+        request.state_token.clone(),
         cfg,
         pty_state,
     )
@@ -637,6 +642,7 @@ pub async fn workflow_run_step_core(
                 status: "warning".to_string(),
                 message: format!("history persistence failed: {err}"),
                 token_estimate: None,
+                state_token: request.state_token.clone(),
             })
             .unwrap_or_default(),
         );
@@ -721,6 +727,7 @@ pub async fn workflow_run_core(
             step,
             idx,
             total,
+            request.state_token.clone(),
             cfg,
             pty_state,
         )
@@ -747,6 +754,7 @@ pub async fn workflow_run_core(
                     status: "warning".to_string(),
                     message: format!("history persistence failed: {err}"),
                     token_estimate: None,
+                    state_token: request.state_token.clone(),
                 })
                 .unwrap_or_default(),
             );
@@ -769,6 +777,7 @@ pub async fn workflow_run_core(
             status: "finished".to_string(),
             message: i18n.t("workflow_completed"),
             token_estimate: None,
+            state_token: request.state_token.clone(),
         })
         .unwrap_or_default(),
     );

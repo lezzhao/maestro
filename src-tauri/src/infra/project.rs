@@ -1,4 +1,4 @@
-use crate::scoped_fs::ScopedFS;
+use crate::infra::scoped_fs::ScopedFS;
 use serde::Serialize;
 use ignore::WalkBuilder;
 use regex::Regex;

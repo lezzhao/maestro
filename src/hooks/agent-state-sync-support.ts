@@ -3,7 +3,7 @@ import { useAppStore } from "../stores/appStore";
 import { useChatStore } from "../stores/chatStore";
 import {
   applyAgentStateUpdate,
-  type AgentStateUpdate,
+  type AgentStateEvent,
   toTaskViewModel,
 } from "../lib/agentStateReducer";
 import { toMessages, type PersistedMessagePayload } from "../lib/agentProtocolAdapter";
@@ -52,12 +52,12 @@ function restoreLastConversation(
 export function createAgentStateUpdateApplier(
   appendTranscriptChunk: AppendTranscriptChunk,
   appendMessageChunk: AppendMessageChunk,
-): (payload: AgentStateUpdate) => void {
-  return (payload: AgentStateUpdate) => {
-    if (!payload || typeof payload !== "object") return;
+): (event: AgentStateEvent) => void {
+  return (event: AgentStateEvent) => {
+    if (!event || typeof event !== "object" || !event.payload) return;
     const appState = useAppStore.getState();
     const chatState = useChatStore.getState();
-    applyAgentStateUpdate(payload, {
+    applyAgentStateUpdate(event, {
       createRun: chatState.createRun,
       finishRun: chatState.finishRun,
       appendRunTranscript: (runId, content) => appendTranscriptChunk("", runId, content),
@@ -85,6 +85,7 @@ export function createAgentStateUpdateApplier(
       setTaskRunning: chatState.setTaskRunning,
       setExecutionPhase: chatState.setExecutionPhase,
       setPendingPermissionRequest: chatState.setPendingPermissionRequest,
+      getTaskStateToken: (taskId) => useChatStore.getState().taskStateToken[taskId],
     });
   };
 }

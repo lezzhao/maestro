@@ -7,3 +7,7 @@ export function reconcileActiveCliSessionsCommand() {
 export function cleanupDeadPtySessionsCommand() {
   return invoke("pty_cleanup_dead_sessions");
 }
+
+export function updateMaxConcurrentTasksCommand(count: number) {
+  return invoke("update_max_concurrent_tasks", { count });
+}
