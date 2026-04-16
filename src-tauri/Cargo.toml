@@ -8,9 +8,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-# The `_lib` suffix may seem redundant but it is necessary
-# to make the lib name unique and wouldn't conflict with the bin name.
-# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "tauri_app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
@@ -32,7 +29,8 @@ which = "7"
 tauri-plugin-dialog = "2.6.0"
 tauri-plugin-global-shortcut = "2.2.0"
 futures = "0.3"
-reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"] }
+reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls", "multipart"] }
+base64 = "0.22"
 tauri-plugin-sql = { version = "2.3.2", features = ["sqlite"] }
 tauri-plugin-shell = "2.3.5"
 tauri-plugin-fs = "2.4.5"
@@ -50,6 +48,12 @@ notify-debouncer-mini = "0.7.0"
 ignore = "0.4.25"
 notify = "8.2.0"
 async-trait = "0.1.89"
+parking_lot = "0.12.5"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-appender = "0.2"
+tiktoken-rs = "0.11.0"
+screenshots = "0.8.10"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 
 [dev-dependencies]
 tempfile = "3.14"

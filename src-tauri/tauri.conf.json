@@ -13,10 +13,23 @@
     "windows": [
       {
         "title": "Maestro",
+        "label": "main",
         "width": 1280,
         "height": 820,
         "minWidth": 1080,
         "minHeight": 700
+      },
+      {
+        "title": "Jiavis HUD",
+        "label": "jiavis",
+        "width": 600,
+        "height": 400,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "center": true,
+        "visible": false,
+        "shadow": false
       }
     ],
     "security": {
