@@ -1,89 +1,127 @@
 @import "tailwindcss";
 
 :root {
-  /* Default: Vibe Coding Light */
-  --bg-base: #f1f5f9;
-  --bg-surface: rgba(255, 255, 255, 0.9);
-  --bg-elevated: #ffffff;
-  --bg-subtle: rgba(0, 0, 0, 0.02);
+  /* Accomplish Alignment: Light Mode HSL Tokens */
+  --background: 60 15% 96.3%; /* #F7F7F4 */
+  --foreground: 0 0% 12.5%; /* #202020 */
   
-  --text-main: #0f172a;
-  --text-muted: #475569;
+  --card: 0 0% 98.8%;
+  --card-foreground: 0 0% 12.5%;
   
-  --border-subtle: rgba(15, 23, 42, 0.04);
-  --border-muted: rgba(15, 23, 42, 0.08);
-  --border-strong: rgba(15, 23, 42, 0.12);
+  --popover: 0 0% 98.8%;
+  --popover-foreground: 0 0% 12.5%;
   
-  --primary: #0284c7;
-  --primary-rgb: 2, 132, 199;
+  --primary: 123 30% 20%; /* Nature Green */
+  --primary-foreground: 0 0% 100%;
+  --primary-rgb: 33, 60, 32;
 
-  --radius-xs: 1px;
-  --radius-sm: 2px;
-  --radius-md: 4px;
-  --radius-lg: 8px;
+  --secondary: 120 14% 85%;
+  --secondary-foreground: 100 20% 18%;
+  
+  --muted: 0 0% 93.7%;
+  --muted-foreground: 0 0% 39.2%;
+  
+  --accent: 60 15% 95%;
+  --accent-foreground: 0 0% 12.5%;
+  
+  --destructive: 8 78% 54%;
+  --destructive-foreground: 0 0% 100%;
+  
+  --border: 12 8% 90%;
+  --border-muted: 12 8% 94%;
+  --border-strong: 12 8% 85%;
+  
+  --input: 0 0% 84.7%;
+  --ring: 20 25% 33%;
+
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
   --radius-full: 9999px;
   
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.03);
-  --shadow-md: 0 12px 24px -10px rgba(0, 0, 0, 0.1);
-  --shadow-lg: 0 20px 40px -15px rgba(0, 0, 0, 0.15);
-  --shadow-vibe: 0 8px 32px 0 rgba(31, 38, 135, 0.05);
-  --shadow-glow: 0 0 15px rgba(2, 132, 199, 0.15);
+  --shadow-md: 0 12px 24px -10px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 20px 40px -15px rgba(0, 0, 0, 0.1);
+  --shadow-vibe: 0 8px 32px 0 rgba(0, 0, 0, 0.04);
+  --shadow-glow: 0 0 15px hsla(123, 30%, 20%, 0.1);
+
+  --header-height: 3.5rem;
+  
+  /* HUD / Cyber Design Tokens */
+  --hud-primary: 217 91% 60%;
+  --hud-accent: 188 86% 53%;
+  --hud-error: 0 84% 60%;
 }
 
-/* System Dark Mode & Explicit Dark */
+/* Dark Mode Alignment */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --bg-base: #0f172a;
-    --bg-surface: #1e293b;
-    --bg-elevated: #334155;
-    --bg-subtle: rgba(255, 255, 255, 0.03);
+    --background: 0 0% 9%;
+    --foreground: 0 0% 95%;
     
-    --text-main: #f8fafc;
-    --text-muted: #cbd5e1;
+    --card: 0 0% 11%;
+    --card-foreground: 0 0% 95%;
     
-    --border-subtle: rgba(255, 255, 255, 0.04);
-    --border-muted: rgba(255, 255, 255, 0.08);
-    --border-strong: rgba(255, 255, 255, 0.12);
+    --popover: 0 0% 11%;
+    --popover-foreground: 0 0% 95%;
     
-    --primary: #38bdf8;
-    --primary-rgb: 56, 189, 248;
-
+    --primary: 123 30% 45%;
+    --primary-foreground: 0 0% 9%;
+    --primary-rgb: 80, 148, 79;
+    
+    --secondary: 120 10% 20%;
+    --secondary-foreground: 120 14% 85%;
+    
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 64%;
+    
+    --accent: 0 0% 18%;
+    --accent-foreground: 0 0% 95%;
+    
+    --border: 0 0% 20%;
+    --border-muted: 0 0% 16%;
+    --border-strong: 0 0% 25%;
+    
+    --input: 0 0% 25%;
+    --ring: 20 25% 55%;
+    
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
     --shadow-md: 0 20px 40px -15px rgba(0, 0, 0, 0.6);
-    --shadow-vibe: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
-    --shadow-glow: 0 0 15px rgba(56, 189, 248, 0.15);
   }
 }
 
-/* Explicit Overrides to prevent leaks */
 [data-theme='light'] {
-  --bg-base: #f1f5f9;
-  --bg-surface: rgba(255, 255, 255, 0.9);
-  --bg-elevated: #ffffff;
-  --text-main: #0f172a;
-  --text-muted: #475569;
-  --primary: #0284c7;
+  --background: 60 15% 96.3%;
+  --primary: 123 30% 20%;
 }
 
 [data-theme='dark'] {
-  --bg-base: #0f172a;
-  --bg-surface: #1e293b;
-  --bg-elevated: #334155;
-  --text-main: #f8fafc;
-  --text-muted: #cbd5e1;
-  --primary: #38bdf8;
+  --background: 0 0% 9%;
+  --primary: 123 30% 45%;
 }
 
 @theme {
-  --color-primary: var(--primary);
-  --color-bg-base: var(--bg-base);
-  --color-bg-surface: var(--bg-surface);
-  --color-bg-elevated: var(--bg-elevated);
-  --color-text-main: var(--text-main);
-  --color-text-muted: var(--text-muted);
-  --color-border-muted: var(--border-muted);
-  --color-border-subtle: var(--border-subtle);
-  --color-border-strong: var(--border-strong);
+  --color-primary: hsl(var(--primary));
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-border-muted: hsl(var(--border-muted));
+  --color-border-strong: hsl(var(--border-strong));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
   
   --radius-xs: var(--radius-xs);
   --radius-sm: var(--radius-sm);
@@ -92,6 +130,53 @@
   
   --shadow-vibe: var(--shadow-vibe);
   --shadow-glow: var(--shadow-glow);
+
+  /* Centralized Z-Index Matrix */
+  --z-base: 0;
+  --z-main-content: 10;
+  --z-sidebar: 20;
+  --z-header: 30;
+  --z-floating: 40;
+  --z-dropdown: 50;
+  --z-modal: 100;
+  --z-toast: 999;
+
+  --header-height: var(--header-height);
+  
+  --color-hud-primary: hsl(var(--hud-primary));
+  --color-hud-accent: hsl(var(--hud-accent));
+  --color-hud-error: hsl(var(--hud-error));
+}
+
+@utility glass-surface {
+  @apply bg-card/40 backdrop-blur-3xl border border-white/[0.04] dark:border-white/[0.02] shadow-[0_8px_32px_rgb(0,0,0,0.12)];
+}
+
+@utility glass-surface-high {
+  @apply bg-background/60 backdrop-blur-[40px] border border-white/[0.1] dark:border-white/[0.05] shadow-[0_20px_60px_rgb(0,0,0,0.3)] inner-border;
+}
+
+@utility glass-surface-low {
+  @apply bg-white/[0.02] backdrop-blur-2xl border border-white/[0.04] dark:border-white/[0.02] hover:bg-white/[0.04] transition-all;
+}
+
+@utility glass-surface-strong {
+  @apply bg-background/70 backdrop-blur-3xl border border-white/[0.08] dark:border-white/[0.04] shadow-[0_12px_48px_rgb(0,0,0,0.2)];
+}
+
+@utility inner-border {
+  @apply relative after:absolute after:inset-0 after:rounded-[inherit] after:border after:border-white/[0.05] after:pointer-events-none;
+}
+
+@utility status-dot {
+  @apply w-1.5 h-1.5 rounded-full relative;
+  background-color: var(--status-color, hsla(var(--primary), 0.8));
+  box-shadow: 0 0 8px var(--status-glow, hsla(var(--primary), 0.4));
+}
+
+@utility status-dot-pulse {
+  @apply after:content-[''] after:absolute after:-inset-1 after:rounded-full after:animate-pulse;
+  @apply after:bg-[inherit] after:opacity-40 after:blur-[2px];
 }
 
 html,
@@ -101,9 +186,9 @@ body,
   padding: 0;
   width: 100%;
   height: 100%;
-  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  background-color: var(--bg-base);
-  color: var(--text-main);
+  font-family: 'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   transition: background-color 0.1s cubic-bezier(0.4, 0, 0.2, 1), color 0.1s;
@@ -114,10 +199,73 @@ body,
   font-family: 'Geist Mono', 'JetBrains Mono', 'IBM Plex Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
 }
 
-/* Scrollbar - Minimalist Coding */
+/* Chat Markdown Styling */
+.chat-markdown {
+  @apply text-[15px] leading-relaxed text-foreground/90 font-sans;
+}
+
+.chat-markdown p {
+  @apply mb-4 last:mb-0;
+}
+
+.chat-markdown h1, 
+.chat-markdown h2, 
+.chat-markdown h3 {
+  @apply font-bold text-foreground mt-6 mb-3 tracking-tight;
+}
+
+.chat-markdown h1 { @apply text-2xl; }
+.chat-markdown h2 { @apply text-xl; }
+.chat-markdown h3 { @apply text-lg; }
+
+.chat-markdown ul, 
+.chat-markdown ol {
+  @apply mb-4 pl-6 space-y-2;
+}
+
+.chat-markdown ul { @apply list-disc; }
+.chat-markdown ol { @apply list-decimal; }
+
+.chat-markdown li {
+  @apply pl-1;
+}
+
+.chat-markdown blockquote {
+  @apply border-l-4 border-primary/20 bg-muted/30 px-5 py-3 rounded-r-xl my-5 italic text-muted-foreground;
+}
+
+.chat-markdown code {
+  @apply bg-muted/60 text-primary font-mono text-[13px] px-1.5 py-0.5 rounded-md border border-border/40;
+}
+
+.chat-markdown pre {
+  @apply my-5 transition-all duration-300;
+}
+
+.chat-markdown hr {
+  @apply my-8 border-border/40;
+}
+
+.chat-markdown a {
+  @apply text-primary hover:underline underline-offset-4 decoration-primary/40 font-medium;
+}
+
+.chat-markdown table {
+  @apply w-full mb-6 border-collapse text-[13px];
+}
+
+.chat-markdown th {
+  @apply bg-muted/50 border border-border/60 px-3 py-2 text-left font-bold text-foreground;
+}
+
+.chat-markdown td {
+  @apply border border-border/40 px-3 py-2 text-muted-foreground;
+}
+
+/* Scrollbar - Minimalist & Subtle */
 ::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -125,39 +273,40 @@ body,
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border-strong);
-  border-radius: 0; /* Sharp scrollbars */
+  background: hsl(var(--border-strong));
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--primary);
+  background: hsl(var(--primary));
 }
 
-/* Animations */
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+/* Animations - Gentle Springs */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-.animate-spin {
-  animation: spin 0.8s linear infinite;
+.animate-fade-up {
+  animation: fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Glow Effect */
+/* Glow Effect - Unified with Primary HSL */
 .glow-primary {
-  box-shadow: var(--shadow-glow);
+  box-shadow: 0 0 15px hsla(var(--primary), 0.15);
 }
 
 /* Immersive Utility */
 .utility-panel {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-muted);
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border-muted));
 }
 
 /* Chat Markdown Contrast & Typography */
 .chat-markdown {
-  color: var(--text-main);
+  color: hsl(var(--foreground));
   line-height: 1.6;
+  font-size: 14px;
 }
 
 .chat-markdown p {
@@ -169,10 +318,10 @@ body,
 }
 
 .chat-markdown h1, .chat-markdown h2, .chat-markdown h3 {
-  font-weight: 800;
+  font-weight: 700;
   margin-top: 1.25rem;
   margin-bottom: 0.5rem;
-  color: var(--text-main);
+  color: hsl(var(--foreground));
 }
 
 .chat-markdown ul, .chat-markdown ol {
@@ -185,16 +334,17 @@ body,
 }
 
 .chat-markdown blockquote {
-  border-left: 3px solid var(--border-muted);
+  border-left: 3px solid hsl(var(--border-muted));
   padding-left: 1rem;
   font-style: italic;
-  color: var(--text-muted);
+  color: hsl(var(--muted-foreground));
 }
 
 .chat-markdown code:not(pre code) {
   font-family: 'Geist Mono', monospace;
-  background-color: var(--bg-subtle);
+  background-color: hsl(var(--muted));
+  color: hsl(var(--foreground));
   padding: 0.1rem 0.3rem;
   border-radius: var(--radius-sm);
-  font-size: 0.9em;
+  font-size: 13px;
 }

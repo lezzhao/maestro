@@ -11,7 +11,6 @@ import { Button } from "../ui/button";
 import { SettingsView } from "../setup/SettingsView";
 import { TaskWorkspace } from "../TaskWorkspace";
 import { MainSidebar } from "../MainSidebar";
-import { ActivityBar } from "./ActivityBar";
 import { AppHeader } from "./AppHeader";
 import { WorkspaceCreateDialog } from "../WorkspaceCreateDialog";
 import { GitChangesPanel } from "../GitChangesPanel";
@@ -28,6 +27,7 @@ import { parseTaskFileChanges } from "../../lib/fileChangeParser";
 import { useAppStore } from "../../stores/appStore";
 import { ArtifactsPanel } from "./ArtifactsPanel";
 import { TaskChronicle } from "../TaskChronicle";
+import { SkillGallery } from "../SkillGallery";
 
 
 export function WorkspaceLayout() {
@@ -57,6 +57,7 @@ export function WorkspaceLayout() {
   } = useTaskRuntimeContext();
   const {
     showSettings, setShowSettings,
+    showSkillGallery, setShowSkillGallery,
     setSidebarCollapsed,
     theme, setTheme,
     lang, setLang,
@@ -156,13 +157,7 @@ export function WorkspaceLayout() {
 
   // 工作区列表已在 useAgentStateSync bootstrap 中加载，此处仅订阅 store
   return (
-    <div className="flex-1 h-full min-h-0 overflow-hidden relative flex">
-      {/* Column 1: Workspace Bar */}
-      <ActivityBar
-        onOpenSettings={() => setShowSettings(!showSettings)}
-        isSettingsOpen={showSettings}
-        onCreateWorkspace={() => setShowCreateWorkspace(true)}
-      />
+    <div className="flex-1 h-full min-h-0 overflow-hidden relative flex bg-background/95 text-foreground font-sans">
 
       <div className="flex-1 h-full min-w-0 relative">
         {showSettings ? (
@@ -186,30 +181,38 @@ export function WorkspaceLayout() {
               onLangChange={setLang}
             />
           </Suspense>
+        ) : showSkillGallery ? (
+          <Suspense fallback={null}>
+            <SkillGallery />
+          </Suspense>
         ) : !activeWorkspaceId ? (
-          <div className="h-full flex flex-col items-center justify-center p-8 bg-bg-base/30 animate-in fade-in duration-500">
-            <div className="w-[450px] space-y-8 flex flex-col items-center text-center">
+          <div className="h-full flex flex-col items-center justify-center p-8 bg-background relative overflow-hidden animate-in fade-in duration-1000">
+            {/* Ambient Background Glow */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/5 blur-[120px] rounded-full pointer-events-none" />
+            
+            <div className="w-[480px] space-y-12 flex flex-col items-center text-center relative z-10">
               <div className="relative group">
-                <div className="absolute inset-0 bg-primary blur-2xl opacity-20 rounded-full group-hover:opacity-30 transition-opacity" />
-                <div className="relative w-24 h-24 rounded-2xl bg-bg-surface border border-border-muted flex items-center justify-center text-primary shadow-xl">
-                  <Plus size={40} strokeWidth={2.5} />
+                <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full group-hover:bg-primary/40 transition-all duration-1000 opacity-50" />
+                <div className="relative w-32 h-32 rounded-[2.5rem] bg-glass-surface-strong border border-white/[0.05] shadow-2xl flex items-center justify-center text-primary transform group-hover:scale-110 group-hover:rotate-3 transition-all duration-700 inner-border">
+                  <Plus size={48} strokeWidth={1.5} className="group-hover:rotate-90 transition-transform duration-500" />
                 </div>
               </div>
               
-              <div className="space-y-2">
-                <h2 className="text-2xl font-black text-text-main tracking-tight uppercase">Ready to Start?</h2>
-                <p className="text-sm text-text-muted/60 max-w-[320px] leading-relaxed mx-auto">
-                  Create your first Workspace to begin coding with AI. Group your tasks and files into logical project environments.
+              <div className="space-y-4">
+                <h2 className="text-4xl font-black text-foreground tracking-tighter uppercase">Initiate Workspace</h2>
+                <p className="text-[14px] font-bold text-muted-foreground/40 max-w-[340px] leading-relaxed mx-auto tracking-tight uppercase">
+                  Encapsulate your logic.
+                  <br />
+                  Define your boundary.
                 </p>
               </div>
 
-              <Button 
+              <button 
                 onClick={() => setShowCreateWorkspace(true)}
-                size="lg"
-                className="h-12 px-10 rounded-xl bg-primary hover:bg-primary/90 text-white font-black uppercase tracking-widest text-xs shadow-xl shadow-primary/20 hover:scale-105 transition-all"
+                className="h-14 px-12 rounded-2xl bg-primary text-primary-foreground font-black uppercase tracking-[0.2em] text-[11px] shadow-2xl shadow-primary/20 hover:scale-[1.05] active:scale-[0.95] transition-all duration-500 inner-border"
               >
-                Create New Workspace
-              </Button>
+                Create First Workspace
+              </button>
             </div>
           </div>
         ) : (
@@ -221,17 +224,19 @@ export function WorkspaceLayout() {
             {/* Column 2: Primary Left Sidebar */}
             <MainSidebar
               panelRef={sidebarPanelRef}
+              onOpenSettings={() => setShowSettings(true)}
+              onCreateWorkspace={() => setShowCreateWorkspace(true)}
             />
 
             <Separator
-              className="w-px bg-border-muted/50 hover:bg-primary-500 active:bg-primary-600 transition-colors cursor-col-resize z-50 -mx-[0.5px]"
+              className="w-px bg-white/[0.04] dark:bg-white/[0.02] hover:bg-primary/40 transition-colors cursor-col-resize z-sidebar -mx-[0.5px]"
             />
 
-            <Panel id="panel-main" defaultSize={800} minSize={400} className="flex flex-col min-h-0 bg-bg-surface">
+            <Panel id="panel-main" defaultSize={800} minSize={400} className="flex flex-col min-h-0 bg-background relative z-main-content overflow-visible">
               <div className="h-full flex flex-col min-h-0 relative">
                 <AppHeader />
 
-                <div className="flex-1 min-h-0 bg-bg-base">
+                <div className="flex-1 min-h-0">
                   <Suspense fallback={<PanelFallback label="Workspace" />}>
                     <TaskWorkspace
                       projectPath={projectPath}
@@ -246,9 +251,9 @@ export function WorkspaceLayout() {
             {activeTask && taskFileChanges.length > 0 && !activeArtifact && (
               <>
                 <Separator
-                  className="w-px bg-border-muted/50 hover:bg-primary-500 active:bg-primary-600 transition-colors cursor-col-resize z-50 -mx-[0.5px]"
+                  className="w-px bg-border/40 hover:bg-primary/50 transition-colors cursor-col-resize z-dropdown -mx-[0.5px]"
                 />
-                <Panel id="panel-right" defaultSize={260} minSize={200} maxSize={450} className="flex flex-col min-h-0 bg-transparent p-2 gap-2">
+                <Panel id="panel-right" defaultSize={260} minSize={200} maxSize={450} className="flex flex-col min-h-0 bg-card p-2 gap-2 border-l border-border/40">
                   <div className="flex-1 min-h-0">
                     <GitChangesPanel 
                       gitChanges={taskFileChanges}
@@ -256,7 +261,7 @@ export function WorkspaceLayout() {
                       onFileSelect={handleFileSelect}
                     />
                   </div>
-                  <div className="h-[250px] shrink-0">
+                  <div className="h-[250px] shrink-0 border-t border-border/40 pt-2">
                     <TaskChronicle messages={activeTaskMessages} />
                   </div>
                 </Panel>
@@ -266,9 +271,9 @@ export function WorkspaceLayout() {
             {isArtifactsPanelOpen && activeArtifact && (
                <>
                 <Separator
-                  className="w-px bg-border-muted/50 hover:bg-primary-500 active:bg-primary-600 transition-colors cursor-col-resize z-50 -mx-[0.5px]"
+                  className="w-px bg-border/40 hover:bg-primary/50 transition-colors cursor-col-resize z-dropdown -mx-[0.5px]"
                 />
-                <Panel id="panel-artifacts" defaultSize={500} minSize={300} className="flex flex-col min-h-0 bg-transparent">
+                <Panel id="panel-artifacts" defaultSize={500} minSize={300} className="flex flex-col min-h-0 bg-card border-l border-border/40">
                   <ArtifactsPanel />
                 </Panel>
               </>

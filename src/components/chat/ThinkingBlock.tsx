@@ -2,6 +2,7 @@ import { useState, useMemo, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, BrainCircuit } from "lucide-react";
 import { cn } from "../../lib/utils";
+import { useTranslation } from "../../i18n";
 
 interface ThinkingBlockProps {
   content: string;
@@ -12,8 +13,10 @@ interface ThinkingBlockProps {
 export const ThinkingBlock = memo(function ThinkingBlock({
   content,
   isStreaming,
-  label = "Reasoning Process",
+  label,
 }: ThinkingBlockProps) {
+  const { t } = useTranslation();
+  const defaultLabel = label || t("reasoning_process");
   const [isExpanded, setIsExpanded] = useState(isStreaming);
 
   // Auto-expand during streaming
@@ -24,13 +27,13 @@ export const ThinkingBlock = memo(function ThinkingBlock({
   }, [isStreaming]);
 
   return (
-    <div className="my-3 group/think">
+    <div className="my-5 group/think">
       <div 
         className={cn(
-          "rounded-2xl border transition-all duration-700 overflow-hidden backdrop-blur-2xl",
+          "rounded-2xl transition-all duration-700 overflow-hidden inner-border shadow-sm",
           isStreaming 
-            ? "border-primary/20 bg-primary/[0.02] shadow-[0_0_40px_rgba(var(--primary-rgb),0.07)]" 
-            : "border-border-muted/5 bg-bg-surface/20 hover:border-border-muted/20 hover:bg-bg-surface/30 shadow-sm"
+            ? "border-primary/30 bg-primary/[0.04] shadow-[0_0_20px_rgba(var(--primary-rgb),0.1)]" 
+            : "glass-surface-low"
         )}
       >
         {/* Header */}
@@ -38,17 +41,17 @@ export const ThinkingBlock = memo(function ThinkingBlock({
           onClick={() => !isStreaming && setIsExpanded(!isExpanded)}
           disabled={isStreaming}
           className={cn(
-            "w-full flex items-center justify-between px-4 py-3 text-left transition-colors",
-            isStreaming ? "cursor-default" : "cursor-pointer hover:bg-bg-surface/40"
+            "w-full flex items-center justify-between px-5 py-3.5 text-left transition-colors",
+            isStreaming ? "cursor-default" : "cursor-pointer"
           )}
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <div className="relative">
               {isStreaming ? (
                 <motion.div
                   animate={{ 
-                    scale: [1, 1.2, 1],
-                    opacity: [0.5, 1, 0.5]
+                    scale: [1, 1.1, 1],
+                    opacity: [0.6, 1, 0.6]
                   }}
                   transition={{ 
                     duration: 2,
@@ -57,28 +60,25 @@ export const ThinkingBlock = memo(function ThinkingBlock({
                   }}
                   className="p-1.5 rounded-lg bg-primary/10 text-primary"
                 >
-                  <BrainCircuit size={14} />
+                  <BrainCircuit size={16} />
                 </motion.div>
               ) : (
-                <div className="p-1.5 rounded-lg bg-bg-base/50 text-text-muted/60">
-                  <BrainCircuit size={14} />
+                <div className="p-1.5 rounded-lg bg-background border border-border text-muted-foreground/60">
+                  <BrainCircuit size={16} />
                 </div>
-              )}
-              {isStreaming && (
-                <div className="absolute -inset-1 bg-primary/20 blur-sm rounded-full animate-pulse" />
               )}
             </div>
             
             <div className="flex flex-col">
               <span className={cn(
-                "text-[10px] font-black uppercase tracking-[0.2em]",
-                isStreaming ? "text-primary" : "text-text-muted/40"
+                "text-[10px] font-bold uppercase tracking-[0.15em]",
+                isStreaming ? "text-primary" : "text-muted-foreground/40"
               )}>
-                {isStreaming ? "Synthesizing..." : label}
+                {isStreaming ? t("thought_synthesizing") : defaultLabel}
               </span>
               {isStreaming && (
-                <span className="text-[9px] text-primary/40 font-bold animate-pulse">
-                  Quantum Inference in progress
+                <span className="text-[9px] text-primary/40 font-medium">
+                  Refining architectural context
                 </span>
               )}
             </div>
@@ -87,7 +87,7 @@ export const ThinkingBlock = memo(function ThinkingBlock({
           {!isStreaming && (
             <motion.div
               animate={{ rotate: isExpanded ? 180 : 0 }}
-              className="text-text-muted/20"
+              className="text-muted-foreground/30"
             >
               <ChevronDown size={14} />
             </motion.div>
@@ -101,21 +101,21 @@ export const ThinkingBlock = memo(function ThinkingBlock({
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.3, ease: "easeOut" }}
+              transition={{ duration: 0.4, ease: [0.24, 1, 0.32, 1] }}
             >
-              <div className="px-5 pb-5 pt-1">
+              <div className="px-6 pb-6 pt-1">
                 <div className="relative">
                   {/* Vertical line indicator */}
-                  <div className="absolute left-0 top-0 bottom-0 w-px bg-gradient-to-b from-primary/20 via-primary/5 to-transparent" />
+                  <div className="absolute left-0 top-0 bottom-0 w-[2px] rounded-full bg-gradient-to-b from-primary/30 via-primary/10 to-transparent" />
                   
-                  <div className="pl-5 text-[12px] leading-relaxed text-text-muted/70 font-sans italic space-y-2">
+                  <div className="pl-6 text-[13px] leading-relaxed text-muted-foreground/80 font-medium italic space-y-3">
                     {content.split("\n\n").map((para, i) => (
-                      <p key={i} className="animate-in fade-in slide-in-from-left-1 duration-500" style={{ animationDelay: `${i * 100}ms` }}>
+                      <p key={i} className="animate-in fade-in slide-in-from-left-1 duration-700" style={{ animationDelay: `${i * 150}ms` }}>
                         {para}
                       </p>
                     ))}
                     {isStreaming && (
-                      <span className="inline-block w-1.5 h-3 ml-1 bg-primary/40 animate-pulse rounded-full" />
+                      <span className="inline-block w-1.5 h-3.5 ml-1 bg-primary/30 animate-pulse rounded-full align-middle" />
                     )}
                   </div>
                 </div>
@@ -124,14 +124,6 @@ export const ThinkingBlock = memo(function ThinkingBlock({
           )}
         </AnimatePresence>
       </div>
-      
-      {!isExpanded && !isStreaming && content && (
-        <div className="px-4 mt-1 opacity-0 group-hover/think:opacity-100 transition-opacity duration-300">
-           <p className="text-[9px] text-text-muted/30 truncate max-w-[400px]">
-             {content.slice(0, 100)}...
-           </p>
-        </div>
-      )}
     </div>
   );
 });

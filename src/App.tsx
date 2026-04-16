@@ -24,6 +24,8 @@ import { updateWorkspaceCommand } from "./hooks/commands/workspace-commands";
 import { PermissionDialog } from "./components/chat/PermissionDialog";
 import { useTaskActions } from "./hooks/useTaskActions";
 import { Z_INDEX } from "./constants";
+import { JiavisHUD } from "./components/chat/JiavisHUD";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 function App() {
   const { t } = useTranslation();
@@ -35,6 +37,11 @@ function App() {
   const { handleAddTask } = useTaskActions();
 
   const [commandOpen, setCommandOpen] = useState(false);
+  const [windowLabel, setWindowLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    setWindowLabel(getCurrentWindow().label);
+  }, []);
 // ... (lines 36-160 skipped for brevity in targetContent but I'll include them in ReplacementContent if needed, actually I'll just use a smaller chunk)
 
   useEffect(() => {
@@ -95,7 +102,6 @@ function App() {
           });
         }
         setShowSettings(false);
-        toast.success("Project imported successfully");
         return result;
       } catch (e) {
         const msg = String(e);
@@ -187,6 +193,10 @@ function App() {
     ],
     [handleOpenProjectPicker, setShowSettings, theme, t, handleAddTask],
   );
+
+  if (windowLabel === "jiavis") {
+    return <JiavisHUD />;
+  }
 
   return (
     <AppProviders>

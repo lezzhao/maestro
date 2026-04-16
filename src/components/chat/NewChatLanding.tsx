@@ -7,12 +7,14 @@ import {
   ChevronRight, 
   Zap,
   ShieldCheck,
-  Activity
+  Activity,
+  Settings
 } from "lucide-react";
 import { useTranslation } from "../../i18n";
 import { cn } from "../../lib/utils";
 import { useActiveTask } from "../../hooks/useActiveTask";
 import { useTaskRuntimeContext } from "../../hooks/useTaskRuntimeContext";
+import { useAppUiState } from "../../hooks/use-app-store-selectors";
 
 interface NewChatLandingProps {
   onActionClick: (text: string) => void;
@@ -22,6 +24,7 @@ export function NewChatLanding({ onActionClick }: NewChatLandingProps) {
   const { t } = useTranslation();
   const { activeTaskId } = useActiveTask();
   const { engineId, engine, isReady } = useTaskRuntimeContext(activeTaskId);
+  const { setShowSettings } = useAppUiState();
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -114,12 +117,24 @@ export function NewChatLanding({ onActionClick }: NewChatLandingProps) {
                 {engine?.display_name || engineId || "System"}
               </span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <Activity size={10} className="text-primary/50" />
-              <span className="text-[10px] font-bold text-text-muted/80">
-                {isReady ? "Inference Node: Ready" : "Setup Required"}
-              </span>
-            </div>
+            {isReady ? (
+              <div className="flex items-center gap-1.5">
+                <Activity size={10} className="text-primary/50" />
+                <span className="text-[10px] font-bold text-text-muted/80">
+                  Inference Mode: Ready
+                </span>
+              </div>
+            ) : (
+              <button 
+                onClick={() => setShowSettings(true)}
+                className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 transition-all group/setup"
+              >
+                <Settings size={10} className="group-hover/setup:rotate-90 transition-transform" />
+                <span className="text-[10px] font-bold uppercase tracking-wider">
+                  Complete Setup
+                </span>
+              </button>
+            )}
           </motion.div>
         </div>
 

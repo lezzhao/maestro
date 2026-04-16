@@ -10,7 +10,10 @@ import {
   Wrench,
   Play,
   RotateCcw,
+  Lightbulb,
+  Check,
 } from "lucide-react";
+import { useChatStore } from "../stores/chat";
 import { ChatMessageContent } from "./ChatMessageContent";
 import { ThinkingBlock } from "./chat/ThinkingBlock";
 import { cn } from "../lib/utils";
@@ -113,6 +116,26 @@ function extractThoughtBlock(message: ChatMessage, isStreaming: boolean): Though
 
 function ChatMessageItemBase({ message, labels, liveTranscript, isHighlighted, onRetry, onChoiceSelect }: Props) {
   const { t } = useTranslation();
+  const saveSkill = useChatStore(s => s.saveSkill);
+  const [isSavingSkill, setIsSavingSkill] = useState(false);
+  const [hasSavedSkill, setHasSavedSkill] = useState(false);
+
+  const handleSaveSkill = async () => {
+    if (isSavingSkill || hasSavedSkill) return;
+    setIsSavingSkill(true);
+    try {
+      // Auto-extracting info from current message for simplicity in this interaction
+      // A more complex version would show a dialog.
+      const name = message.content.split("\n")[0].slice(0, 30) || "New Skill";
+      const description = `Skill learned from conversation: ${message.content.slice(0, 100)}...`;
+      await saveSkill(name, description, message.content);
+      setHasSavedSkill(true);
+    } catch (e) {
+      // Error handled by store toast
+    } finally {
+      setIsSavingSkill(false);
+    }
+  };
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
   const isSystem = message.role === "system";
@@ -136,16 +159,16 @@ function ChatMessageItemBase({ message, labels, liveTranscript, isHighlighted, o
     const choice = message.meta?.choice;
     if (choice) {
       return (
-        <div className="flex justify-center p-2">
-          <div className="w-full max-w-[760px] rounded-2xl border border-border-muted/20 bg-bg-surface px-4 py-4 shadow-sm">
-            <div className="flex items-center gap-2 text-[10px] uppercase font-bold text-text-muted/60 tracking-wider">
-              <Sparkles size={12} className="opacity-60" />
+        <div className="flex justify-center p-3 animate-fade-up duration-500">
+          <div className="w-full max-w-[760px] rounded-2xl border border-border bg-card px-6 py-6 shadow-sm">
+            <div className="flex items-center gap-2.5 text-[10px] uppercase font-bold text-muted-foreground/50 tracking-[0.15em]">
+              <Sparkles size={14} className="opacity-60 text-primary" />
               <span>{t("needs_selection")}</span>
               <span
                 className={cn(
-                  "ml-auto rounded-full border px-2 py-0.5 text-[9px]",
+                  "ml-auto rounded-full border px-2.5 py-0.5 text-[9px] font-bold tracking-tight",
                   choice.status === "resolved"
-                    ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-500"
+                    ? "border-primary/30 bg-primary/5 text-primary"
                     : "border-amber-500/30 bg-amber-500/5 text-amber-500",
                 )}
               >
@@ -153,21 +176,21 @@ function ChatMessageItemBase({ message, labels, liveTranscript, isHighlighted, o
               </span>
             </div>
 
-            <div className="mt-3">
-              <div className="text-sm font-bold text-text-main">{choice.title}</div>
+            <div className="mt-4">
+              <div className="text-[15px] font-bold text-foreground tracking-tight">{choice.title}</div>
               {choice.description && (
-                <div className="mt-1 text-[12px] leading-relaxed text-text-main/75">
+                <div className="mt-2 text-[13px] leading-relaxed text-muted-foreground font-medium">
                   {choice.description}
                 </div>
               )}
               {message.content && (
-                <div className="mt-2 text-[12px] leading-relaxed text-text-muted/70">
+                <div className="mt-3 text-[13px] leading-relaxed text-muted-foreground/70 font-medium">
                   {message.content}
                 </div>
               )}
             </div>
 
-            <div className="mt-4 grid gap-2">
+            <div className="mt-6 grid gap-2.5">
               {choice.options.map((option) => {
                 const isSelected = choice.selectedOptionId === option.id;
                 const isResolved = choice.status === "resolved";
@@ -180,25 +203,25 @@ function ChatMessageItemBase({ message, labels, liveTranscript, isHighlighted, o
                     disabled={isResolved}
                     onClick={() => void onChoiceSelect?.(message, option)}
                     className={cn(
-                      "rounded-xl border px-3 py-3 text-left transition-all",
-                      "disabled:cursor-not-allowed disabled:opacity-90",
+                      "rounded-xl border px-4 py-4 text-left transition-all duration-300",
+                      "disabled:cursor-not-allowed",
                       isSelected
-                        ? "border-primary/40 bg-primary/8"
+                        ? "border-primary/40 bg-primary/5 ring-1 ring-primary/20"
                         : isDestructive
-                          ? "border-rose-500/20 bg-rose-500/5 hover:border-rose-500/35"
-                          : "border-border-muted/20 bg-bg-base/40 hover:border-primary/30 hover:bg-primary/5",
+                          ? "border-destructive/20 bg-destructive/5 hover:border-destructive/40"
+                          : "border-border/40 bg-muted/20 hover:border-primary/30 hover:bg-primary/5 hover:shadow-sm",
                     )}
                   >
                     <div
                       className={cn(
-                        "text-[12px] font-bold",
-                        isDestructive ? "text-rose-500" : "text-text-main",
+                        "text-[13px] font-bold",
+                        isDestructive ? "text-destructive" : "text-foreground",
                       )}
                     >
                       {option.label}
                     </div>
                     {option.description && (
-                      <div className="mt-1 text-[11px] leading-relaxed text-text-muted/70">
+                      <div className="mt-1.5 text-[11px] font-medium leading-relaxed text-muted-foreground/60">
                         {option.description}
                       </div>
                     )}
@@ -224,69 +247,70 @@ function ChatMessageItemBase({ message, labels, liveTranscript, isHighlighted, o
     const isRun = toolName.includes("run");
 
     return (
-      <div className="flex justify-center p-1 group/tool">
+      <div className="flex justify-center p-1.5 group/tool animate-in fade-in zoom-in-95 duration-300">
         <div className={cn(
-          "w-full max-w-[760px] rounded-xl border px-3 py-2.5 transition-all duration-300",
-          isExecuting ? "border-primary/20 bg-primary/5 shadow-[0_0_20px_rgba(var(--primary-rgb),0.05)]" :
-          isError ? "border-rose-500/20 bg-rose-500/5 text-rose-200" :
-          "border-border-muted/30 bg-bg-surface shadow-[0_2px_8px_rgba(0,0,0,0.05)] hover:border-primary/20"
+          "w-full max-w-[760px] rounded-xl border px-4 py-3 transition-all duration-500",
+          isExecuting ? "border-primary/30 bg-primary/5 shadow-lg shadow-primary/5" :
+          isError ? "border-destructive/30 bg-destructive/5" :
+          "border-border bg-card shadow-sm hover:border-primary/20 hover:shadow-md"
         )}>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <div className={cn(
-              "p-2 rounded-lg shrink-0 transition-transform group-hover/tool:scale-105",
-              isExecuting ? "bg-primary/20 text-primary shadow-[0_0_10px_rgba(var(--primary-rgb),0.2)]" :
-              isError ? "bg-rose-500/20 text-rose-500" :
-              "bg-bg-base border border-border-muted/20 text-primary/60"
+              "w-9 h-9 rounded-xl shrink-0 flex items-center justify-center transition-all group-hover/tool:scale-105 duration-300",
+              isExecuting ? "bg-primary/20 text-primary animate-pulse" :
+              isError ? "bg-destructive/20 text-destructive" :
+              "bg-muted border border-border text-primary/70"
             )}>
-              {isExecuting ? <Loader2 size={14} className="animate-spin" /> :
-               isWrite ? <FileCode size={14} className="text-emerald-500" /> :
-               isSearch ? <Search size={14} className="text-sky-500" /> :
-               isRun ? <Play size={14} className="text-amber-500" /> :
-               isRead ? <FileCode size={14} className="text-primary" /> :
-               <Wrench size={14} />}
+              {isExecuting ? <Loader2 size={16} className="animate-spin" /> :
+               isWrite ? <FileCode size={16} /> :
+               isSearch ? <Search size={16} /> :
+               isRun ? <Play size={16} /> :
+               isRead ? <FileCode size={16} /> :
+               <Wrench size={16} />}
             </div>
 
             <div className="flex flex-col min-w-0 flex-1">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
                 <span className={cn(
-                  "text-[10px] font-black uppercase tracking-widest",
-                  isExecuting ? "text-primary" : "text-text-muted/70"
+                  "text-[10px] font-bold uppercase tracking-[0.15em]",
+                  isExecuting ? "text-primary" : "text-muted-foreground/60"
                 )}>
                   {message.meta?.toolName || labels.roleSystem}
                 </span>
-                <span className="h-0.5 w-0.5 rounded-full bg-text-muted/20" />
+                <span className="h-0.5 w-0.5 rounded-full bg-border" />
                 <span className={cn(
-                  "text-[9px] font-bold uppercase tracking-tight",
-                  isExecuting ? "text-primary/40 animate-pulse" : 
-                  isError ? "text-rose-500/60" : "text-emerald-500/60"
+                  "text-[9px] font-bold uppercase tracking-[0.05em]",
+                  isExecuting ? "text-primary/60 animate-pulse" : 
+                  isError ? "text-destructive/60" : "text-emerald-500/60"
                 )}>
                   {isExecuting ? t("status_executing") : isError ? t("status_failed") : t("status_success")}
                 </span>
               </div>
-              <div className="text-[11px] text-text-main/70 leading-relaxed font-mono truncate mt-0.5 flex items-center gap-2">
-                {isRun && <Terminal size={10} className="opacity-40" />}
+              <div className="text-[12px] text-foreground/80 leading-relaxed font-mono truncate mt-0.5 flex items-center gap-2">
+                {isRun && <Terminal size={12} className="opacity-40" />}
                 {message.content || toolInput || (isExecuting ? t("status_initializing") : t("no_detail_available"))}
               </div>
               
               {toolOutput && !isExecuting && (
-                <div className="mt-2 text-[10px] p-2 rounded bg-bg-base/50 border border-border-muted/10 font-mono text-text-muted max-h-[100px] overflow-y-auto whitespace-pre-wrap">
+                <div className="mt-3 text-[11px] p-3 rounded-lg bg-muted/40 border border-border/10 font-mono text-muted-foreground/80 max-h-[150px] overflow-y-auto no-scrollbar whitespace-pre-wrap leading-relaxed">
                   {toolOutput}
                 </div>
               )}
             </div>
 
             {isDone && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 {isError && onRetry && (
                   <button 
                     onClick={() => onRetry(message.id)}
-                    className="p-1.5 rounded-md hover:bg-rose-500/10 text-rose-500/40 hover:text-rose-500 transition-all"
+                    className="p-2 rounded-lg bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground transition-all duration-300"
+                    title="Retry"
                   >
-                    <RotateCcw size={12} />
+                    <RotateCcw size={14} />
                   </button>
                 )}
-                <div className="hidden group-hover/tool:flex items-center gap-1.5 px-2 py-1 rounded-md bg-bg-base border border-border-muted/10 text-[9px] font-black text-text-muted/60 uppercase tracking-widest transition-all cursor-pointer hover:text-primary hover:border-primary/20">
-                  <Terminal size={10} />
+                <div className="hidden group-hover/tool:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted border border-border text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest transition-all cursor-pointer hover:text-primary hover:border-primary/20 hover:shadow-sm">
+                  <Terminal size={12} />
                   {t("details")}
                 </div>
               </div>
@@ -301,13 +325,13 @@ function ChatMessageItemBase({ message, labels, liveTranscript, isHighlighted, o
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
+      transition={{ duration: 0.4, ease: [0.24, 1, 0.32, 1] }}
       className={cn(
-        "group relative flex w-full gap-4 py-3 px-6 transition-all duration-400 font-mono text-[12.5px]",
+        "group relative flex w-full gap-5 py-5 px-8 transition-all duration-400 font-sans",
         isAssistant
-          ? "bg-bg-surface/2 border-border-muted/2 shadow-primary/5 hover:ring-primary/20"
-          : "bg-primary/5 border-primary/20 shadow-primary/5 hover:ring-primary/40",
-        isHighlighted && "bg-primary/5 ring-1 ring-primary/20 shadow-[0_0_20px_rgba(var(--primary-rgb),0.1)] z-10 scale-[1.005]"
+          ? "bg-transparent border-transparent"
+          : "bg-primary/[0.03] border-y border-primary/5",
+        isHighlighted && "bg-primary/[0.05] ring-1 ring-primary/10 shadow-lg shadow-primary/5 z-10"
       )}
     >
       {isHighlighted && (
@@ -320,17 +344,17 @@ function ChatMessageItemBase({ message, labels, liveTranscript, isHighlighted, o
       )}
       {/* Terminal Prompt Prefix */}
       <div className={cn(
-        "shrink-0 mt-[4px] select-none font-black tracking-tight flex items-center gap-1",
-        isUser ? "text-emerald-500" : isAssistant ? "text-primary font-black" : "text-amber-500"
+        "shrink-0 mt-[2px] select-none font-black tracking-tight flex items-center gap-1.5",
+        isUser ? "text-primary/60" : isAssistant ? "text-primary" : "text-amber-500"
       )}>
         {isAssistant && message.status === "streaming" && (
            <motion.div 
-             animate={{ opacity: [0.3, 1, 0.3] }}
-             transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
-             className="w-1.5 h-1.5 rounded-full bg-primary shadow-glow" 
+             animate={{ scale: [1, 1.3, 1], opacity: [0.4, 1, 0.4] }}
+             transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
+             className="w-2 h-2 rounded-full bg-primary shadow-[0_0_10px_hsla(var(--primary),0.5)]" 
            />
         )}
-        ❯
+        <span className="text-[14px]">❯</span>
       </div>
 
       <div className="flex flex-col w-full min-w-0 font-sans">
@@ -425,33 +449,53 @@ function ChatMessageItemBase({ message, labels, liveTranscript, isHighlighted, o
         </div>
 
         {isAssistant && message.status === "done" && (
-          <div className="flex items-center gap-4 px-1 opacity-20 mt-1.5 transition-opacity group-hover:opacity-60 select-none border-t border-border-muted/5 pt-1.5">
+          <div className="flex items-center gap-5 px-0 opacity-0 mt-3 transition-opacity group-hover:opacity-40 select-none border-t border-border/20 pt-3">
             {message.durationMs && (
-              <div className="flex items-center gap-1.5">
-                <div className="w-1 h-1 rounded-full bg-text-muted/40" />
-                <span className="text-[9px] font-black tracking-widest uppercase">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold tracking-widest uppercase">
                   {(message.durationMs / 1000).toFixed(1)}s
                 </span>
               </div>
             )}
             
             {(message.tokenEstimate || message.meta?.usage) && (
-              <div className="flex items-center gap-1.5">
-                <div className="w-1 h-1 rounded-full bg-text-muted/40" />
-                <span className="text-[9px] font-black tracking-widest uppercase">
-                  {message.meta?.usage ? (
-                    `${message.meta.usage.total_tokens} tokens`
-                  ) : (
-                    `${message.tokenEstimate?.approx_output_tokens} tokens`
-                  )}
-                </span>
+              <div className="flex items-center gap-5">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold tracking-widest uppercase text-foreground">
+                    {message.meta?.usage ? (
+                      `${message.meta.usage.total_tokens} tokens`
+                    ) : (
+                      `${message.tokenEstimate?.approx_output_tokens} tokens`
+                    )}
+                  </span>
+                </div>
                 {message.meta?.usage && (
-                   <span className="text-[8px] font-bold text-emerald-500/50">
-                     ${((message.meta.usage.total_tokens / 1000000) * 0.15).toFixed(4)}
+                   <span className="text-[9px] font-bold text-primary/80 tracking-tight">
+                     Cost: ${((message.meta.usage.total_tokens / 1000000) * 0.15).toFixed(5)}
                    </span>
                 )}
               </div>
             )}
+
+            <button
+              onClick={handleSaveSkill}
+              disabled={isSavingSkill || hasSavedSkill}
+              className={cn(
+                "ml-auto flex items-center gap-2 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest transition-all",
+                hasSavedSkill 
+                  ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
+                  : "bg-primary/10 text-primary hover:bg-primary/20 border border-transparent hover:border-primary/30"
+              )}
+            >
+              {isSavingSkill ? (
+                <Loader2 size={10} className="animate-spin" />
+              ) : hasSavedSkill ? (
+                <Check size={10} />
+              ) : (
+                <Lightbulb size={10} />
+              )}
+              {hasSavedSkill ? t("status_success") : t("save_as_skill")}
+            </button>
           </div>
         )}
       </div>

@@ -43,12 +43,18 @@ export const ChatMessageContent = memo(function ChatMessageContent({
       const code = String(children).replace(/\n$/, "");
       return match ? (
         <Suspense
-          fallback={<pre className="whitespace-pre-wrap overflow-x-auto bg-bg-base/50 p-2 rounded">{code}</pre>}
+          fallback={
+            <div className="my-6 glass-surface-low p-6 animate-pulse min-h-[100px] flex flex-col gap-3 rounded-[1.5rem]">
+              <div className="h-2 w-24 bg-white/10 rounded-full" />
+              <div className="h-2 w-full bg-white/5 rounded-full" />
+              <div className="h-2 w-3/4 bg-white/5 rounded-full" />
+            </div>
+          }
         >
           <LazyMarkdownCodeBlock language={match[1]} code={code} />
         </Suspense>
       ) : (
-        <code className="bg-bg-base/50 px-1 rounded text-[12px]" {...props}>
+        <code className="bg-muted/60 text-primary font-mono text-[13px] px-1.5 py-0.5 rounded-md border border-border/40" {...props}>
           {children}
         </code>
       );
@@ -56,12 +62,11 @@ export const ChatMessageContent = memo(function ChatMessageContent({
   };
 
   return (
-    <div className={cn("chat-markdown w-full flex flex-col", className)}>
+    <div className={cn("chat-markdown w-full flex flex-col gap-5", className)}>
       {thinking && (
         <ThinkingBlock 
           content={thinking} 
           isStreaming={isStreaming && !actualContent}
-          label="Inference Logic"
         />
       )}
       {processedContent && (

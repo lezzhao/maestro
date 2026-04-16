@@ -90,104 +90,105 @@ export function WorkspaceCreateDialog({ open, onClose }: WorkspaceCreateDialogPr
 
   return (
     <div 
-      className="fixed inset-0 flex items-center justify-center p-4 bg-black/40 backdrop-blur-md animate-in fade-in duration-500"
+      className="fixed inset-0 flex items-center justify-center p-4 bg-background/80 backdrop-blur-md animate-in fade-in duration-500"
       style={{ zIndex: Z_INDEX.DIALOG }}
     >
-      <div className="w-[440px] bg-bg-surface border border-border-muted/20 rounded-3xl shadow-[0_32px_64px_-16px_rgba(0,0,0,0.4)] overflow-hidden animate-in zoom-in-[0.98] slide-in-from-bottom-4 duration-300">
+      <div className="w-[480px] bg-card border border-border/60 rounded-[2.5rem] shadow-2xl shadow-black/20 overflow-hidden animate-in zoom-in-[0.98] slide-in-from-bottom-4 duration-500">
         {/* Premium Header */}
-        <div className="flex items-center justify-between px-8 pt-8 pb-4">
-          <div className="space-y-1">
-            <h2 className="text-xl font-black text-text-main tracking-tight uppercase">New Workspace</h2>
-            <p className="text-[10px] font-bold text-text-muted/40 uppercase tracking-widest">Architect your next mission</p>
+        <div className="flex items-center justify-between px-10 pt-10 pb-6">
+          <div className="space-y-1.5">
+            <h2 className="text-2xl font-bold text-foreground tracking-tight">Create Workspace</h2>
+            <p className="text-[11px] font-bold text-muted-foreground/40 uppercase tracking-[0.1em]">Set up your next project environment</p>
           </div>
-          <button onClick={onClose} className="text-text-muted/40 hover:text-text-main p-2 rounded-full hover:bg-bg-subtle transition-all active:scale-90">
-            <X size={20} />
+          <button onClick={onClose} className="text-muted-foreground/30 hover:text-foreground p-2.5 rounded-full hover:bg-muted transition-all active:scale-95">
+            <X size={24} />
           </button>
         </div>
 
-        <div className="px-8 pb-8 space-y-8">
-          <div className="space-y-6 pt-2">
+        <div className="px-10 pb-10 space-y-8">
+          <div className="space-y-7">
             {/* Error Message */}
             {error && (
-              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 animate-in slide-in-from-top-2 duration-300">
-                <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest">System Error</p>
-                <p className="text-[11px] text-red-400 font-medium leading-relaxed">{error}</p>
+              <div className="p-4 rounded-2xl bg-destructive/5 border border-destructive/20 animate-in slide-in-from-top-2 duration-300">
+                <p className="text-[11px] font-bold text-destructive uppercase tracking-widest">Configuration Error</p>
+                <p className="text-[12px] text-destructive/80 font-medium leading-relaxed mt-0.5">{error}</p>
               </div>
             )}
 
             {/* Project Name */}
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-text-muted/50 uppercase tracking-[0.2em] pl-0.5">Title / Metadata</label>
+            <div className="space-y-3">
+              <label className="text-[11px] font-bold text-muted-foreground/50 uppercase tracking-[0.15em] ml-1">Workspace Name</label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Phoenix Project..."
-                className="w-full h-12 px-4 text-sm font-bold rounded-2xl border border-border-muted/10 bg-bg-base/30 text-text-main placeholder:text-text-muted/20 focus:outline-none focus:border-primary/40 focus:ring-4 focus:ring-primary/5 transition-all"
+                placeholder="E.g., Maestro Project..."
+                className="w-full h-14 px-6 text-[15px] font-bold rounded-2xl border border-border/40 bg-muted/30 text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/40 focus:ring-4 focus:ring-primary/5 transition-all duration-300"
                 autoFocus
                 onKeyDown={(e) => e.key === "Enter" && handleCreate()}
               />
             </div>
 
             {/* Directory Selection */}
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-text-muted/50 uppercase tracking-[0.2em] pl-0.5">
-                Target Pipeline <span className="opacity-30 normal-case italic font-medium ml-1">(Optional)</span>
+            <div className="space-y-3">
+              <label className="text-[11px] font-bold text-muted-foreground/50 uppercase tracking-[0.15em] ml-1">
+                Local Folder <span className="opacity-40 normal-case font-medium ml-1">(Optional)</span>
               </label>
-              <div className="flex gap-2">
+              <div className="flex gap-3">
                 <input
                   type="text"
                   value={workingDirectory}
                   onChange={(e) => setWorkingDirectory(e.target.value)}
-                  placeholder="Pure Inference Mode"
-                  className="flex-1 h-12 px-4 text-[11px] font-mono font-medium rounded-2xl border border-border-muted/10 bg-bg-base/30 text-text-main placeholder:text-text-muted/20 focus:outline-none focus:border-primary/40 transition-all truncate"
+                  placeholder="Chat-only mode"
+                  className="flex-1 h-14 px-6 text-[12px] font-mono font-medium rounded-2xl border border-border/40 bg-muted/30 text-foreground placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/40 transition-all duration-300 truncate"
                 />
                 <button
                   type="button"
-                  className="w-12 h-12 flex items-center justify-center rounded-2xl bg-bg-elevated border border-border-muted/20 text-text-muted/60 hover:text-primary hover:border-primary/40 transition-all shadow-sm active:scale-95"
+                  className="w-14 h-14 flex items-center justify-center rounded-2xl bg-muted border border-border/40 text-muted-foreground/60 hover:text-primary hover:border-primary/40 transition-all shadow-sm active:scale-95 group"
                   onClick={() => void handlePickDirectory()}
+                  title="Choose Folder"
                 >
-                  <FolderOpen size={18} />
+                  <FolderOpen size={20} className="group-hover:scale-110 transition-transform" />
                 </button>
               </div>
             </div>
 
             {/* Active Core Indicator */}
             <div className={cn(
-               "flex items-center gap-4 p-4 rounded-2xl border transition-all duration-500",
+               "flex items-center gap-5 p-5 rounded-2xl border transition-all duration-500",
                isPureChat 
-                ? "bg-amber-500/5 border-amber-500/10 shadow-inner" 
-                : "bg-emerald-500/5 border-emerald-500/10 shadow-inner"
+                ? "bg-amber-500/5 border-amber-500/10" 
+                : "bg-primary/5 border-primary/10"
             )}>
               <div className={cn(
-                "w-10 h-10 flex items-center justify-center rounded-xl",
-                isPureChat ? "bg-amber-500/10 text-amber-500" : "bg-emerald-500/10 text-emerald-500"
+                "w-12 h-12 flex items-center justify-center rounded-xl transition-all duration-500",
+                isPureChat ? "bg-amber-500/10 text-amber-500" : "bg-primary/10 text-primary"
               )}>
-                {isPureChat ? <MessageSquare size={18} /> : <FolderTree size={18} />}
+                {isPureChat ? <MessageSquare size={22} /> : <FolderTree size={22} />}
               </div>
-              <div className="space-y-0.5">
-                 <p className={cn("text-[11px] font-black uppercase tracking-widest", isPureChat ? "text-amber-600/80" : "text-emerald-600/80")}>
-                   {isPureChat ? "Inference Stream" : "Agent Orchestration"}
+              <div className="space-y-1">
+                 <p className={cn("text-[12px] font-bold uppercase tracking-[0.05em]", isPureChat ? "text-amber-600/90" : "text-primary/90")}>
+                   {isPureChat ? "Direct Inference" : "Agent Orchestration"}
                  </p>
-                 <p className="text-[10px] text-text-muted/60 font-medium leading-tight">
-                   {isPureChat ? "Zero disk footprint. Ultra-fast LLM interaction." : "Full file-system access with autonomous execution."}
+                 <p className="text-[11px] text-muted-foreground/70 font-medium leading-[1.4]">
+                   {isPureChat ? "Ultra-fast LLM interaction with zero disk footprint." : "Full file-system access with autonomous task execution."}
                  </p>
               </div>
             </div>
 
             {/* Visual Identity */}
-            <div className="space-y-3">
-              <label className="text-[10px] font-black text-text-muted/50 uppercase tracking-[0.2em] pl-0.5">Branding / Color</label>
-              <div className="flex flex-wrap gap-3">
+            <div className="space-y-4 pt-1">
+              <label className="text-[11px] font-bold text-muted-foreground/50 uppercase tracking-[0.15em] ml-1">Workspace Color</label>
+              <div className="flex flex-wrap gap-3.5 pl-1">
                 {WORKSPACE_COLORS.map((c) => (
                   <button
                     key={c}
                     onClick={() => setColor(c)}
-                    className="w-6 h-6 rounded-full transition-all group relative saturate-[0.8] hover:saturate-[1.2] hover:scale-110"
-                    style={{ backgroundColor: c }}
+                    className="w-7 h-7 rounded-full transition-all group relative border-2 border-transparent"
+                    style={{ backgroundColor: c, opacity: color === c ? 1 : 0.6 }}
                   >
                     {color === c && (
-                      <div className="absolute -inset-1 rounded-full border-2 border-primary/40 animate-in fade-in zoom-in duration-300" />
+                      <div className="absolute -inset-1.5 rounded-full border-2 border-primary/30 animate-in fade-in zoom-in duration-500" />
                     )}
                     <div className="absolute inset-0 rounded-full opacity-0 group-hover:opacity-10 shadow-inner bg-white" />
                   </button>
@@ -197,25 +198,23 @@ export function WorkspaceCreateDialog({ open, onClose }: WorkspaceCreateDialogPr
           </div>
 
           {/* Action Hub */}
-          <div className="flex gap-3 pt-4">
+          <div className="flex gap-4 pt-6">
             <Button
-              variant="ghost"
+              variant="secondary"
               onClick={onClose}
-              className="flex-1 h-12 text-[10px] font-black uppercase tracking-[0.2em] text-text-muted/40 hover:text-text-main hover:bg-bg-subtle rounded-2xl transition-all"
+              className="flex-1 h-14 text-[11px] font-bold uppercase tracking-[0.1em] rounded-2xl"
             >
-              System Abort
+              Cancel
             </Button>
             <Button
               disabled={!name.trim() || creating}
               onClick={() => void handleCreate()}
               className={cn(
-                "flex-[1.5] h-12 font-black text-[10px] uppercase tracking-[0.2em] rounded-2xl shadow-lg transition-all active:scale-[0.98]",
-                creating 
-                  ? "bg-bg-elevated text-text-muted/40 cursor-wait" 
-                  : "bg-primary text-white hover:bg-primary/90 hover:shadow-primary/20"
+                "flex-[1.5] h-14 font-bold text-[11px] uppercase tracking-[0.1em] rounded-2xl shadow-xl shadow-primary/10 transition-all active:scale-[0.98]",
+                !creating && name.trim() ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-muted text-muted-foreground/40"
               )}
             >
-              {creating ? "Launching Core..." : "Initiate Workspace"}
+              {creating ? "Connecting..." : "Create Workspace"}
             </Button>
           </div>
         </div>

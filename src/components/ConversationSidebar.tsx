@@ -33,7 +33,8 @@ export function ConversationSidebar() {
     refreshConversations(activeTaskId);
   }, [activeTaskId, refreshConversations]);
 
-  const handleCreate = async () => {
+  const handleCreate = async (e: React.MouseEvent) => {
+    e.stopPropagation();
     await createNewConversation(activeTaskId, activeEngineId, activeProfile?.id ?? "default");
   };
 
@@ -57,77 +58,62 @@ export function ConversationSidebar() {
   };
 
   const getEngineIcon = (engineId: string) => {
-    if (engineId?.includes("claude")) return <Zap size={8} className="text-amber-500" />;
-    if (engineId?.includes("gemini")) return <Sparkles size={8} className="text-blue-500" />;
-    if (engineId?.includes("codex") || engineId?.includes("openai")) return <Cpu size={8} className="text-emerald-500" />;
-    return <Hash size={8} className="text-text-muted/40" />;
+    if (engineId?.includes("claude")) return <Zap size={10} className="text-amber-400" />;
+    if (engineId?.includes("gemini")) return <Sparkles size={10} className="text-blue-400" />;
+    if (engineId?.includes("codex") || engineId?.includes("openai")) return <Cpu size={10} className="text-emerald-400" />;
+    return <Hash size={10} className="text-muted-foreground/40" />;
   };
 
   return (
-    <div className="flex flex-col h-full bg-transparent overflow-hidden border-t border-border-muted/5">
-      <div className="p-4 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-text-muted">
-          <Clock size={14} />
-          <span className="text-[11px] font-bold uppercase tracking-wider">History</span>
+    <div className="flex flex-col mt-6">
+      <div className="flex items-center justify-between px-4 py-2 mb-2">
+        <div className="flex items-center gap-2 text-muted-foreground/40 font-black">
+          <Clock size={12} />
+          <span className="text-[10px] uppercase tracking-[0.2em]">History</span>
         </div>
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          className="h-6 w-6 rounded-md hover:bg-primary/10 hover:text-primary transition-all"
+        <button 
+          className="p-1 px-1.5 rounded-lg hover:bg-primary/10 text-muted-foreground/60 hover:text-primary transition-all active:scale-95"
           onClick={handleCreate}
         >
           <Plus size={14} />
-        </Button>
+        </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-2 pb-4 custom-scrollbar">
+      <div className="space-y-1 px-2">
         <AnimatePresence mode="popLayout" initial={false}>
           {conversations.length === 0 ? (
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="py-12 px-4 text-center"
+              className="py-12 px-6 text-center bg-muted/5 rounded-2xl border border-dashed border-border/20"
             >
-              <div className="w-8 h-8 rounded-full bg-bg-surface/30 border border-border-muted/5 flex items-center justify-center mx-auto mb-3 opacity-20">
-                <MessageSquare size={14} />
-              </div>
-              <p className="text-[11px] text-text-muted/40 italic font-medium uppercase tracking-tighter">No History Yet</p>
+              <p className="text-[11px] font-medium text-muted-foreground/30 uppercase tracking-widest">Awaiting Chat</p>
             </motion.div>
           ) : (
             conversations.map((conv) => (
               <motion.div
                 layout
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 key={conv.id}
                 onClick={() => !editingId && switchConversation(activeTaskId, conv.id)}
                 className={cn(
-                  "group relative flex flex-col p-3 rounded-xl cursor-pointer transition-all duration-300 border border-transparent my-1",
+                  "group relative flex flex-col p-4 rounded-2xl cursor-pointer transition-all duration-300 border inner-border",
                   activeId === conv.id 
-                    ? "bg-primary/5 border-primary/20 shadow-sm ring-1 ring-primary/5" 
-                    : "hover:bg-bg-surface/80 hover:border-border-muted/20"
+                    ? "bg-glass-surface-strong border-white/[0.08] shadow-md scale-[1.02] z-10" 
+                    : "bg-transparent border-transparent hover:bg-white/[0.02] hover:border-white/[0.04]"
                 )}
               >
-                <div className="flex items-start justify-between gap-2">
+                <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1.5">
-                      <div className="shrink-0 relative">
-                        {activeId === conv.id && (
-                          <div className="absolute -inset-1 bg-primary/20 blur-md rounded-full animate-pulse" />
-                        )}
-                        <MessageSquare size={12} className={cn(
-                          "relative transition-colors",
-                          activeId === conv.id ? "text-primary" : "text-text-muted/60 group-hover:text-text-muted"
-                        )} />
-                      </div>
-                      
+                    <div className="flex items-center gap-3 mb-2.5">
                       {editingId === conv.id ? (
-                        <div className="flex items-center gap-1 flex-1">
+                        <div className="flex items-center gap-2 flex-1">
                           <input
                             autoFocus
-                            className="bg-bg-base border border-primary/30 rounded px-1.5 py-0.5 text-[12px] w-full focus:outline-none focus:ring-1 focus:ring-primary/50"
+                            className="bg-background border border-primary/40 rounded-lg px-2 py-1 text-[13px] w-full focus:outline-none ring-2 ring-primary/5"
                             value={editTitle}
                             onChange={(e) => setEditTitle(e.target.value)}
                             onKeyDown={(e) => {
@@ -136,52 +122,38 @@ export function ConversationSidebar() {
                             }}
                             onClick={(e) => e.stopPropagation()}
                           />
-                          <button onClick={confirmRename} className="p-1 hover:text-emerald-500"><Check size={10} /></button>
-                          <button onClick={cancelRename} className="p-1 hover:text-rose-500"><X size={10} /></button>
                         </div>
                       ) : (
                         <span className={cn(
-                          "text-[12px] font-bold truncate block tracking-tight line-clamp-1",
-                          activeId === conv.id ? "text-text-main" : "text-text-muted group-hover:text-text-main"
+                          "text-[13px] font-bold truncate block tracking-tight leading-tight",
+                          activeId === conv.id ? "text-foreground" : "text-muted-foreground/70 group-hover:text-foreground"
                         )} onDoubleClick={(e) => startEditing(e, conv)}>
-                          {conv.title || "Untitled Conversation"}
+                          {conv.title || "Untitled Chat"}
                         </span>
                       )}
                     </div>
                     
-                    <div className="flex items-center gap-2 text-[9px] font-medium uppercase tracking-[0.05em] text-text-muted/50">
-                      <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-bg-surface/50 border border-border-muted/10">
+                    <div className="flex items-center gap-3 text-[9px] font-black uppercase tracking-widest text-muted-foreground/20">
+                      <div className="flex items-center gap-1.5">
                         {getEngineIcon(conv.engineId)}
                         <span className="opacity-80">{conv.engineId?.split("-")[0] || "core"}</span>
                       </div>
-                      <span>•</span>
-                      <span>{conv.messageCount} messages</span>
-                      <span>•</span>
-                      <span className="opacity-40 whitespace-nowrap">
-                        {formatDistanceToNow(conv.updatedAt, { addSuffix: true, locale: zhCN })}
-                      </span>
+                      <span className="w-1 h-1 rounded-full bg-border/40" />
+                      <span>{conv.messageCount} msg</span>
                     </div>
                   </div>
                   
-                  <div className="flex flex-col gap-1.5 opacity-0 group-hover:opacity-100 transition-all">
-                    <button
-                      onClick={(e) => startEditing(e, conv)}
-                      className="p-1.5 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors"
-                      title="Rename"
-                    >
-                      <Edit2 size={10} />
-                    </button>
+                  <div className="flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (confirm("Delete this conversation?")) {
+                        if (confirm("Delete thread?")) {
                           deleteConversation(activeTaskId, conv.id);
                         }
                       }}
-                      className="p-1.5 rounded-lg hover:bg-destructive/10 hover:text-destructive transition-colors"
-                      title="Delete"
+                      className="p-1 px-1.5 rounded-lg text-muted-foreground/30 hover:text-rose-400 hover:bg-rose-400/10 transition-all"
                     >
-                      <Trash2 size={10} />
+                      <Trash2 size={12} />
                     </button>
                   </div>
                 </div>

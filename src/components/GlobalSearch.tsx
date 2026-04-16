@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Search, File, X, Loader2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
-import { useAppUiState } from "../hooks/use-app-store-selectors";
+import { useAppUiState, useWorkspaceStoreState } from "../hooks/use-app-store-selectors";
 import { useAppStore } from "../stores/appStore";
 import { useTranslation } from "../i18n";
 
@@ -19,6 +19,7 @@ export function GlobalSearch() {
   const [isSearching, setIsSearching] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const { activeWorkspaceId } = useAppUiState();
+  const { togglePinnedFile } = useWorkspaceStoreState();
   const projectPath = useAppStore(state => state.workspaces.find(w => w.id === activeWorkspaceId)?.workingDirectory);
   
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -65,9 +66,9 @@ export function GlobalSearch() {
   if (!activeWorkspaceId) return null;
 
   return (
-    <div className="px-3 mb-4">
+    <div className="px-4 mb-4">
       <div className="relative group">
-        <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-text-muted/40 group-focus-within:text-primary transition-colors">
+        <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-muted-foreground/20 group-focus-within:text-primary/50 transition-colors">
           <Search size={14} />
         </div>
         <input
@@ -79,12 +80,19 @@ export function GlobalSearch() {
           }}
           onFocus={() => setIsOpen(true)}
           placeholder={t("search_placeholder")}
-          className="w-full h-9 pl-9 pr-8 bg-bg-base/40 border border-border-muted/20 rounded-xl text-[12px] focus:outline-none focus:ring-1 focus:ring-primary/30 focus:bg-bg-base/60 transition-all placeholder:text-text-muted/30"
+          className="w-full h-10 pl-9 pr-12 bg-muted/10 border border-border/5 rounded-xl text-[12px] font-bold focus:outline-none focus:ring-2 focus:ring-primary/10 focus:bg-background focus:border-primary/20 transition-all placeholder:text-muted-foreground/20"
         />
+        <div className="absolute inset-y-0 right-3 flex items-center gap-1.5 pointer-events-none">
+          {!query && (
+            <kbd className="hidden sm:flex h-5 select-none items-center gap-1 rounded border border-border/20 bg-muted/20 px-1.5 font-mono text-[10px] font-bold text-muted-foreground/30 opacity-100">
+              <span className="text-[10px]">⌘</span>K
+            </kbd>
+          )}
+        </div>
         {query && (
           <button 
             onClick={() => { setQuery(""); setResults([]); }}
-            className="absolute inset-y-0 right-2 flex items-center text-text-muted/40 hover:text-text-main"
+            className="absolute inset-y-0 right-2 flex items-center text-muted-foreground/40 hover:text-foreground"
           >
             <X size={12} />
           </button>
@@ -92,48 +100,49 @@ export function GlobalSearch() {
       </div>
 
       {isOpen && query && (
-        <div className="mt-2 max-h-[300px] bg-bg-surface border border-border-muted/30 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="p-2 border-b border-border-muted/10 bg-bg-base/20 flex justify-between items-center">
-            <span className="text-[9px] font-black uppercase text-text-muted/50 tracking-widest pl-1">
+        <div className="mt-2 max-h-[360px] bg-glass-surface border border-border shadow-2xl rounded-2xl overflow-hidden z-dropdown animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="px-4 py-3 border-b border-border/10 bg-muted/40 flex justify-between items-center">
+            <span className="text-[10px] font-black uppercase text-muted-foreground/40 tracking-[0.2em] px-1">
               {isSearching ? t("searching") : t("search_results_count", { n: results.length })}
             </span>
-            {isSearching && <Loader2 size={10} className="animate-spin text-primary" />}
+            {isSearching && <Loader2 size={12} className="animate-spin text-primary/60" />}
           </div>
           
-          <div className="overflow-y-auto max-h-[250px] p-1">
+          <div className="overflow-y-auto max-h-[260px] p-2 no-scrollbar space-y-1">
             {results.length > 0 ? (
               results.map((res, idx) => (
                 <button
                   key={`${res.file}-${res.line}-${idx}`}
-                  className="w-full p-2 flex flex-col items-start gap-1 hover:bg-primary/5 rounded-lg transition-colors group/item"
+                  className="w-full p-3 flex flex-col items-start gap-1.5 hover:bg-primary/5 rounded-xl transition-all group/item active:scale-[0.98]"
                   onClick={() => {
-                    // TODO: Trigger file open/jump
+                    togglePinnedFile(res.file);
+                    toast.success(t("file_pinned", { file: res.file }));
                     setIsOpen(false);
                   }}
                 >
                   <div className="flex items-center gap-2 w-full">
-                    <File size={12} className="text-text-muted/40" />
-                    <span className="text-[11px] font-bold text-text-main truncate flex-1 text-left">{res.file}</span>
-                    <span className="text-[10px] text-text-muted/30 font-mono">L{res.line}</span>
+                    <File size={14} className="text-primary/20 group-hover/item:text-primary/40 transition-colors" />
+                    <span className="text-[13px] font-bold text-foreground/80 truncate flex-1 text-left tracking-tight group-hover/item:text-primary transition-colors">{res.file}</span>
+                    <span className="text-[10px] text-muted-foreground/30 font-mono px-1.5 py-0.5 rounded bg-muted/20">L{res.line}</span>
                   </div>
-                  <div className="text-[10px] text-text-muted/60 font-mono truncate w-full text-left bg-bg-base/30 px-1.5 py-0.5 rounded border border-border-muted/5 group-hover/item:border-primary/20">
+                  <div className="text-[11px] text-muted-foreground/50 font-mono truncate w-full text-left bg-muted/10 px-3 py-2 rounded-lg border border-border/5 group-hover/item:border-primary/10 transition-colors">
                     {res.content}
                   </div>
                 </button>
               ))
             ) : !isSearching && (
-              <div className="py-8 text-center text-text-muted/30 text-[11px] italic">
+              <div className="py-12 text-center text-muted-foreground/20 text-[12px] font-bold tracking-tight">
                 {t("no_results_found")}
               </div>
             )}
           </div>
           
-          <div className="p-2 border-t border-border-muted/10 bg-bg-base/10 flex items-center gap-3 justify-center">
-            <div className="flex items-center gap-1 text-[9px] text-text-muted/40">
-              <kbd className="px-1 rounded bg-bg-base border border-border-muted/20 font-mono">↑↓</kbd> {t("search_select")}
+          <div className="p-3 border-t border-border/10 bg-muted/20 flex items-center gap-6 justify-center">
+            <div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground/40 uppercase tracking-widest">
+              <kbd className="px-2 py-0.5 rounded-md bg-background border border-border/20 shadow-sm font-mono text-[9px]">↑↓</kbd> <span>Select</span>
             </div>
-            <div className="flex items-center gap-1 text-[9px] text-text-muted/40">
-              <kbd className="px-1 rounded bg-bg-base border border-border-muted/20 font-mono">↵</kbd> {t("search_navigate")}
+            <div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground/40 uppercase tracking-widest">
+              <kbd className="px-2 py-0.5 rounded-md bg-background border border-border/20 shadow-sm font-mono text-[9px]">↵</kbd> <span>Open</span>
             </div>
           </div>
         </div>

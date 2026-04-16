@@ -44,31 +44,31 @@ export function MarkdownCodeBlock({ language, code }: Props) {
   };
 
   return (
-    <div className="group relative my-4 rounded-2xl border border-border-muted/10 bg-bg-surface/5 backdrop-blur-xl shadow-lg overflow-hidden transition-all duration-300 hover:border-primary/20 hover:shadow-glow">
-      <div className="flex items-center justify-between px-5 py-2.5 bg-bg-base/30 border-b border-border-muted/10 backdrop-blur-md">
-        <span className="text-[10px] font-bold text-text-muted/80 uppercase tracking-widest">{language}</span>
-        <div className="flex items-center gap-2">
+    <div className="group relative my-6 rounded-2xl border border-white/[0.04] bg-[#0A0A0B]/80 shadow-lg overflow-hidden transition-all duration-300 hover:border-primary/30 inner-border">
+      <div className="flex items-center justify-between px-6 py-3 bg-white/[0.02] border-b border-white/[0.02] backdrop-blur-md">
+        <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-[0.2em]">{language}</span>
+        <div className="flex items-center gap-3">
           {isPreviewable && (
             <button
               onClick={() => setActiveArtifact({ code, language, title: `Preview: ${language}` })}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] text-primary-400 bg-primary-500/5 hover:bg-primary-500/15 border border-primary-500/10 transition-all font-bold tracking-wider"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] text-primary bg-primary/5 hover:bg-primary/10 border border-primary/20 transition-all font-bold tracking-wider"
             >
-              <Eye size={12} />
+              <Eye size={14} />
               PREVIEW
             </button>
           )}
           <button
             onClick={handleCopy}
-            className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] text-text-muted hover:text-primary-400 hover:bg-primary-500/10 transition-all font-medium"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted transition-all font-bold tracking-wider"
           >
             {copied ? (
               <>
-                <Check size={12} className="text-success-500" />
+                <Check size={14} className="text-primary" />
                 <span>COPIED</span>
               </>
             ) : (
               <>
-                <Clipboard size={12} />
+                <Clipboard size={14} />
                 <span>COPY</span>
               </>
             )}
@@ -81,12 +81,18 @@ export function MarkdownCodeBlock({ language, code }: Props) {
         PreTag="div"
         customStyle={{
           margin: 0,
-          padding: "16px",
+          padding: "24px",
           backgroundColor: "transparent",
-          fontSize: "12.5px",
-          lineHeight: "1.6",
+          fontSize: "13px",
+          lineHeight: "1.7",
+          fontFamily: "var(--font-mono)",
         }}
-        codeTagProps={{ style: { fontFamily: "JetBrains Mono, Fira Code, monospace" } }}
+        codeTagProps={{
+          style: {
+            fontFamily: "var(--font-mono)",
+            background: "transparent",
+          }
+        }}
       >
         {code}
       </SyntaxHighlighter>

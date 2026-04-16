@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { RefreshCcw } from "lucide-react";
-import { useAppUiState } from "../hooks/use-app-store-selectors";
+import { useAppUiState, useWorkspaceStoreState } from "../hooks/use-app-store-selectors";
 import { useTranslation } from "../i18n";
 import { cn } from "../lib/utils";
 import { useChatSession } from "../hooks/useChatSession";
@@ -8,6 +8,8 @@ import { useChatPanelActions } from "../hooks/use-chat-panel-actions";
 import { useTaskRunning } from "../hooks/use-task-chat-state";
 import { MessageList } from "./chat/MessageList";
 import { ChatInput } from "./chat/ChatInput";
+import { ModeToggle } from "./ui/ModeToggle";
+import { PanelHeader } from "./ui/PanelHeader";
 import { useTaskRuntimeContext } from "../hooks/useTaskRuntimeContext";
 import type { AppTask } from "../types";
 
@@ -27,6 +29,7 @@ export function ChatPanel({
   const { engineId: activeEngineId, engine: activeEngine, profile: activeProfile, executionMode, isReady } = useTaskRuntimeContext();
   const activeTaskId = activeTask?.id || null;
   const { setShowSettings } = useAppUiState();
+  const { pinnedFiles, togglePinnedFile } = useWorkspaceStoreState();
   const isRunning = useTaskRunning(activeTaskId);
 
   const {
@@ -80,53 +83,27 @@ export function ChatPanel({
     : "";
 
   return (
-    <div className="flex flex-col h-full bg-transparent animate-in fade-in duration-200">
-      <div className="flex items-center justify-end h-[36px] px-4 border-b border-border-muted/10 shrink-0 gap-4">
-        {Boolean(activeProfile?.api_provider || activeProfile?.api_base_url) && (
-          <div className="flex items-center space-x-2">
-            <button
-              type="button"
-              className={cn(
-                "relative px-1.5 py-1 text-[10px] font-bold tracking-wider uppercase transition-colors shrink-0",
-                executionMode === "api"
-                  ? "text-emerald-500"
-                  : "text-text-muted/40 hover:text-text-main",
-              )}
-              onClick={() => void onSetExecutionMode("api")}
-            >
-              API
-              {executionMode === "api" && <div className="absolute -bottom-1 left-0 right-0 h-[2px] bg-emerald-500 rounded-full shadow-[0_0_6px_rgba(16,185,129,0.5)]" />}
-            </button>
-            <span className="text-text-muted/20 text-[10px]">|</span>
-            <button
-              type="button"
-              className={cn(
-                "relative px-1.5 py-1 text-[10px] font-bold tracking-wider uppercase transition-colors shrink-0",
-                executionMode === "cli"
-                  ? "text-amber-500"
-                  : "text-text-muted/40 hover:text-text-main",
-              )}
-              onClick={() => void onSetExecutionMode("cli")}
-            >
-              CLI
-              {executionMode === "cli" && <div className="absolute -bottom-1 left-0 right-0 h-[2px] bg-amber-500 rounded-full shadow-[0_0_6px_rgba(245,158,11,0.5)]" />}
-            </button>
-          </div>
+    <div className="flex flex-col h-full bg-transparent overflow-hidden animate-in fade-in duration-200">
+      <PanelHeader 
+        title={Boolean(activeProfile?.api_provider || activeProfile?.api_base_url) && (
+          <ModeToggle 
+            mode={executionMode || "cli"} 
+            onChange={(m) => void onSetExecutionMode(m)} 
+          />
         )}
-
-        <div className="flex items-center gap-2">
+        actions={
           <button
             onClick={() => {
               void handleClearChat();
             }}
             disabled={isRunning}
-            className="text-text-muted hover:text-rose-500 p-1.5 rounded-lg hover:bg-rose-500/10 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            className="text-muted-foreground/30 hover:text-rose-500 p-2 rounded-xl hover:bg-rose-500/10 transition-all disabled:opacity-20 disabled:cursor-not-allowed group active:scale-90"
             title={isRunning ? "执行中不可清空，请先停止任务" : t("clear_chat")}
           >
-            <RefreshCcw size={12} />
+            <RefreshCcw size={16} className="group-hover:rotate-180 transition-transform duration-700" />
           </button>
-        </div>
-      </div>
+        }
+      />
 
       <MessageList 
         taskId={activeTaskId}
@@ -149,13 +126,16 @@ export function ChatPanel({
         pendingAttachments={pendingAttachments}
         removePendingAttachment={removePendingAttachment}
         addPendingAttachments={addPendingAttachments}
+        pinnedFiles={pinnedFiles}
+        removePinnedFile={togglePinnedFile}
         handleSend={handleSend}
         handleStop={handleStop}
-        placeholder={chatLabels.inputPlaceholder}
+        placeholder={!isReady ? t("chat_input_placeholder_unavailable") : chatLabels.inputPlaceholder}
         sendBlocked={isActiveEngineUnavailable}
         sendBlockedReason={sendBlockedReason}
         onRecoveryAction={() => setShowSettings(true)}
         recoveryActionLabel={t("go_setup")}
+        taskId={activeTaskId}
       />
     </div>
   );
