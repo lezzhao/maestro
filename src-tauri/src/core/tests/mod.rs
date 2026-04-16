@@ -1,1 +1,2 @@
-mod breakage_contracts;
+pub mod breakage_contracts;
+pub mod integration;

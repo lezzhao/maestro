@@ -34,10 +34,10 @@ fn create_test_config() -> AppConfig {
         plugin_type: "cli".to_string(),
         display_name: "Engine".to_string(),
         icon: "".to_string(),
-        profiles: profiles.clone(),
+        profiles: profiles,
         active_profile_id: "default".to_string(),
         category: None,
-        legacy_profile: mock_profile("default"),
+        extra: std::collections::BTreeMap::new(),
     };
 
     let mut engines = BTreeMap::new();

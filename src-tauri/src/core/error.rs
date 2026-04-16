@@ -38,6 +38,9 @@ pub enum CoreError {
 
     #[error("Db: {message}")]
     Db { message: String },
+
+    #[error("QueueFull: {message}")]
+    QueueFull { message: String },
 }
 
 impl Serialize for CoreError {
@@ -76,6 +79,7 @@ impl Serialize for CoreError {
             }
             CoreError::PermissionDenied { reason } => ("ERR_PERMISSION_DENIED", reason.clone()),
             CoreError::Db { message } => ("ERR_DB", message.clone()),
+            CoreError::QueueFull { message } => ("ERR_QUEUE_FULL", message.clone()),
         };
         let mut state = serializer.serialize_struct("CoreError", 2)?;
         state.serialize_field("code", code)?;

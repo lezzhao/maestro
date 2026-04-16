@@ -25,13 +25,17 @@ pub mod execution;
 pub mod pty_spawn_guard;
 pub mod task_switch_transaction;
 pub mod completion_enforcer;
+pub mod harness;
 
 // Application Services (Facade Splitting)
 pub mod engine_app_service;
 pub mod execution_app_service;
 pub mod pty_app_service;
 pub mod spec_app_service;
+pub mod harness_app_service;
 pub mod task_app_service;
+pub mod vision_app_service;
+pub mod voice_app_service;
 pub mod workflow_app_service;
 
 #[cfg(test)]
@@ -60,13 +64,23 @@ pub struct MaestroCore {
     pub safety_manager: Arc<SafetyManager>,
     pub tool_registry: Arc<ToolRegistry>,
     pub run_queue: crate::task::queue::TaskQueue,
+    pub event_registry: Arc<crate::agent_state::registry::EventRegistry>,
+    pub harness_mgr: Arc<harness::HarnessManager>,
+    pub state_db_path: std::path::PathBuf,
+    pub start_time: std::time::Instant,
 }
 
 impl MaestroCore {
-    pub fn new(config: AppConfig) -> Self {
+    pub fn new(config: AppConfig, state_db_path: std::path::PathBuf) -> Self {
         let mcp_service = Arc::new(McpService::new());
         let safety_manager = Arc::new(SafetyManager::new());
-        let tool_registry = Arc::new(ToolRegistry::new(mcp_service.clone()));
+        let harness_mgr = Arc::new(harness::HarnessManager::new(state_db_path.clone()));
+
+        // Initialize SandboxManager from config
+        let sandbox_manager = crate::tools::sandbox::SandboxManager::new(config.sandbox_isolation_mode);
+        let tool_registry = Arc::new(ToolRegistry::new(mcp_service.clone(), sandbox_manager, harness_mgr.clone(), state_db_path.clone()));
+        
+        let event_registry = Arc::new(crate::agent_state::registry::EventRegistry::new());
 
         Self {
             config: AppConfigState::new(config.clone()),
@@ -78,7 +92,16 @@ impl MaestroCore {
             safety_manager,
             tool_registry,
             run_queue: crate::task::queue::TaskQueue::new(config.max_concurrent_tasks),
+            event_registry,
+            harness_mgr,
+            state_db_path,
+            start_time: std::time::Instant::now(),
         }
+    }
+
+    /// Use-Case: Get uptime of the core instance
+    pub fn uptime(&self) -> std::time::Duration {
+        self.start_time.elapsed()
     }
 
     /// Use-Case: Get WorkspaceIo instance for current project

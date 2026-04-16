@@ -19,7 +19,30 @@ impl MaestroCore {
         emitter: Arc<dyn EventStream>,
         request: WorkflowRunRequest,
     ) -> Result<crate::workflow::types::WorkflowRunResult, error::CoreError> {
-        workflow_run_core(event_handle, emitter, request, &self.config.get(), &self.pty_state).await
+        let start = std::time::Instant::now();
+        let _permit = self.run_queue.acquire().await.map_err(|e| error::CoreError::SystemError {
+            message: format!("Queue acquisition failed: {}", e),
+        })?;
+        
+        let result = workflow_run_core(event_handle.clone(), emitter, request.clone(), &self.config.get(), &self.pty_state).await;
+        
+        if let Ok(ref res) = result {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            let input_tokens = res.step_results.iter().map(|s| s.token_estimate.approx_input_tokens as u64).sum::<u64>();
+            let output_tokens = res.step_results.iter().map(|s| s.token_estimate.approx_output_tokens as u64).sum::<u64>();
+            let total_tokens = input_tokens + output_tokens;
+
+            event_handle.emit_performance_metrics(crate::agent_state::AgentPerformance {
+                task_id: request.task_id.clone().unwrap_or_default(),
+                run_id: res.archive_path.clone(),
+                duration_ms,
+                input_tokens,
+                output_tokens,
+                total_tokens,
+                cost_usd: 0.0,
+            });
+        }
+        result
     }
 
     /// Workflow run single step. StepRunRequest has no task_id; binding not required.
@@ -29,7 +52,26 @@ impl MaestroCore {
         emitter: Arc<dyn EventStream>,
         request: StepRunRequest,
     ) -> Result<crate::workflow::types::StepRunResult, error::CoreError> {
-        workflow_run_step_core(event_handle, emitter, request, &self.config.get(), &self.pty_state).await
+        let start = std::time::Instant::now();
+        let _permit = self.run_queue.acquire().await.map_err(|e| error::CoreError::SystemError {
+            message: format!("Queue acquisition failed: {}", e),
+        })?;
+        
+        let result = workflow_run_step_core(event_handle.clone(), emitter, request.clone(), &self.config.get(), &self.pty_state).await;
+        
+        if let Ok(ref res) = result {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            event_handle.emit_performance_metrics(crate::agent_state::AgentPerformance {
+                task_id: "step".to_string(),
+                run_id: request.workflow_name.clone(),
+                duration_ms,
+                input_tokens: res.token_estimate.approx_input_tokens as u64,
+                output_tokens: res.token_estimate.approx_output_tokens as u64,
+                total_tokens: (res.token_estimate.approx_input_tokens + res.token_estimate.approx_output_tokens) as u64,
+                cost_usd: 0.0,
+            });
+        }
+        result
     }
 
     /// Chat execute via API - creates Execution, registers with headless, spawns
@@ -39,15 +81,35 @@ impl MaestroCore {
         request: ChatApiRequest,
         on_data: Arc<dyn StringStream>,
     ) -> Result<crate::workflow::types::ChatExecuteApiResult, error::CoreError> {
-        chat_execute_api_core(
-            event_handle,
+        let start = std::time::Instant::now();
+        let permit = self.run_queue.acquire().await.map_err(|e| error::CoreError::SystemError {
+            message: format!("Queue acquisition failed: {}", e),
+        })?;
+        
+        let result = chat_execute_api_core(
+            event_handle.clone(),
             self.clone(),
-            request,
+            request.clone(),
             (*self.config.get()).clone(),
             &self.headless_state,
             on_data,
+            Some(permit),
         )
-        .await
+        .await;
+
+        if let Ok(ref res) = result {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            event_handle.emit_performance_metrics(crate::agent_state::AgentPerformance {
+                task_id: request.task_id.clone().unwrap_or_default(),
+                run_id: res.run_id.clone(),
+                duration_ms,
+                input_tokens: 0,
+                output_tokens: 0,
+                total_tokens: 0,
+                cost_usd: 0.0,
+            });
+        }
+        result
     }
 
     /// Chat execute via CLI - creates Execution, registers with headless, spawns
@@ -57,15 +119,35 @@ impl MaestroCore {
         request: ChatExecuteCliRequest,
         on_data: Arc<dyn StringStream>,
     ) -> Result<crate::workflow::types::ChatExecuteCliResult, error::CoreError> {
-        chat_execute_cli_core(
-            event_handle,
+        let start = std::time::Instant::now();
+        let permit = self.run_queue.acquire().await.map_err(|e| error::CoreError::SystemError {
+            message: format!("Queue acquisition failed: {}", e),
+        })?;
+
+        let result = chat_execute_cli_core(
+            event_handle.clone(),
             self.clone(),
-            request,
+            request.clone(),
             (*self.config.get()).clone(),
             &self.headless_state,
             on_data,
+            Some(permit),
         )
-        .await
+        .await;
+
+        if let Ok(ref res) = result {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            event_handle.emit_performance_metrics(crate::agent_state::AgentPerformance {
+                task_id: request.task_id.clone().unwrap_or_default(),
+                run_id: res.run_id.clone(),
+                duration_ms,
+                input_tokens: 0,
+                output_tokens: 0,
+                total_tokens: 0,
+                cost_usd: 0.0,
+            });
+        }
+        result
     }
 
     /// Use-Case: Chat spawn - creates a raw pseudo-terminal session for CLI chat
@@ -80,7 +162,9 @@ impl MaestroCore {
             request,
             &self.config.get(),
             &self.pty_state,
-            on_data,
+            Box::new(move |text| {
+                let _ = on_data.send(text);
+            }),
         )
     }
 

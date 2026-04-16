@@ -1,13 +1,13 @@
 use super::error;
 use super::MaestroCore;
 use crate::pty::{PtySessionInfo, PtySpawnOptions};
-use tauri::ipc::Channel;
+//
 
 impl MaestroCore {
     pub fn pty_spawn(
         &self,
         options: PtySpawnOptions,
-        on_data: Channel<String>,
+        on_data: Box<dyn Fn(String) + Send + Sync>,
     ) -> Result<PtySessionInfo, error::CoreError> {
         super::pty_spawn_guard::validate_pty_spawn(
             &self.config.get(),

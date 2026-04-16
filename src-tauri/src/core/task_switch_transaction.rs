@@ -8,24 +8,25 @@
 //! If DB fails: no events, no cleanup — user can retry.
 //! If cleanup fails after DB success: binding is already updated; orphan session can be recovered later.
 
-use crate::agent_state::{emit_state_update, AgentStateUpdate};
+use std::sync::Arc;
+use crate::agent_state::emitter::AppEventHandle;
+use crate::agent_state::AgentStateUpdate;
 use crate::config::AppConfig;
 use crate::engine;
 use crate::task::runtime_service::{update_task_runtime_context, UpdateTaskRuntimeContextResult};
 use crate::task::state::TaskSwitchRuntimeBindingRequest;
-use tauri::AppHandle;
-
 /// Execute task switch runtime binding as an atomic transaction.
 /// Steps are ordered; cleanup failure does not fail the transaction.
 pub fn execute(
-    app: &AppHandle,
+    db_path: &std::path::Path,
+    event_handle: Arc<dyn AppEventHandle>,
     request: TaskSwitchRuntimeBindingRequest,
     config: &AppConfig,
     pty_state: &crate::pty::PtyManagerState,
 ) -> Result<(), crate::core::error::CoreError> {
     // Step 1: DB update (must succeed)
     let result = update_task_runtime_context(
-        app,
+        db_path,
         &request.task_id,
         &request.engine_id,
         request.profile_id,
@@ -34,7 +35,7 @@ pub fn execute(
     .map_err(crate::core::error::CoreError::from)?;
 
     // Step 2: Event broadcast (frontend sync)
-    emit_events(app, &request.task_id, &result);
+    emit_events(event_handle, &request.task_id, &result);
 
     // Step 3: Session cleanup (best-effort; log on failure)
     if let Some(ref session_id) = request.session_id {
@@ -49,23 +50,19 @@ pub fn execute(
     Ok(())
 }
 
-fn emit_events(app: &AppHandle, task_id: &str, result: &UpdateTaskRuntimeContextResult) {
-    emit_state_update(
-        Some(app),
+fn emit_events(event_handle: Arc<dyn AppEventHandle>, task_id: &str, result: &UpdateTaskRuntimeContextResult) {
+    event_handle.emit_state_update(
         AgentStateUpdate::TaskRuntimeBindingChanged {
             task_id: task_id.to_string(),
             binding: result.binding.clone(),
         },
-        None,
     );
     if let Some(ref ctx) = result.resolved_context {
-        emit_state_update(
-            Some(app),
+        event_handle.emit_state_update(
             AgentStateUpdate::TaskRuntimeContextResolved {
                 task_id: task_id.to_string(),
                 context: ctx.clone(),
             },
-            None,
         );
     }
 }
