@@ -27,6 +27,7 @@ impl Tool for ReadFileTool {
                 "required": ["path"]
             }),
             requires_confirmation: false,
+            security_level: crate::tools::ToolSecurityLevel::Low,
         }
     }
 
@@ -58,6 +59,7 @@ impl Tool for ListDirTool {
                 }
             }),
             requires_confirmation: false,
+            security_level: crate::tools::ToolSecurityLevel::Low,
         }
     }
 
@@ -96,6 +98,7 @@ impl Tool for SearchRepoTool {
                 "required": ["query"]
             }),
             requires_confirmation: false,
+            security_level: crate::tools::ToolSecurityLevel::Low,
         }
     }
 
@@ -154,6 +157,7 @@ impl Tool for WriteFileTool {
                 "required": ["path", "content"]
             }),
             requires_confirmation: true,
+            security_level: crate::tools::ToolSecurityLevel::Medium,
         }
     }
 
@@ -165,6 +169,17 @@ impl Tool for WriteFileTool {
         if let Some(parent) = full_path.parent() {
             fs::create_dir_all(parent).map_err(|e| format!("Failed to create directories: {e}"))?;
         }
+
+        // --- File Shadowing (Backup before overwrite) ---
+        if full_path.exists() {
+            let backup_id = uuid::Uuid::new_v4().to_string();
+            let backup_dir = self.workspace.root().join(".maestro-cli").join("backups").join(&backup_id);
+            if let Some(backup_parent) = backup_dir.join(rel_path).parent() {
+                let _ = fs::create_dir_all(backup_parent);
+            }
+            let _ = fs::copy(&full_path, backup_dir.join(rel_path));
+        }
+        // ------------------------------------------------
 
         fs::write(full_path, content).map_err(|e| format!("Failed to write file: {e}"))?;
         Ok(format!("Successfully wrote to {}", rel_path))
@@ -196,6 +211,7 @@ impl Tool for RunCommandTool {
                 "required": ["command"]
             }),
             requires_confirmation: true,
+            security_level: crate::tools::ToolSecurityLevel::High,
         }
     }
 
@@ -275,6 +291,7 @@ impl Tool for FinishTaskTool {
                 "required": ["summary", "reasoning"]
             }),
             requires_confirmation: false,
+            security_level: crate::tools::ToolSecurityLevel::Low,
         }
     }
 
@@ -283,5 +300,51 @@ impl Tool for FinishTaskTool {
         let reasoning = args.get("reasoning").and_then(|v| v.as_str()).unwrap_or("无理由");
         
         Ok(format!("任务已标记为完成。\n总结: {}\n理由: {}", summary, reasoning))
+    }
+}
+
+pub struct LearnSkillTool {
+    pub db_path: std::path::PathBuf,
+}
+
+#[async_trait]
+impl Tool for LearnSkillTool {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: "learn_skill".into(),
+            description: "将一组成功的操作模式或知识沉淀为全局可复用的'技能'。当你发现某种特定的操作流程（如配置特定环境、解决特定类型的 Bug）非常有效且未来可能再次用到时，应调用此工具。".into(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "技能名称，简短且易于记忆（例：'React-Tailwind-Setup'）"
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "详细描述此技能的应用场景，即什么时候该使用它"
+                    },
+                    "instructions": {
+                        "type": "string",
+                        "description": "该技能的具体操作指南，包含步骤、注意点及核心命令。建议使用 Markdown 格式。"
+                    }
+                },
+                "required": ["name", "description", "instructions"]
+            }),
+            requires_confirmation: false,
+            security_level: crate::tools::ToolSecurityLevel::Low,
+        }
+    }
+
+    async fn execute(&self, args: Value, _cancel_token: CancellationToken) -> Result<String, String> {
+        let name = args.get("name").and_then(|v| v.as_str()).ok_or("Missing name")?;
+        let description = args.get("description").and_then(|v| v.as_str()).ok_or("Missing description")?;
+        let instructions = args.get("instructions").and_then(|v| v.as_str()).ok_or("Missing instructions")?;
+
+        let service = crate::storage::knowledge_service::KnowledgeService::new(self.db_path.clone());
+        match service.store_skill(name, description, instructions, None) {
+            Ok(id) => Ok(format!("成功沉淀新技能: {} (ID: {})。该技能现在已进入我的全局知识库，未来在类似场景中我会主动回忆并应用。", name, id)),
+            Err(e) => Err(format!("技能沉淀失败: {}", e)),
+        }
     }
 }

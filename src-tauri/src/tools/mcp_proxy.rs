@@ -20,6 +20,7 @@ impl Tool for McpToolProxy {
             description: self.description.clone(),
             parameters: self.schema.clone(),
             requires_confirmation: false,
+            security_level: crate::tools::ToolSecurityLevel::Medium,
         }
     }
 
