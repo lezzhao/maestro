@@ -17,6 +17,8 @@ pub struct WorkflowRunStep {
     pub prompt: String,
     pub completion_signal: Option<String>,
     pub timeout_ms: Option<u64>,
+    #[serde(default)]
+    pub require_validation: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -44,6 +46,7 @@ pub struct WorkflowStepResult {
     pub failure_reason: Option<String>,
     pub duration_ms: u128,
     pub output: String,
+    pub token_estimate: TokenEstimate,
     pub verification: Option<VerificationSummary>,
 }
 

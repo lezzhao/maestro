@@ -4,7 +4,6 @@
 use crate::agent_state::TaskRecordPayload;
 use crate::core::error::CoreError;
 use std::path::{Path, PathBuf};
-use tauri::Manager;
 
 pub use crate::task::lifecycle::{transition, TaskEvent, TaskState};
 pub use crate::task::repository::{CreateTaskResult, TaskRuntimeBinding};
@@ -168,31 +167,6 @@ pub fn maestro_db_path_core() -> Result<PathBuf, CoreError> {
         })?;
     }
     Ok(dir.join("maestro_state.db"))
-}
-
-/// Resolve maestro_state.db path.
-pub(crate) fn maestro_db_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, CoreError> {
-    let path_resolver = app.path();
-    let dir = path_resolver
-        .app_data_dir()
-        .or_else(|_| path_resolver.app_config_dir())
-        .map_err(|_| {
-            // Fallback to headless path if app dirs fail.
-            CoreError::Io {
-                message: "fallback to home".to_string(),
-            }
-        });
-
-    if let Ok(d) = dir {
-        if !d.exists() {
-            std::fs::create_dir_all(&d).map_err(|e| CoreError::Io {
-                message: format!("create app dir: {e}"),
-            })?;
-        }
-        Ok(d.join("maestro_state.db"))
-    } else {
-        maestro_db_path_core()
-    }
 }
 
 /// Get task's runtime binding (engine_id, profile_id, runtime_snapshot_id).

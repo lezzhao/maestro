@@ -108,6 +108,8 @@ pub struct EngineProfile {
     pub auth: Option<AuthScheme>,
     #[serde(default)]
     pub metadata: Option<ProviderMetadata>,
+    #[serde(default)]
+    pub capabilities: Vec<String>,
 }
 
 impl EngineProfile {
@@ -174,20 +176,22 @@ pub struct EngineConfig {
     #[serde(default)]
     pub active_profile_id: String,
     #[serde(default)]
-    pub category: Option<String>, // 'cloud', 'local', 'proxy'
+    pub category: Option<String>,
     #[serde(flatten, skip_serializing)]
-    pub legacy_profile: EngineProfile,
+    pub extra: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 impl EngineConfig {
+    pub fn active_profile_id(&self) -> String {
+        if !self.active_profile_id.is_empty() && self.profiles.contains_key(&self.active_profile_id) {
+            return self.active_profile_id.clone();
+        }
+        self.profiles.keys().next().cloned().unwrap_or_else(|| "default".to_string())
+    }
+
     pub fn active_profile(&self) -> EngineProfile {
-        if let Some(profile) = self.profiles.get(&self.active_profile_id) {
-            return profile.clone();
-        }
-        if let Some((_id, profile)) = self.profiles.iter().next() {
-            return profile.clone();
-        }
-        self.legacy_profile.clone()
+        let id = self.active_profile_id();
+        self.profiles.get(&id).cloned().unwrap_or_default()
     }
 
     pub fn exit_command(&self) -> String {
@@ -272,6 +276,8 @@ pub struct AppConfig {
     pub version: String,
     #[serde(default = "default_max_concurrent_tasks")]
     pub max_concurrent_tasks: usize,
+    #[serde(default)]
+    pub sandbox_isolation_mode: crate::tools::sandbox::IsolationMode,
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }
@@ -344,7 +350,7 @@ impl EngineConfig {
             profiles,
             active_profile_id: "default".to_string(),
             category,
-            legacy_profile: profile,
+            extra: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -353,6 +359,46 @@ impl Default for AppConfig {
     fn default() -> Self {
         let mut engines = BTreeMap::new();
 
+        // Primary: Maestro's own Agent Loop (API mode, no external CLI dependency)
+        {
+            let profile = EngineProfile {
+                id: "default".to_string(),
+                display_name: "Default".to_string(),
+                command: String::new(), // No CLI command — uses built-in AgentOrchestrator
+                args: vec![],
+                env: BTreeMap::new(),
+                exit_command: None,
+                exit_timeout_ms: None,
+                supports_headless: true,
+                headless_args: vec![],
+                ready_signal: None,
+                execution_mode: Some("api".to_string()),
+                model: Some("claude-3-5-sonnet-20241022".to_string()),
+                api_provider: Some("anthropic".to_string()),
+                api_base_url: None,
+                api_key: None,
+                auth: None,
+                metadata: None,
+                capabilities: vec![],
+            };
+            let mut profiles = BTreeMap::new();
+            profiles.insert("default".to_string(), profile);
+            engines.insert(
+                "maestro-builtin".to_string(),
+                EngineConfig {
+                    id: "maestro-builtin".to_string(),
+                    plugin_type: "api".to_string(),
+                    display_name: "Maestro Agent".to_string(),
+                    icon: "brain".to_string(),
+                    profiles,
+                    active_profile_id: "default".to_string(),
+                    category: Some("llm".to_string()),
+                    extra: BTreeMap::new(),
+                },
+            );
+        }
+
+        // Secondary: External CLI Agents
         engines.insert(
             crate::constants::DEFAULT_ENGINE_ID.to_string(),
             EngineConfig::new(
@@ -468,6 +514,7 @@ impl Default for AppConfig {
             mcp_servers: BTreeMap::new(),
             version: default_config_version(),
             max_concurrent_tasks: default_max_concurrent_tasks(),
+            sandbox_isolation_mode: crate::tools::sandbox::IsolationMode::default(),
             extra: BTreeMap::new(),
         }
     }
@@ -522,7 +569,7 @@ fn config_path_core() -> Result<PathBuf, String> {
     Ok(dir.join("config.toml"))
 }
 
-fn config_path(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
+fn config_path() -> Result<PathBuf, String> {
     config_path_core()
 }
 
@@ -548,7 +595,6 @@ fn load_or_create_config_from_path(path: &PathBuf) -> Result<AppConfig, String> 
         keyring::load_api_keys_from_keyring(&mut default);
         let mut safe_default = default.clone();
         for engine in safe_default.engines.values_mut() {
-            engine.legacy_profile.api_key = None;
             for profile in engine.profiles.values_mut() {
                 profile.api_key = None;
             }
@@ -560,9 +606,12 @@ fn load_or_create_config_from_path(path: &PathBuf) -> Result<AppConfig, String> 
     }
 }
 
-pub fn load_or_create_config_headless() -> Result<AppConfig, String> {
+pub fn load_or_create_config_headless() -> Result<(AppConfig, PathBuf), String> {
     let path = config_path_core()?;
-    load_or_create_config_from_path(&path)
+    let config = load_or_create_config_from_path(&path)?;
+    let db_path = crate::task::state::maestro_db_path_core()
+        .map_err(|e| e.to_string())?;
+    Ok((config, db_path))
 }
 
 pub fn write_config_to_disk_core(config: &AppConfig) -> Result<(), String> {
@@ -570,7 +619,6 @@ pub fn write_config_to_disk_core(config: &AppConfig) -> Result<(), String> {
     keyring::sync_api_keys_to_keyring(config);
     let mut safe_config = config.clone();
     for engine in safe_config.engines.values_mut() {
-        engine.legacy_profile.api_key = None;
         for profile in engine.profiles.values_mut() {
             profile.api_key = None;
         }
@@ -585,21 +633,21 @@ pub fn write_config_to_disk_core(config: &AppConfig) -> Result<(), String> {
     Ok(())
 }
 
-pub fn write_config_to_disk(_app: &AppHandle, config: &AppConfig) -> Result<(), String> {
+pub fn write_config_to_disk(config: &AppConfig) -> Result<(), String> {
     write_config_to_disk_core(config)
 }
 
 #[command]
-pub fn load_or_create_config(app: AppHandle) -> Result<AppConfig, String> {
-    let path = config_path(&app)?;
+pub fn load_or_create_config(_app: AppHandle) -> Result<AppConfig, String> {
+    let path = config_path()?;
     load_or_create_config_from_path(&path)
 }
 
 #[command]
 pub fn save_config(
-    app: AppHandle,
+    _app: AppHandle,
     config: AppConfig,
-    core_state: tauri::State<'_, Arc<crate::core::MaestroCore>>,
+    core_state: tauri::State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<(), String> {
     let mut config = config;
     migration::migrate_engine_profiles(&mut config);
@@ -607,15 +655,15 @@ pub fn save_config(
     core_state.inner().config.set(config.clone());
     core_state.run_queue.update_limit(config.max_concurrent_tasks);
     // 2. Write to disk LATER (atomically)
-    write_config_to_disk(&app, &config)?;
+    write_config_to_disk(&config)?;
     Ok(())
 }
 
 #[command]
 pub fn update_max_concurrent_tasks(
-    app: AppHandle,
+    _app: AppHandle,
     count: usize,
-    core_state: tauri::State<'_, Arc<crate::core::MaestroCore>>,
+    core_state: tauri::State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<(), String> {
     let mut config = (*core_state.inner().config.get()).clone();
     config.max_concurrent_tasks = count;
@@ -625,6 +673,6 @@ pub fn update_max_concurrent_tasks(
     core_state.run_queue.update_limit(count);
     
     // Save to disk
-    write_config_to_disk(&app, &config)?;
+    write_config_to_disk(&config)?;
     Ok(())
 }

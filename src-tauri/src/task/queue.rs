@@ -7,6 +7,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 pub struct TaskQueue {
     semaphore: Arc<Semaphore>,
     max_concurrent: Arc<AtomicUsize>,
+    waiting_tasks: Arc<AtomicUsize>,
 }
 
 pub struct TaskPermit {
@@ -18,16 +19,24 @@ impl TaskQueue {
         Self {
             semaphore: Arc::new(Semaphore::new(max_concurrent)),
             max_concurrent: Arc::new(AtomicUsize::new(max_concurrent)),
+            waiting_tasks: Arc::new(AtomicUsize::new(0)),
         }
     }
 
     pub async fn acquire(&self) -> Result<TaskPermit, String> {
+        self.waiting_tasks.fetch_add(1, Ordering::SeqCst);
         // Timeout prevents hanging indefinitely if tasks don't release permits
-        match tokio::time::timeout(Duration::from_secs(300), Arc::clone(&self.semaphore).acquire_owned()).await {
+        let res = match tokio::time::timeout(Duration::from_secs(300), Arc::clone(&self.semaphore).acquire_owned()).await {
             Ok(Ok(permit)) => Ok(TaskPermit { _permit: permit }),
             Ok(Err(e)) => Err(format!("Queue closed or failed: {}", e)),
             Err(_) => Err("Timeout waiting for queue capacity over 5 minutes".into()),
-        }
+        };
+        self.waiting_tasks.fetch_sub(1, Ordering::SeqCst);
+        res
+    }
+
+    pub fn waiting_tasks(&self) -> usize {
+        self.waiting_tasks.load(Ordering::SeqCst)
     }
     
     pub fn available_permits(&self) -> usize {

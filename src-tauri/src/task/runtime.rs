@@ -5,9 +5,9 @@
 //! Snapshot semantics: snapshot freezes the resolved execution contract only (RuntimeSnapshotPayload),
 //! not a profile template copy. Reproducible execution reads from runtime_snapshot exclusively.
 
-use crate::config::{AppConfig, EngineProfile};
+use crate::config::AppConfig;
 use crate::core::error::CoreError;
-use crate::task::state::{maestro_db_path, TaskRuntimeBinding};
+use crate::task::state::TaskRuntimeBinding;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -15,16 +15,8 @@ pub struct CascadingSettings {
     pub system_prompt: Option<String>,
 }
 use std::path::Path;
-use tauri::AppHandle;
 
-/// Task runtime context: the authoritative binding of engine + profile for a task.
-/// Reference-style in current phase (points to config, not a snapshot).
-#[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TaskRuntimeContext {
-    pub engine_id: String,
-    pub profile_id: String,
-}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -185,14 +177,7 @@ pub struct ExecutionBinding {
     pub created_at: String,
 }
 
-/// Resolved runtime context with the actual profile for execution.
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct ResolvedTaskRuntimeContext {
-    pub engine_id: String,
-    pub profile_id: String,
-    pub profile: EngineProfile,
-}
+
 
 /// Resolve task runtime context from DB + config.
 /// - If task has runtime_snapshot_id, loads from snapshot table (reproducibility)
@@ -352,63 +337,15 @@ fn resolve_task_runtime_context_inner(
     })
 }
 
-/// Create a profile snapshot and pin the task to it (for reproducibility).
-/// Call at execution start when app and task_id are available.
-#[allow(dead_code)]
-pub fn create_snapshot_and_pin_task(
-    app: &AppHandle,
-    task_id: &str,
-    engine_id: &str,
-    profile_id: &str,
-    profile: &EngineProfile,
-) -> Result<(), CoreError> {
-    let db_path = maestro_db_path(app)?;
-    let snapshot_id = uuid::Uuid::new_v4().to_string();
-    let payload = RuntimeSnapshotPayload {
-        engine_id: engine_id.to_string(),
-        profile_id: Some(profile_id.to_string()),
-        command: profile.command(),
-        args: profile.args(),
-        env: profile.env(),
-        execution_mode: profile
-            .execution_mode
-            .clone()
-            .unwrap_or_else(|| "cli".to_string()),
-        model: Some(profile.model()),
-        api_provider: profile.api_provider(),
-        api_base_url: profile.api_base_url(),
-        supports_headless: profile.supports_headless(),
-        headless_args: profile.headless_args(),
-        ready_signal: profile.ready_signal(),
-        exit_command: profile.exit_command.clone(),
-        exit_timeout_ms: profile.exit_timeout_ms,
-        system_prompt: None, // snapshot usually from live resolve which includes this
-    };
-    let payload_json = serde_json::to_string(&payload).map_err(|e| CoreError::Io {
-        message: format!("serialize payload failed: {e}"),
-    })?;
-    let snapshot = RuntimeSnapshot {
-        id: snapshot_id.clone(),
-        task_id: task_id.to_string(),
-        engine_id: engine_id.to_string(),
-        profile_id: Some(profile_id.to_string()),
-        payload_json,
-        reason: "manual_freeze".to_string(),
-        created_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-    };
-    crate::storage::snapshot_repository::insert_runtime_snapshot(&db_path, &snapshot)?;
-    crate::task::state::update_task_runtime_snapshot(&db_path, task_id, Some(&snapshot_id))?;
-    Ok(())
-}
 
-/// Resolve task runtime context using app handle (for use in commands).
-pub fn resolve_task_runtime_context_for_app(
-    app: &AppHandle,
+
+/// Resolve task runtime context using DB path.
+pub fn resolve_task_runtime_context_with_db(
+    db_path: &Path,
     task_id: &str,
     cfg: &AppConfig,
 ) -> Result<ResolvedRuntimeContext, CoreError> {
-    let db_path = maestro_db_path(app)?;
-    resolve_task_runtime_context(&db_path, task_id, cfg)
+    resolve_task_runtime_context(db_path, task_id, cfg)
 }
 
 #[cfg(test)]
@@ -463,7 +400,7 @@ mod tests {
             profiles: profiles.clone(),
             active_profile_id: "profile_a".to_string(),
             category: None,
-            legacy_profile: mock_profile("default"),
+            extra: BTreeMap::new(),
         };
         let mut engines = BTreeMap::new();
         engines.insert("eng1".to_string(), engine);
@@ -494,7 +431,7 @@ mod tests {
             profiles: profiles.clone(),
             active_profile_id: "default".to_string(),
             category: None,
-            legacy_profile: mock_profile("default"),
+            extra: BTreeMap::new(),
         };
         let mut engines = BTreeMap::new();
         engines.insert("eng1".to_string(), engine);
@@ -567,7 +504,7 @@ mod tests {
             profiles,
             active_profile_id: "profile_a".to_string(),
             category: None,
-            legacy_profile: mock_profile("default"),
+            extra: BTreeMap::new(),
         };
         let mut engines = BTreeMap::new();
         engines.insert("eng1".to_string(), engine);
@@ -599,7 +536,7 @@ mod tests {
             profiles,
             active_profile_id: "default".to_string(),
             category: None,
-            legacy_profile: mock_profile("default"),
+            extra: BTreeMap::new(),
         };
         let mut engines = BTreeMap::new();
         engines.insert("eng1".to_string(), engine);
