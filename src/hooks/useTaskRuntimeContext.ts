@@ -33,16 +33,15 @@ export function resolveTaskRuntimeContextFromState(
     isHeadless: false,
   };
 
-  if (!activeTask || !engines) return defaultEmpty;
-
-  const resolved = activeTask.resolvedRuntimeContext;
+  if (!engines) return defaultEmpty;
 
   // 1. Authoritative Backend Resolution (If Available)
-  if (resolved) {
+  if (activeTask && activeTask.resolvedRuntimeContext) {
+    const resolved = activeTask.resolvedRuntimeContext;
     const engineId = resolved.engineId;
     const engine = engines[engineId] || null;
     const profileId = resolved.profileId || null;
-    const profile = profileId && engine ? engine.profiles?.[profileId] || null : null;
+    const profile = profileId && engine ? (engine.profiles as any)?.[profileId] || null : null;
 
     const executionMode = resolved.executionMode;
     const isHeadless = resolved.supportsHeadless;
@@ -64,15 +63,13 @@ export function resolveTaskRuntimeContextFromState(
     };
   }
 
-  // 2. Startup-window fallback: backend context not yet available.
-  // Conservative only: executionMode=cli, isReady=false, isHeadless=false.
-  // Do NOT infer execution mode or readiness; backend is authoritative.
-  const engineId = activeTask.engineId || Object.keys(engines)[0] || "";
+  // 2. Fallback: No task or no resolved context available (Startup window or idle)
+  const engineId = activeTask?.engineId || Object.keys(engines)[0] || "";
   const engine = engines[engineId] || null;
   if (!engine || !engine.profiles) {
     return { ...defaultEmpty, engineId, engine };
   }
-  let profileId = activeTask.profileId;
+  let profileId = activeTask?.profileId;
   const profiles = engine.profiles as Record<string, EngineProfile>;
   if (!profileId || !profiles[profileId]) {
     profileId =

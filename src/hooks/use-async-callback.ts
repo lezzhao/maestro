@@ -11,6 +11,8 @@ interface UseAsyncCallbackOptions<T> {
   onSuccess?: (result: T) => void;
   /** Callback to run on error. */
   onError?: (error: unknown) => void;
+  /** Whether to show a success toast. Defaults to true. */
+  showSuccessToast?: boolean;
 }
 
 /**
@@ -31,7 +33,7 @@ export function useAsyncCallback<Args extends unknown[], T>(
       setError(null);
       try {
         const result = await asyncFn(...args);
-        if (options.onSuccessMessage) {
+        if (options.onSuccessMessage && options.showSuccessToast !== false) {
           toast.success(t(options.onSuccessMessage as never) || options.onSuccessMessage);
         }
         options.onSuccess?.(result);

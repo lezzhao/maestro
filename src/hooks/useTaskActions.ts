@@ -10,6 +10,7 @@ export function useTaskActions() {
     },
     { 
       onSuccessMessage: "task_created_success",
+      showSuccessToast: false,
       errorMessagePrefix: "task_create_failed" 
     }
   );

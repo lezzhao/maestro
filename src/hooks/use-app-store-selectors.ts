@@ -38,6 +38,8 @@ export function useWorkspaceStoreState() {
     addWorkspace: state.addWorkspace,
     updateWorkspace: state.updateWorkspace,
     removeWorkspace: state.removeWorkspace,
+    pinnedFiles: state.pinnedFiles,
+    togglePinnedFile: state.togglePinnedFile,
   })));
 }
 

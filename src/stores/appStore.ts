@@ -12,6 +12,7 @@ export const useAppStore = create<AppStore>()(
       // --- Initial State ---
       currentStep: "setup",
       showSettings: false,
+      showSkillGallery: false,
       sidebarCollapsed: false,
       autoRetry: true,
       projectPath: "",
@@ -66,6 +67,7 @@ export const useAppStore = create<AppStore>()(
         maxConcurrentTasks: state.maxConcurrentTasks,
         activeTaskId: state.activeTaskId,
         activeWorkspaceId: state.activeWorkspaceId,
+        pinnedFiles: state.pinnedFiles,
       }),
     }
   )

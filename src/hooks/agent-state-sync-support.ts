@@ -91,13 +91,53 @@ export function createAgentStateUpdateApplier(
 }
 
 export async function bootstrapAgentState(): Promise<void> {
-  const [taskRecords, workspaces, lastConversation] = await Promise.all([
-    invoke<TaskRecord[]>("task_list"),
-    invoke<Workspace[]>("workspace_list"),
-    invoke<unknown | null>("chat_load_last_conversation"),
-  ]);
+  const fetchState = async () => {
+    return await Promise.all([
+      invoke<TaskRecord[]>("task_list"),
+      invoke<Workspace[]>("workspace_list"),
+      invoke<unknown | null>("chat_load_last_conversation"),
+    ]);
+  };
+
+  let [taskRecords, workspaces, lastConversation] = await fetchState();
+
+  // Retry once after a short delay if everything is empty (handle backend seeding race)
+  if (taskRecords.length === 0 && workspaces.length === 0) {
+    console.warn("[bootstrap] App seems empty. Waiting for backend seeding...");
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    [taskRecords, workspaces, lastConversation] = await fetchState();
+  }
+
   const taskModels = buildTaskModels(taskRecords);
-  useAppStore.getState().setTasks(taskModels);
-  useAppStore.getState().setWorkspaces(workspaces);
+  const state = useAppStore.getState();
+
+  state.setTasks(taskModels);
+  state.setWorkspaces(workspaces);
+
+  // --- Post-bootstrap Auto-selection ---
+  // Ensure we have an active workspace if any exist
+  let currentActiveWsId = state.activeWorkspaceId;
+  const wsExists = workspaces.find((w) => w.id === currentActiveWsId);
+  if (!wsExists && workspaces.length > 0) {
+    currentActiveWsId = workspaces[0].id;
+    state.setActiveWorkspaceId(currentActiveWsId);
+    console.log("[bootstrap] Auto-selected workspace:", currentActiveWsId);
+  }
+
+  // Ensure we have an active task
+  if (currentActiveWsId) {
+    const currentActiveTaskId = state.activeTaskId;
+    const taskExists = taskModels.find(
+      (t) => t.id === currentActiveTaskId && (t.workspaceId === currentActiveWsId || !t.workspaceId)
+    );
+    if (!taskExists) {
+      const bestTask = taskModels.find((t) => t.workspaceId === currentActiveWsId) || taskModels[0];
+      if (bestTask) {
+        state.setActiveTaskId(bestTask.id);
+        console.log("[bootstrap] Auto-selected task:", bestTask.id);
+      }
+    }
+  }
+
   restoreLastConversation(taskModels, lastConversation);
 }

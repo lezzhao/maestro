@@ -24,7 +24,6 @@ export function useWorkspaceFlow({
       try {
         const result = await detectAndRecommend(path);
         setShowSettings(false);
-        toast.success("Project imported successfully");
         return result;
       } catch (e) {
         const msg = String(e);

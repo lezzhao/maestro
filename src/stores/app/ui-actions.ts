@@ -4,6 +4,7 @@ export function createUIActions(set: SetFn, _get: GetFn) {
   return {
     setCurrentStep: (currentStep: AppState["currentStep"]) => set({ currentStep }),
     setShowSettings: (showSettings: boolean) => set({ showSettings }),
+    setShowSkillGallery: (showSkillGallery: boolean) => set({ showSkillGallery }),
     setSidebarCollapsed: (sidebarCollapsed: boolean) => set({ sidebarCollapsed }),
     setAutoRetry: (autoRetry: boolean) => set({ autoRetry }),
     setProjectPath: (projectPath: string) => set({ projectPath }),

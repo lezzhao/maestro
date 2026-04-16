@@ -1,4 +1,5 @@
 import { DEFAULT_ENGINE_ID, DEFAULT_PROFILE_ID } from "../../constants";
+import { resolveDefaultRuntime } from "../../lib/task-utils";
 import { createTaskCommand, deleteTaskCommand } from "../../hooks/commands/task-commands";
 import type { AppTask, TaskViewState } from "../../types";
 import type { SetFn, GetFn } from "./types";
@@ -9,32 +10,37 @@ export function createTaskActions(set: SetFn, get: GetFn) {
       const title = name || `Task ${get().tasks.length + 1}`;
       try {
         const engines = get().engines;
-        if (Object.keys(engines).length === 0) {
-          throw new Error("No AI Engines configured. Please go to Settings and add a provider (e.g. OpenAI, Anthropic) first.");
-        }
+        const { engineId: defaultEngine, profileId: defaultProfile } = resolveDefaultRuntime(engines);
+        
         const activeWorkspaceId = workspaceIdParam !== undefined ? workspaceIdParam : get().activeWorkspaceId;
         const activeWorkspace = get().workspaces.find((workspace) => workspace.id === activeWorkspaceId) || null;
         const workingDirectory = activeWorkspace?.workingDirectory?.trim() || "";
         const workspaceBoundary = workingDirectory
           ? JSON.stringify({ root: workingDirectory })
           : "{}";
-        const defaultEngine = Object.keys(engines).sort()[0] || DEFAULT_ENGINE_ID;
-        const engine = engines[defaultEngine];
-        const defaultProfile =
-          engine?.active_profile_id && engine?.profiles?.[engine.active_profile_id]
-            ? engine.active_profile_id
-            : engine?.profiles
-              ? Object.keys(engine.profiles)[0]
-              : DEFAULT_PROFILE_ID;
 
-        await createTaskCommand({
+        const result = (await createTaskCommand({
           title,
           description: "",
           engineId: defaultEngine,
           workspaceBoundary,
           profileId: defaultProfile,
           workspaceId: activeWorkspaceId,
-        });
+        })) as import("../../types").TaskRecord;
+        
+        // Optimistic / Immediate update
+        const viewModel = (await import("../../lib/agentProtocolAdapter")).toTaskViewModel(result);
+        const currentTasks = get().tasks;
+        if (!currentTasks.some(t => t.id === viewModel.id)) {
+          set({ 
+            tasks: [viewModel, ...currentTasks],
+            activeTaskId: viewModel.id 
+          });
+        } else {
+          set({ activeTaskId: viewModel.id });
+        }
+        
+        return result;
       } catch (e) {
         console.error("Failed to add task:", e);
         throw e;

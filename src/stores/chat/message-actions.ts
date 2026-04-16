@@ -86,6 +86,18 @@ export const createMessageActions = (
       };
     }),
 
+  saveSkill: async (name: string, description: string, instructions: string) => {
+    try {
+      const id = await invoke<string>("save_skill", { req: { name, description, instructions } });
+      toast.success("Skill saved successfully");
+      return id;
+    } catch (err) {
+      console.error("Failed to save skill:", err);
+      toast.error(`Skill save failed: ${String(err)}`);
+      throw err;
+    }
+  },
+
   clearMessages: (taskId: string) =>
     set((state: ChatStore) => ({
       messages: { ...state.messages, [taskId]: [] },

@@ -65,6 +65,7 @@ export type ChatActions = {
   updateMessage: (taskId: string, id: string, patch: Partial<ChatMessage>) => void;
   resolveChoice: (taskId: string, messageId: string, optionId: string) => void;
   appendToMessage: (taskId: string, id: string, chunk: string) => void;
+  saveSkill: (name: string, description: string, instructions: string) => Promise<string>;
   clearMessages: (taskId: string) => void;
 
   setPendingAttachments: (taskId: string, attachments: ChatAttachment[]) => void;

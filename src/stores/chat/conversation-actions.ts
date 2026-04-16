@@ -69,20 +69,15 @@ export const createConversationActions = (
 
   updateConversationTitle: async (conversationId: string, title: string) => {
     await conversationUpdateTitle(conversationId, title);
+    updateConversationInState(set, conversationId, { title });
   },
 
   generateTitle: async (conversationId: string) => {
     try {
-      const newTitle = await invoke<string>("conversation_generate_title", { conversationId });
-      set((state: ChatStore) => {
-        const next = { ...state.conversationsByTask };
-        for (const key in next) {
-          next[key] = (next[key] || []).map((c) =>
-            c.id === conversationId ? { ...c, title: newTitle } : c
-          );
-        }
-        return { conversationsByTask: next };
+      const newTitle = await invoke<string>("conversation_derive_title_heuristic", {
+        conversationId,
       });
+      updateConversationInState(set, conversationId, { title: newTitle });
       return newTitle;
     } catch (error) {
       console.error("Failed to generate title:", error);
@@ -90,3 +85,19 @@ export const createConversationActions = (
     }
   },
 });
+
+function updateConversationInState(
+  set: (fn: (state: ChatStore) => Partial<ChatStore>) => void,
+  conversationId: string,
+  updates: Partial<import("../../types/index").Conversation>
+) {
+  set((state: ChatStore) => {
+    const next = { ...state.conversationsByTask };
+    for (const key in next) {
+      next[key] = (next[key] || []).map((c) =>
+        c.id === conversationId ? { ...c, ...updates } : c
+      );
+    }
+    return { conversationsByTask: next };
+  });
+}

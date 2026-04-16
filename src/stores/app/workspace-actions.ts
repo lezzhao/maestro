@@ -30,5 +30,14 @@ export function createWorkspaceActions(set: SetFn, _get: GetFn) {
         };
       }),
     setActiveWorkspaceId: (activeWorkspaceId: string | null) => set({ activeWorkspaceId }),
+    togglePinnedFile: (path: string) =>
+      set((state) => {
+        const isPinned = state.pinnedFiles.includes(path);
+        return {
+          pinnedFiles: isPinned
+            ? state.pinnedFiles.filter((f) => f !== path)
+            : [...state.pinnedFiles, path],
+        };
+      }),
   };
 }

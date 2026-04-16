@@ -16,6 +16,7 @@ export type AppState = {
   specProvider: "none" | "maestro" | "custom";
   theme: "light" | "dark" | "system";
   lang: "en" | "zh";
+  showSkillGallery: boolean;
 
   // Task Management
   tasks: AppTask[];
@@ -41,6 +42,7 @@ export type AppActions = {
   setShowSettings: (show: boolean) => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   setAutoRetry: (enabled: boolean) => void;
+  setShowSkillGallery: (show: boolean) => void;
   setProjectPath: (path: string) => void;
   setEngines: (engines: Record<string, EngineConfig>) => void;
   setEnginePreflight: (engineId: string, result: EnginePreflightResult) => void;
