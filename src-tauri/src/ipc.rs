@@ -58,13 +58,37 @@ pub struct IpcMessage {
 pub struct IpcResponse {
     pub id: Option<String>,
     pub result: Option<serde_json::Value>,
-    pub error: Option<String>,
+    pub error: Option<String>, // Serialized JSON string of the error or raw message
     #[serde(default)]
     pub is_stream: bool,
 }
 
+impl IpcResponse {
+    pub fn success(id: Option<String>, result: serde_json::Value) -> Self {
+        Self {
+            id,
+            result: Some(result),
+            error: None,
+            is_stream: false,
+        }
+    }
+
+    pub fn error(id: Option<String>, err: impl Into<String>) -> Self {
+        Self {
+            id,
+            result: None,
+            error: Some(err.into()),
+            is_stream: false,
+        }
+    }
+}
+
 pub fn get_socket_path() -> PathBuf {
-    std::env::temp_dir().join("maestro-daemon.sock")
+    let home = dirs::home_dir()
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+    let dir = home.join(".maestro");
+    let _ = std::fs::create_dir_all(&dir);
+    dir.join("daemon.sock")
 }
 
 #[cfg(unix)]

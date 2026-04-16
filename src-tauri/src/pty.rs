@@ -198,7 +198,7 @@ impl PtyManagerState {
     pub fn spawn_session(
         &self,
         options: PtySpawnOptions,
-        on_data: Channel<String>,
+        on_data: Box<dyn Fn(String) + Send + Sync>,
     ) -> Result<PtySessionInfo, String> {
         let pty_system = native_pty_system();
         let pair = pty_system
@@ -269,9 +269,7 @@ impl PtyManagerState {
                         // Batch if either pending buffer is large enough or enough time has passed
                         if pending.len() > 16384 || last_send.elapsed() >= Duration::from_millis(30)
                         {
-                            if on_data.send(pending.clone()).is_err() {
-                                break;
-                            }
+                            on_data(pending.clone());
                             pending.clear();
                             last_send = Instant::now();
                         }
@@ -280,7 +278,7 @@ impl PtyManagerState {
                 }
             }
             if !pending.is_empty() {
-                let _ = on_data.send(pending);
+                on_data(pending);
             }
             // Auto-cleanup on thread exit
             sessions_clone.write().unwrap_or_else(|e| e.into_inner()).remove(&session_id_clone);
@@ -300,7 +298,9 @@ pub fn pty_spawn(
     on_data: Channel<String>,
     core_state: tauri::State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<PtySessionInfo, crate::core::error::CoreError> {
-    core_state.inner().pty_spawn(options, on_data)
+    core_state.inner().pty_spawn(options, Box::new(move |text| {
+        let _ = on_data.send(text);
+    }))
 }
 
 #[command]

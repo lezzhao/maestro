@@ -12,10 +12,8 @@ Use Maestro process: Brief -> Model -> Action -> Done.
 
 const CUSTOM_RULES_TEMPLATE: &str = "# Custom rules\n";
 
-#[allow(dead_code)]
 pub trait SpecProvider: Send + Sync {
     fn id(&self) -> &str;
-    fn display_name(&self) -> &str;
     fn inject(
         &self,
         workspace_io: &WorkspaceIo,
@@ -41,10 +39,6 @@ impl MaestroProvider {
 impl SpecProvider for MaestroProvider {
     fn id(&self) -> &str {
         "maestro"
-    }
-
-    fn display_name(&self) -> &str {
-        &self.conf.display_name
     }
 
     fn inject(
@@ -141,10 +135,6 @@ impl CustomProvider {
 impl SpecProvider for CustomProvider {
     fn id(&self) -> &str {
         "custom"
-    }
-
-    fn display_name(&self) -> &str {
-        &self.conf.display_name
     }
 
     fn inject(

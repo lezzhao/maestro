@@ -27,7 +27,7 @@ pub struct JsonRpcResponse {
 pub struct McpServerHandle {
     pub name: String,
     stdin: Mutex<ChildStdin>,
-    pending_requests: Mutex<HashMap<String, mpsc::Sender<JsonRpcResponse>>>,
+    pending_requests: Arc<Mutex<HashMap<String, mpsc::Sender<JsonRpcResponse>>>>,
     _child: Child,
 }
 
@@ -51,7 +51,7 @@ impl McpServerHandle {
         let handle = Arc::new(Self {
             name: name.to_string(),
             stdin: Mutex::new(stdin),
-            pending_requests: Mutex::new(HashMap::new()), // Corrected struct definition below
+            pending_requests, // Reuse the same Arc — fixes split-brain bug
             _child: child,
         });
 
@@ -99,7 +99,8 @@ impl McpServerHandle {
         }
 
         // Wait for response with timeout
-        match timeout(Duration::from_secs(30), rx.recv()).await {
+        const MCP_REQUEST_TIMEOUT_SECS: u64 = 60;
+        match timeout(Duration::from_secs(MCP_REQUEST_TIMEOUT_SECS), rx.recv()).await {
             Ok(Some(res)) => {
                 if let Some(err) = res.error {
                     Err(format!("MCP Error: {}", err))
@@ -108,7 +109,7 @@ impl McpServerHandle {
                 }
             }
             Ok(None) => Err("MCP server closed response channel".into()),
-            Err(_) => Err("MCP request timed out".into()),
+            Err(_) => Err(format!("MCP request timed out after {} seconds", MCP_REQUEST_TIMEOUT_SECS)),
         }
     }
 }

@@ -1,7 +1,6 @@
 use crate::agent_state::AppEventHandle;
 use crate::core::error::CoreError;
 use crate::pty::{PtySessionInfo, PtyManagerState};
-use tauri::ipc::{Channel, InvokeResponseBody};
 use super::super::types::{ChatSpawnRequest, ChatSessionMeta};
 use super::super::util::with_model_args;
 use super::super::util::completion_matched;
@@ -13,7 +12,7 @@ pub fn chat_spawn_core(
     request: ChatSpawnRequest,
     cfg: &crate::config::AppConfig,
     pty_state: &PtyManagerState,
-    on_data: Channel<String>,
+    on_data: Box<dyn Fn(String) + Send + Sync>,
 ) -> Result<ChatSessionMeta, CoreError> {
     let prepared = crate::storage::execution_binding::resolve_execution(
         event_handle.clone(),
@@ -29,11 +28,7 @@ pub fn chat_spawn_core(
 
     let output_buf = Arc::new(Mutex::new(String::new()));
     let output_buf_ch = Arc::clone(&output_buf);
-    let bridge = Channel::new(move |chunk: InvokeResponseBody| {
-        let text = match chunk {
-            InvokeResponseBody::Json(s) => s,
-            InvokeResponseBody::Raw(bytes) => String::from_utf8_lossy(&bytes).to_string(),
-        };
+    let bridge = Box::new(move |text: String| {
         {
             let mut buf = output_buf_ch.lock().unwrap_or_else(|e| e.into_inner());
             buf.push_str(&text);
@@ -42,8 +37,7 @@ pub fn chat_spawn_core(
                 buf.drain(..drop_prefix);
             }
         }
-        let _ = on_data.send(text);
-        Ok(())
+        on_data(text);
     });
 
     let session_id = uuid::Uuid::new_v4().to_string();

@@ -2,15 +2,16 @@ pub mod context;
 pub mod executor;
 pub mod stream;
 pub mod cost;
+pub mod provider;
 
 use crate::agent_state::{AppEventHandle, AgentStateUpdate};
-use crate::api_provider;
 use crate::core::events::StringStream;
 use crate::core::MaestroCore;
 use crate::plugin_engine::control_frame::{AgentPhase, ControlFrame};
 use crate::plugin_engine::maestro_engine::ApiChatRequest;
 use crate::plugin_engine::EngineError;
 use crate::tools::ToolCall;
+use crate::plugin_engine::orchestrator::provider::LlmProvider;
 use std::sync::{Arc, Mutex};
 use tokio_util::sync::CancellationToken;
 
@@ -121,6 +122,7 @@ pub struct AgentOrchestrator {
     context: ContextManager,
     executor: ToolExecutor,
     request: ApiChatRequest,
+    provider: Box<dyn LlmProvider>,
     cumulative_cost: Arc<Mutex<f64>>,
     bus: AgentEventBus,
 }
@@ -141,15 +143,26 @@ impl AgentOrchestrator {
             std::path::PathBuf::from(root_path_str)
         };
 
-        let toolbox = Arc::new(core.tool_registry.build_toolbox(root.clone()).await
+        let toolbox = Arc::new(core.tool_registry.build_toolbox(root.clone(), request.task_id.clone()).await
             .map_err(|e| EngineError::Execution(format!("Registry Error: {e}")))?);
 
+        let (harness_mode, strategic_plan) = if let Some(task_id) = &request.task_id {
+            if let Ok(session) = core.harness_mgr.get_or_create_session(task_id) {
+                (Some(session.current_mode), session.strategic_plan)
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
+
         let cfg_snapshot = core.config.get();
-        let context = ContextManager::from_request(&request, root, &cfg_snapshot).await;
+        let context = ContextManager::from_request(&request, root, &cfg_snapshot, harness_mode, strategic_plan).await;
         let executor = ToolExecutor::new(event_handle.clone(), core.clone(), toolbox, cancel_token.clone(), request.state_token.clone());
 
         let cumulative_cost = Arc::new(Mutex::new(0.0));
         let bus = AgentEventBus::new(event_handle, on_data, request.task_id.clone(), request.state_token.clone(), cfg_snapshot.i18n());
+        let provider = provider::create_provider(&request.provider);
 
         let orchestrator = Self {
             core,
@@ -157,6 +170,7 @@ impl AgentOrchestrator {
             context,
             executor,
             request,
+            provider,
             cumulative_cost,
             bus,
         };
@@ -275,8 +289,7 @@ impl AgentOrchestrator {
 
         let tool_defs = self.executor.toolbox.get_definitions();
 
-        api_provider::stream_chat(
-            &self.request.provider,
+        self.provider.stream_chat(
             &self.request.base_url,
             &self.request.api_key,
             &self.request.model,
@@ -286,8 +299,7 @@ impl AgentOrchestrator {
             self.cancel_token.clone(),
             &(interceptor.clone() as Arc<dyn StringStream>),
         )
-        .await
-        .map_err(|e| EngineError::Execution(e.to_string()))?;
+        .await?;
 
         Ok((interceptor.take_accumulated_text(), interceptor.take_tool_calls()))
     }
@@ -321,13 +333,27 @@ impl AgentOrchestrator {
         if let Ok(db_path) = crate::task::state::maestro_db_path_core() {
             let last_msg = self.context.messages.last().map(|m| &m.content).cloned().unwrap_or_default();
             
-            // 1. Auto-Memory Extraction
-            if last_msg.len() > 20 {
+            // 1. Auto-Memory Extraction (Triple-Filter Gate)
+            //    Only memorize substantive interactions, not routine acks.
+            let tool_call_count = self.context.messages.iter()
+                .filter(|m| m.role == "tool")
+                .count();
+            let is_canned_ack = last_msg.starts_with("好的")
+                || last_msg.starts_with("OK")
+                || last_msg.starts_with("Sure")
+                || last_msg.starts_with("已完成")
+                || last_msg.starts_with("Done");
+            let should_memorize = last_msg.len() > 200
+                && !is_canned_ack
+                && tool_call_count >= 2;
+
+            if should_memorize {
                 let _ = crate::storage::memory::create_memory(
                     &db_path,
                     self.request.task_id.as_deref(),
                     &last_msg,
                     "auto-extracted",
+                    None,
                 );
             }
 

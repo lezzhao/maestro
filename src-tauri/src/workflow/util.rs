@@ -74,8 +74,17 @@ pub(crate) fn with_model_args(mut args: Vec<String>, engine_id: &str, model: &st
     args
 }
 
-pub(crate) fn estimate_token_count(chars: usize) -> usize {
-    chars.div_ceil(4)
+use tiktoken_rs::cl100k_base;
+use std::sync::OnceLock;
+
+static TOKENIZER: OnceLock<tiktoken_rs::CoreBPE> = OnceLock::new();
+
+pub(crate) fn estimate_token_count(text: &str) -> usize {
+    if text.is_empty() {
+        return 0;
+    }
+    let bpe = TOKENIZER.get_or_init(|| cl100k_base().unwrap());
+    bpe.encode_with_special_tokens(text).len()
 }
 
 pub(crate) fn estimate_tokens(prompt: &str, output: &str) -> TokenEstimate {
@@ -84,7 +93,7 @@ pub(crate) fn estimate_tokens(prompt: &str, output: &str) -> TokenEstimate {
     TokenEstimate {
         input_chars,
         output_chars,
-        approx_input_tokens: estimate_token_count(input_chars),
-        approx_output_tokens: estimate_token_count(output_chars),
+        approx_input_tokens: estimate_token_count(prompt),
+        approx_output_tokens: estimate_token_count(output),
     }
 }

@@ -1,7 +1,7 @@
 //! Centralized default values and constants.
 
 /// Default engine id when no engines are configured (matches frontend DEFAULT_ENGINE_ID).
-pub const DEFAULT_ENGINE_ID: &str = "cursor";
+pub const DEFAULT_ENGINE_ID: &str = "maestro-builtin";
 
 /// Default target IDE for spec injection.
 pub const DEFAULT_TARGET_IDE: &str = "cursor";

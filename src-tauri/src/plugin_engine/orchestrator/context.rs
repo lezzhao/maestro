@@ -1,57 +1,11 @@
 use crate::api_provider::{ApiProviderAttachment, ApiProviderMessage};
 use crate::plugin_engine::maestro_engine::ApiChatRequest;
 use crate::workflow::types::ChatApiMessage;
-use serde::Deserialize;
-use std::collections::HashMap;
 use std::path::PathBuf;
+use crate::workflow::util::estimate_token_count;
 
 const DEFAULT_MAX_MESSAGES: usize = 48;
 const DEFAULT_MAX_INPUT_TOKENS: usize = 12_000;
-
-#[derive(Debug, Deserialize)]
-struct PersistedConversation {
-    pub messages: Vec<PersistedMessage>,
-}
-
-#[derive(Debug, Deserialize)]
-struct PersistedMessage {
-    pub id: String,
-    pub role: String,
-    pub content: String,
-}
-
-#[allow(dead_code)]
-const MAESTRO_SYSTEM_IDENTITY: &str = r#"<identity>
-你是一位顶级全栈工程师与 AI 开发中枢 (Maestro Omni-Agent Orchestrator)。
-你不仅具备卓越的代码编写能力，还擅长多步骤任务编排、环境诊断与自主决策。
-你的目标是以前瞻性的眼光，高效、安全地解决用户提出的任何开发挑战。
-</identity>
-
-<thought_process>
-在采取任何行动（特别是调用工具）之前，请务必进行深入思考：
-1. **分析现状**：理解当前的上下文、文件结构和用户意图。
-2. **制定计划**：将任务分解为逻辑清晰的子目标。
-3. **预期结果**：预测每一步操作的影响与可能的异常。
-4. **即时修正**：根据工具返回的执行结果（stdout/stderr），实时调整后续方案。
-请在内部单色气泡中使用 <think> 标签展示你的思考过程分支。
-</thought_process>
-
-<capabilities>
-你拥有的核心能力包括但不限于：
-- 源码审计与逻辑分析。
-- 多语言全栈开发 (Node.js, Rust, Python, Go, etc.)。
-- 系统命令执行与 PTY 交互。
-- 上下文感知的自动化测试与验证。
-</capabilities>
-
-<constraints>
-1. **安全性第一**：严禁无故修改系统关键路径（如 /etc）或执行具有破坏性的全局删除命令。
-2. **最小侵入原则**：代码修改应精准、优雅，避免多余的重构或格式化。
-3. **路径规范**：所有文件操作必须基于当前工作目录，优先使用相对路径。
-4. **错误处理**：若工具报错，应分析 stderr 并尝试自我修复或向用户解释原因。
-5. **任务终结**：当你确信任务已圆满完成、无后续步骤时，**必须**调用 `finish_task` 工具进行总结。禁止在未调用该工具的情况下直接宣告结束。
-</constraints>
-"#;
 
 pub struct ContextManager {
     pub messages: Vec<ApiProviderMessage>,
@@ -59,17 +13,16 @@ pub struct ContextManager {
 }
 
 impl ContextManager {
-    #[allow(dead_code)]
-    pub fn new(messages: Vec<ApiProviderMessage>, system_prompt: String) -> Self {
-        Self {
-            messages,
-            system_prompt,
-        }
-    }
 
     /// Unified initialization from an ApiChatRequest.
     /// Handles: Identity, Task Context, Pinned Files, Memory Recall (RAG), and Windowing.
-    pub async fn from_request(request: &ApiChatRequest, root: PathBuf, cfg: &crate::config::AppConfig) -> Self {
+    pub async fn from_request(
+        request: &ApiChatRequest,
+        root: PathBuf,
+        cfg: &crate::config::AppConfig,
+        harness_mode: Option<crate::core::harness::mode::HarnessMode>,
+        strategic_plan: Option<String>,
+    ) -> Self {
         let i18n = cfg.i18n();
 
         // 1. Build System Identity
@@ -80,6 +33,16 @@ impl ContextManager {
             if !user_prompt.trim().is_empty() {
                 system_prompt.push_str(&format!("\n\n<task_context>\n{}\n</task_context>", user_prompt.trim()));
             }
+        }
+
+        // 2b. Inject Harness Mode prompt
+        if let Some(mode) = harness_mode {
+            let mode_prompt = mode.system_prompt();
+            system_prompt.push_str(&format!("\n\n<harness_mode name=\"{}\">\n{}\n</harness_mode>", mode.as_str(), mode_prompt));
+        }
+
+        if let Some(plan) = strategic_plan {
+            system_prompt.push_str(&format!("\n\n<strategic_plan>\n{}\n</strategic_plan>", plan));
         }
 
         // 3. Incorporate Pinned Files
@@ -116,7 +79,6 @@ impl ContextManager {
                 content,
                 attachments: m.attachments.map(|atts| {
                     atts.into_iter().map(|a| ApiProviderAttachment {
-                        name: a.name,
                         mime_type: a.mime_type,
                         data: a.data,
                     }).collect()
@@ -134,10 +96,24 @@ impl ContextManager {
                 .unwrap_or("");
             
             if !query.is_empty() {
+                // 5a. Recall Global Memories
                 if let Ok(recalled) = crate::storage::memory::recall_memories(&db_path, query, 5) {
                     if !recalled.is_empty() {
                         let memory_prompt = format!("\n\n[Relevant Memories]:\n{}\n", recalled);
                         system_prompt.push_str(&memory_prompt);
+                    }
+                }
+
+                // 5b. Recall Learned Skills
+                let service = crate::storage::knowledge_service::KnowledgeService::new(db_path);
+                if let Ok(skills) = service.query_skills(query, 3) {
+                    if !skills.is_empty() {
+                        let mut skills_prompt = String::from("\n\n<learned_skills>\n我的全局技能库中发现以下相关技能，我将优先参考这些模式进行操作：");
+                        for skill in skills {
+                            skills_prompt.push_str(&format!("\n\n-- SKILL: {} --\n{}", skill.id, skill.content));
+                        }
+                        skills_prompt.push_str("\n</learned_skills>");
+                        system_prompt.push_str(&skills_prompt);
                     }
                 }
             }
@@ -151,11 +127,11 @@ impl ContextManager {
             messages = messages.split_off(messages.len().saturating_sub(max_messages));
         }
 
-        // Simple token estimation (chars / 4)
-        let mut total_chars: usize = messages.iter().map(|m| m.content.chars().count()).sum();
-        while messages.len() > 1 && (total_chars / 4) > max_tokens {
+        // Accurate token estimation using tiktoken-rs
+        let mut total_tokens: usize = messages.iter().map(|m| estimate_token_count(&m.content)).sum();
+        while messages.len() > 1 && total_tokens > max_tokens {
             let removed = messages.remove(0);
-            total_chars = total_chars.saturating_sub(removed.content.chars().count());
+            total_tokens = total_tokens.saturating_sub(estimate_token_count(&removed.content));
         }
 
         Self {
@@ -232,36 +208,27 @@ impl ContextManager {
         if message_ids.is_empty() {
             return Vec::new();
         }
-        let home = dirs::home_dir().unwrap_or_default();
-        let path = home.join(".maestro").join("last-conversation.json");
-        
-        if !path.exists() {
-            return Vec::new();
-        }
-
-        let text = match tokio::fs::read_to_string(&path).await {
-            Ok(t) => t,
-            _ => return Vec::new(),
-        };
-
-        let payload = match serde_json::from_str::<PersistedConversation>(&text) {
-            Ok(p) => p,
-            _ => return Vec::new(),
-        };
-
-        let mut by_id: HashMap<String, PersistedMessage> = HashMap::new();
-        for msg in payload.messages {
-            by_id.insert(msg.id.clone(), msg);
-        }
 
         let mut out = Vec::new();
-        for id in message_ids {
-            if let Some(found) = by_id.get(id) {
-                out.push(ChatApiMessage {
-                    role: found.role.clone(),
-                    content: found.content.clone(),
-                    attachments: None,
-                });
+        if let Ok(db_path) = crate::task::state::maestro_db_path_core() {
+            if let Ok(conn) = crate::task::repository::db_connection(&db_path) {
+                let placeholders = message_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+                let query = format!("SELECT role, content FROM conversation_messages WHERE id IN ({}) ORDER BY timestamp ASC", placeholders);
+                
+                if let Ok(mut stmt) = conn.prepare(&query) {
+                    let params = message_ids.iter().map(|s| s.clone());
+                    if let Ok(rows) = stmt.query_map(rusqlite::params_from_iter(params), |row| {
+                        Ok(ChatApiMessage {
+                            role: row.get(0)?,
+                            content: row.get(1)?,
+                            attachments: None,
+                        })
+                    }) {
+                        for row in rows.flatten() {
+                            out.push(row);
+                        }
+                    }
+                }
             }
         }
         out

@@ -19,6 +19,7 @@ pub async fn chat_execute_api_core(
     cfg: AppConfig,
     headless_state: &HeadlessProcessState,
     on_data: Arc<dyn StringStream>,
+    _permit: Option<crate::task::queue::TaskPermit>,
 ) -> Result<ChatExecuteApiResult, CoreError> {
     let (execution_id, resolved) = {
         let prepared = crate::storage::execution_binding::resolve_execution(
@@ -102,7 +103,9 @@ pub async fn chat_execute_api_core(
 
     let res_cycle_id = cycle_id.clone();
     let res_exec_id = execution_id.clone();
+
     tokio::spawn(async move {
+
         let run_result = runtime_engine
             .run_api_chat(
                 event_handle,

@@ -1,46 +1,41 @@
-use tauri::{command, AppHandle, State, ipc::Channel};
-use crate::agent_state::TauriEventHandle;
+use tauri::{command, AppHandle, State, ipc::Channel, Manager};
+use crate::agent_state::emitter::AppEventHandle;
 use crate::core::error::CoreError;
 use crate::core::events::ChannelStringStream;
 use super::super::types::*;
-use super::api::chat_execute_api_core;
-use super::cli::chat_execute_cli_core;
+// removed unused imports: chat_execute_api_core, chat_execute_cli_core
 use super::persistence::{chat_save_last_conversation_core, chat_load_last_conversation_core};
 use std::sync::Arc;
 
 #[command]
 pub async fn chat_save_last_conversation(
-    app: AppHandle,
+    _app: AppHandle,
     payload: serde_json::Value,
-    _core_state: State<'_, Arc<crate::core::MaestroCore>>,
+    core_state: State<'_, Arc<crate::core::MaestroCore>>,
 ) -> Result<(), CoreError> {
-    chat_save_last_conversation_core(TauriEventHandle::arc(app), payload).await
+    chat_save_last_conversation_core(core_state.event_registry.clone(), payload).await
 }
 
 #[command]
 pub async fn chat_load_last_conversation(
-    app: AppHandle,
-    _core_state: State<'_, Arc<crate::core::MaestroCore>>,
+    _app: AppHandle,
+    core_state: State<'_, Arc<crate::core::MaestroCore>>,
 ) -> Result<Option<serde_json::Value>, CoreError> {
-    chat_load_last_conversation_core(TauriEventHandle::arc(app)).await
+    chat_load_last_conversation_core(core_state.event_registry.clone()).await
 }
 
 #[command]
 pub async fn chat_execute_api(
-    app: AppHandle,
+    _app: AppHandle,
     request: ChatApiRequest,
     core_state: State<'_, Arc<crate::core::MaestroCore>>,
     on_data: Channel<String>,
 ) -> Result<ChatExecuteApiResult, CoreError> {
     let core = core_state.inner().clone();
-    let cfg = core.config.get();
-    let headless = core.headless_state.clone();
-    chat_execute_api_core(
-        TauriEventHandle::arc(app),
-        core,
+    let event_handle = core.event_registry.clone();
+    core.chat_execute_api(
+        event_handle,
         request,
-        (*cfg).clone(),
-        &headless,
         Arc::new(ChannelStringStream(on_data)),
     )
     .await
@@ -48,24 +43,21 @@ pub async fn chat_execute_api(
 
 #[command]
 pub fn chat_submit_choice(
-    app: AppHandle,
+    _app: AppHandle,
     request: ChatSubmitChoiceRequest,
     core_state: State<'_, Arc<crate::core::MaestroCore>>,
 ) -> Result<(), CoreError> {
     let cfg = core_state.config.get();
     let i18n = cfg.i18n();
 
-    crate::agent_state::emit_state_update(
-        Some(&app),
+    core_state.event_registry.emit_state_update(
         crate::agent_state::resolve_choice_payload(
             request.task_id.clone(),
             request.message_id.clone(),
             request.option_id.clone(),
         ),
-        None,
     );
-    crate::agent_state::emit_state_update(
-        Some(&app),
+    core_state.event_registry.emit_state_update(
         crate::agent_state::append_system_message_payload(
             request.task_id,
             i18n.t("choice_selected").replace("{}", &request.option_label),
@@ -77,7 +69,6 @@ pub fn chat_submit_choice(
                 "optionId": request.option_id,
             })),
         ),
-        None,
     );
     Ok(())
 }
@@ -94,23 +85,17 @@ pub fn chat_execute_api_stop(
 
 #[command]
 pub async fn chat_execute_cli(
-    app: AppHandle,
+    _app: AppHandle,
     request: ChatExecuteCliRequest,
     core_state: State<'_, Arc<crate::core::MaestroCore>>,
     on_data: Channel<String>,
 ) -> Result<ChatExecuteCliResult, CoreError> {
     let core = core_state.inner().clone();
-    let cfg = (*core.config.get()).clone();
-    let event_handle = TauriEventHandle::arc(app);
-    let on_data_stream = Arc::new(ChannelStringStream(on_data));
-    
-    chat_execute_cli_core(
+    let event_handle = core.event_registry.clone();
+    core.chat_execute_cli(
         event_handle,
-        core.clone(),
         request,
-        cfg,
-        &core.headless_state,
-        on_data_stream,
+        Arc::new(ChannelStringStream(on_data)),
     )
     .await
 }
@@ -127,18 +112,20 @@ pub fn chat_execute_cli_stop(
 
 #[command]
 pub fn chat_spawn(
-    app: AppHandle,
+    _app: AppHandle,
     request: ChatSpawnRequest,
     core_state: State<'_, Arc<crate::core::MaestroCore>>,
     on_data: Channel<String>,
 ) -> Result<ChatSessionMeta, CoreError> {
     let core = core_state.inner();
     super::pty::chat_spawn_core(
-        TauriEventHandle::arc(app),
+        core.event_registry.clone(),
         request,
         &*core.config.get(),
         &core.pty_state,
-        on_data,
+        Box::new(move |text| {
+            let _ = on_data.send(text);
+        }),
     )
 }
 
@@ -224,4 +211,44 @@ pub fn ui_session_destroy(app: AppHandle) -> Result<(), CoreError> {
     } else {
         Ok(())
     }
+}
+
+#[command]
+pub async fn voice_transcribe(
+    core: State<'_, Arc<crate::core::MaestroCore>>,
+    engine_id: String,
+    audio_base64: String,
+) -> Result<String, String> {
+    core.voice_transcribe(engine_id, audio_base64).await
+}
+
+#[command]
+pub async fn voice_speech(
+    core: State<'_, Arc<crate::core::MaestroCore>>,
+    engine_id: String,
+    text: String,
+    voice: String,
+) -> Result<String, String> {
+    core.voice_speech(engine_id, text, voice).await
+}
+
+#[command]
+pub async fn vision_capture_screen(
+    core: State<'_, Arc<crate::core::MaestroCore>>,
+) -> Result<String, String> {
+    core.vision_capture_screen()
+}
+
+#[command]
+pub async fn toggle_jiavis(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("jiavis") {
+        let is_visible = window.is_visible().map_err(|e| e.to_string())?;
+        if is_visible {
+            window.hide().map_err(|e| e.to_string())?;
+        } else {
+            window.show().map_err(|e| e.to_string())?;
+            window.set_focus().map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
 }

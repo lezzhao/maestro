@@ -5,7 +5,7 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
-use tauri::{command, State};
+use tauri::{command, Manager};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CliSessionListItem {

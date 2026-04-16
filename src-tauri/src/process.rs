@@ -3,7 +3,6 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
-use std::thread;
 use std::time::Duration;
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, RefreshKind, System};
 use tauri::{command, AppHandle, Emitter, Manager};
@@ -92,17 +91,18 @@ pub fn process_start_monitor(
         .unwrap_or_else(|e| e.into_inner()) = Some(stop_flag.clone());
 
     let app_handle = app.clone();
-    thread::spawn(move || {
+    tauri::async_runtime::spawn(async move {
+        let mut sys = System::new_with_specifics(
+            RefreshKind::nothing()
+                .with_processes(ProcessRefreshKind::nothing().with_cpu().with_memory()),
+        );
+
         while !stop_flag.load(Ordering::Relaxed) {
             let stats = {
-                let core = app_handle.state::<crate::core::MaestroCore>();
+                let core = app_handle.state::<Arc<crate::core::MaestroCore>>();
                 let pty = &core.inner().pty_state;
                 let os_pid = session_id.as_ref().and_then(|id| active_os_pid(pty, id));
                 if let Some(pid_u32) = os_pid {
-                    let mut sys = System::new_with_specifics(
-                        RefreshKind::nothing()
-                            .with_processes(ProcessRefreshKind::nothing().with_cpu().with_memory()),
-                    );
                     let pid = Pid::from_u32(pid_u32);
                     sys.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
                     if let Some(process) = sys.process(pid) {
@@ -134,7 +134,7 @@ pub fn process_start_monitor(
             };
 
             app_handle
-                .state::<crate::core::MaestroCore>()
+                .state::<Arc<crate::core::MaestroCore>>()
                 .inner()
                 .process_monitor
                 .latest
@@ -142,7 +142,7 @@ pub fn process_start_monitor(
                 .unwrap_or_else(|e| e.into_inner())
                 .insert(session_id.clone(), stats.clone());
             let _ = app_handle.emit("perf://stats", stats);
-            thread::sleep(Duration::from_millis(interval));
+            tokio::time::sleep(Duration::from_millis(interval)).await;
         }
     });
 
