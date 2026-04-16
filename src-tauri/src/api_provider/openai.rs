@@ -28,17 +28,89 @@ impl ApiProvider for OpenAiProvider {
         cancel_token: CancellationToken,
         on_data: &'a Arc<dyn StringStream>,
     ) -> Pin<Box<dyn Future<Output = Result<(), ApiProviderError>> + Send + 'a>> {
-        Box::pin(stream_openai_compatible(
-            client,
-            base_url,
-            api_key,
-            model,
-            messages,
-            tools,
-            system_prompt,
-            cancel_token,
-            on_data,
-        ))
+        Box::pin(async move {
+            stream_openai_compatible(
+                client,
+                base_url,
+                api_key,
+                model,
+                messages,
+                tools,
+                system_prompt,
+                cancel_token,
+                on_data,
+            ).await
+        })
+    }
+
+    fn transcribe<'a>(
+        &'a self,
+        client: &'a Client,
+        base_url: &'a str,
+        api_key: &'a str,
+        model: &'a str,
+        audio_data: Vec<u8>,
+        filename: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<String, ApiProviderError>> + Send + 'a>> {
+        Box::pin(async move {
+            let endpoint = format!("{}/audio/transcriptions", normalize_base_url(base_url));
+            let form = reqwest::multipart::Form::new()
+                .text("model", model.to_string())
+                .part("file", reqwest::multipart::Part::bytes(audio_data).file_name(filename.to_string()));
+
+            let response = client
+                .post(endpoint)
+                .header("Authorization", format!("Bearer {api_key}"))
+                .multipart(form)
+                .send()
+                .await
+                .map_err(|e| ApiProviderError::Execution(format!("音轨传输失败: {e}")))?;
+
+            let status = response.status();
+            if !status.is_success() {
+                let text = response.text().await.unwrap_or_default();
+                return Err(ApiProviderError::Execution(format!("STT 错误 {}: {}", status.as_u16(), text)));
+            }
+
+            let result: serde_json::Value = response.json().await.map_err(|e| ApiProviderError::Execution(format!("解析响应失败: {e}")))?;
+            Ok(result["text"].as_str().unwrap_or_default().to_string())
+        })
+    }
+
+    fn speech<'a>(
+        &'a self,
+        client: &'a Client,
+        base_url: &'a str,
+        api_key: &'a str,
+        model: &'a str,
+        input: &'a str,
+        voice: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, ApiProviderError>> + Send + 'a>> {
+        Box::pin(async move {
+            let endpoint = format!("{}/audio/speech", normalize_base_url(base_url));
+            let body = json!({
+                "model": model,
+                "input": input,
+                "voice": voice,
+            });
+
+            let response = client
+                .post(endpoint)
+                .header("Authorization", format!("Bearer {api_key}"))
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| ApiProviderError::Execution(format!("语音合成请求失败: {e}")))?;
+
+            let status = response.status();
+            if !status.is_success() {
+                let text = response.text().await.unwrap_or_default();
+                return Err(ApiProviderError::Execution(format!("TTS 错误 {}: {}", status.as_u16(), text)));
+            }
+
+            let bytes = response.bytes().await.map_err(|e| ApiProviderError::Execution(format!("读取语音流失败: {e}")))?;
+            Ok(bytes.to_vec())
+        })
     }
 }
 

@@ -3,5 +3,7 @@ pub mod conversation;
 pub mod execution_binding;
 pub mod execution_binding_repository;
 pub mod memory;
+pub mod knowledge_service;
 pub mod run_persistence;
 pub mod snapshot_repository;
+pub mod memory_commands;

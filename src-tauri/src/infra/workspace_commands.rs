@@ -2,8 +2,8 @@
 //! Workspaces are top-level containers that group tasks and bind a working directory.
 
 use crate::core::error::CoreError;
-use crate::task::state::maestro_db_path;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -410,10 +410,11 @@ pub fn delete_workspace(db_path: &std::path::Path, workspace_id: &str) -> Result
 #[tauri::command]
 pub async fn workspace_create(
     app: tauri::AppHandle,
+    core: tauri::State<'_, Arc<crate::core::MaestroCore>>,
     request: WorkspaceCreateRequest,
 ) -> Result<Workspace, CoreError> {
-    let db_path = maestro_db_path(&app)?;
-    let ws = create_workspace(&db_path, &request)?;
+    let db_path = &core.state_db_path;
+    let ws = create_workspace(db_path, &request)?;
     // Emit event so frontend can sync
     crate::agent_state::emit_state_update(
         Some(&app),
@@ -426,18 +427,21 @@ pub async fn workspace_create(
 }
 
 #[tauri::command]
-pub async fn workspace_list(app: tauri::AppHandle) -> Result<Vec<Workspace>, CoreError> {
-    let db_path = maestro_db_path(&app)?;
-    list_workspaces(&db_path)
+pub async fn workspace_list(
+    core: tauri::State<'_, Arc<crate::core::MaestroCore>>,
+) -> Result<Vec<Workspace>, CoreError> {
+    let db_path = &core.state_db_path;
+    list_workspaces(db_path)
 }
 
 #[tauri::command]
 pub async fn workspace_update(
     app: tauri::AppHandle,
+    core: tauri::State<'_, Arc<crate::core::MaestroCore>>,
     request: WorkspaceUpdateRequest,
 ) -> Result<Workspace, CoreError> {
-    let db_path = maestro_db_path(&app)?;
-    let ws = update_workspace(&db_path, &request)?;
+    let db_path = &core.state_db_path;
+    let ws = update_workspace(db_path, &request)?;
     crate::agent_state::emit_state_update(
         Some(&app),
         crate::agent_state::AgentStateUpdate::WorkspaceUpdated {
@@ -451,10 +455,11 @@ pub async fn workspace_update(
 #[tauri::command]
 pub async fn workspace_delete(
     app: tauri::AppHandle,
+    core: tauri::State<'_, Arc<crate::core::MaestroCore>>,
     workspace_id: String,
 ) -> Result<(), CoreError> {
-    let db_path = maestro_db_path(&app)?;
-    delete_workspace(&db_path, &workspace_id)?;
+    let db_path = &core.state_db_path;
+    delete_workspace(db_path, &workspace_id)?;
     crate::agent_state::emit_state_update(
         Some(&app),
         crate::agent_state::AgentStateUpdate::WorkspaceDeleted { workspace_id },

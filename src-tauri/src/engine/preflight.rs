@@ -32,15 +32,7 @@ fn resolve_profile(
         return Ok((requested_profile_id.to_string(), profile));
     }
 
-    if let Some(profile) = engine.profiles.get(&engine.active_profile_id).cloned() {
-        return Ok((engine.active_profile_id.clone(), profile));
-    }
-
-    if let Some((fallback_profile_id, profile)) = engine.profiles.iter().next() {
-        return Ok((fallback_profile_id.clone(), profile.clone()));
-    }
-
-    Ok(("default".to_string(), engine.legacy_profile.clone()))
+    Ok((engine.active_profile_id().to_string(), engine.active_profile()))
 }
 
 pub async fn engine_preflight_core(

@@ -14,7 +14,7 @@ pub use runtime::*;
 use crate::config::{EngineConfig, EngineProfile};
 use crate::core::error::CoreError;
 use std::collections::BTreeMap;
-use tauri::{command, AppHandle, State};
+use tauri::{command, State};
 
 #[command]
 pub fn engine_list(
@@ -25,29 +25,26 @@ pub fn engine_list(
 
 #[command]
 pub fn engine_upsert(
-    app: AppHandle,
     id: String,
     engine: EngineConfig,
     core_state: State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<(), CoreError> {
-    core_state.inner().engine_upsert(&app, id, engine)
+    core_state.inner().engine_upsert(id, engine)
 }
 
 #[command]
 pub fn engine_set_active_profile(
-    app: AppHandle,
     engine_id: String,
     profile_id: String,
     core_state: State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<(), CoreError> {
     core_state
         .inner()
-        .engine_set_active_profile(&app, engine_id, profile_id)
+        .engine_set_active_profile(engine_id, profile_id)
 }
 
 #[command]
 pub fn engine_upsert_profile(
-    app: AppHandle,
     engine_id: String,
     profile_id: String,
     profile: EngineProfile,
@@ -55,7 +52,7 @@ pub fn engine_upsert_profile(
 ) -> Result<(), CoreError> {
     core_state
         .inner()
-        .engine_upsert_profile(&app, engine_id, profile_id, profile)
+        .engine_upsert_profile(engine_id, profile_id, profile)
 }
 
 #[command]
@@ -85,11 +82,10 @@ pub fn engine_check_command(command: String) -> bool {
 
 #[command]
 pub fn engine_delete(
-    app: AppHandle,
     id: String,
     core_state: State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<(), CoreError> {
-    core_state.inner().engine_delete(&app, id)
+    core_state.inner().engine_delete(id)
 }
 
 #[command]

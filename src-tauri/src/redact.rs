@@ -10,6 +10,13 @@ static SK_PATTERN: Lazy<Regex> =
 static BEARER_PATTERN: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"Bearer\s+[a-zA-Z0-9\-_.]+").expect("redact Bearer pattern"));
 
+static GEMINI_PATTERN: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"AIzaSy[a-zA-Z0-9\-_]{30,}").expect("redact gemini pattern"));
+
+static AWS_PATTERN: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}").expect("redact aws pattern"));
+
+
 /// Redact sensitive patterns in text. Replaces matches with [REDACTED].
 pub fn redact_sensitive(text: &str, extra_sensitive: Option<&[String]>) -> String {
     if text.is_empty() {
@@ -18,7 +25,7 @@ pub fn redact_sensitive(text: &str, extra_sensitive: Option<&[String]>) -> Strin
     let mut out = text.to_string();
     
     // 1. Redact Regex Patterns
-    for re in [&*SK_PATTERN, &*BEARER_PATTERN] {
+    for re in [&*SK_PATTERN, &*BEARER_PATTERN, &*GEMINI_PATTERN, &*AWS_PATTERN] {
         out = re.replace_all(&out, "[REDACTED]").to_string();
     }
 

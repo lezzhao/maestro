@@ -6,14 +6,7 @@ use crate::config::{
     EngineProfile,
 };
 use std::collections::BTreeMap;
-use tauri::AppHandle;
-
-pub fn engine_list_core(config: &AppConfigState) -> BTreeMap<String, EngineConfig> {
-    config.get().engines.clone()
-}
-
 pub fn engine_upsert_core(
-    app: &AppHandle,
     id: String,
     engine: EngineConfig,
     config_state: &AppConfigState,
@@ -21,13 +14,16 @@ pub fn engine_upsert_core(
     let mut config = (*config_state.get()).clone();
     config.engines.insert(id, engine);
     migrate_engine_profiles(&mut config);
-    write_config_to_disk(app, &config)?;
+    write_config_to_disk(&config)?;
     config_state.set(config);
     Ok(())
 }
 
+pub fn engine_list_core(config_state: &AppConfigState) -> BTreeMap<String, EngineConfig> {
+    (*config_state.get()).engines.clone()
+}
+
 pub fn engine_set_active_profile_core(
-    app: &AppHandle,
     engine_id: String,
     profile_id: String,
     config_state: &AppConfigState,
@@ -41,13 +37,12 @@ pub fn engine_set_active_profile_core(
         return Err(format!("profile not found: {profile_id}"));
     }
     engine.active_profile_id = profile_id;
-    write_config_to_disk(app, &config)?;
+    write_config_to_disk(&config)?;
     config_state.set(config);
     Ok(())
 }
 
 pub fn engine_upsert_profile_core(
-    app: &AppHandle,
     engine_id: String,
     profile_id: String,
     profile: EngineProfile,
@@ -75,13 +70,12 @@ pub fn engine_upsert_profile_core(
         );
         engine.active_profile_id = profile_id;
     }
-    write_config_to_disk(app, &config)?;
+    write_config_to_disk(&config)?;
     config_state.set(config);
     Ok(())
 }
 
 pub fn engine_delete_core(
-    app: &AppHandle,
     id: String,
     config_state: &AppConfigState,
 ) -> Result<(), String> {
@@ -90,7 +84,7 @@ pub fn engine_delete_core(
 
     if config.engines.remove(&id).is_some() {
         tracing::info!(engine_id = %id, "engine_delete_core: removed from memory map");
-        write_config_to_disk(app, &config)?;
+        write_config_to_disk(&config)?;
         tracing::info!(engine_id = %id, "engine_delete_core: disk config updated");
         config_state.set(config);
         Ok(())

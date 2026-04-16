@@ -10,13 +10,10 @@ use serde_json::json;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use tokio::sync::Mutex as TokioMutex;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone)]
 pub struct ApiProviderAttachment {
-    #[allow(dead_code)]
-    pub name: String,
     pub mime_type: String,
     pub data: String, // Base64
 }
@@ -69,71 +66,32 @@ pub trait ApiProvider: Send + Sync {
         on_data: &'a Arc<dyn StringStream>,
     ) -> Pin<Box<dyn Future<Output = Result<(), ApiProviderError>> + Send + 'a>>;
 
-    #[allow(clippy::too_many_arguments)]
-    #[allow(dead_code)]
-    fn chat<'a>(
+    fn transcribe<'a>(
         &'a self,
-        client: &'a Client,
-        base_url: &'a str,
-        api_key: &'a str,
-        model: &'a str,
-        messages: &'a [ApiProviderMessage],
-        tools: Option<&'a [ToolDefinition]>,
-        system_prompt: Option<String>,
+        _client: &'a Client,
+        _base_url: &'a str,
+        _api_key: &'a str,
+        _model: &'a str,
+        _audio_data: Vec<u8>,
+        _filename: &'a str,
     ) -> Pin<Box<dyn Future<Output = Result<String, ApiProviderError>> + Send + 'a>> {
-        let cancel_token = CancellationToken::new();
-        let collector = Arc::new(BufferedStringStream::new());
-        let collector_clone = collector.clone();
-        
-        Box::pin(async move {
-            self.stream_chat(
-                client, 
-                base_url, 
-                api_key, 
-                model, 
-                messages, 
-                tools, 
-                system_prompt, 
-                cancel_token, 
-                &(collector_clone as Arc<dyn StringStream>)
-            ).await?;
-            Ok(collector.get_full_text().await)
-        })
+        Box::pin(async { Err(ApiProviderError::Execution("该提供商不支持语音转文字".into())) })
+    }
+
+    fn speech<'a>(
+        &'a self,
+        _client: &'a Client,
+        _base_url: &'a str,
+        _api_key: &'a str,
+        _model: &'a str,
+        _input: &'a str,
+        _voice: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, ApiProviderError>> + Send + 'a>> {
+        Box::pin(async { Err(ApiProviderError::Execution("该提供商不支持文字转语音".into())) })
     }
 }
 
-/// A StringStream adapter that buffers all streamed text for later retrieval.
-#[allow(dead_code)]
-pub struct BufferedStringStream {
-    buffer: TokioMutex<String>,
-}
 
-impl BufferedStringStream {
-    #[allow(dead_code)]
-    pub fn new() -> Self {
-        Self {
-            buffer: TokioMutex::new(String::new()),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub async fn get_full_text(&self) -> String {
-        self.buffer.lock().await.clone()
-    }
-}
-
-impl StringStream for BufferedStringStream {
-    fn send_string(&self, data: String) -> Result<(), String> {
-        // Use try_lock since we're in a sync context
-        match self.buffer.try_lock() {
-            Ok(mut buf) => {
-                buf.push_str(&data);
-                Ok(())
-            }
-            Err(_) => Ok(()), // Skip if lock contention (unlikely)
-        }
-    }
-}
 
 pub fn normalize_base_url(input: &str) -> String {
     input.trim().trim_end_matches('/').to_string()

@@ -241,7 +241,7 @@ pub fn project_detect_stack(project_path: String) -> Result<ProjectStackResult, 
 
 #[command]
 pub fn project_set_current(
-    app: AppHandle,
+    _app: AppHandle,
     project_path: String,
     core_state: State<'_, std::sync::Arc<crate::core::MaestroCore>>,
 ) -> Result<ProjectSetResult, String> {
@@ -249,7 +249,7 @@ pub fn project_set_current(
         let mut config = (*core_state.inner().config.get()).clone();
         config.project.path.clear();
         config.project.detected_stack.clear();
-        write_config_to_disk(&app, &config)?;
+        write_config_to_disk(&config)?;
         core_state.inner().config.set(config);
         return Ok(ProjectSetResult {
             path: String::new(),
@@ -263,7 +263,7 @@ pub fn project_set_current(
     let mut config = (*core_state.inner().config.get()).clone();
     config.project.path = project_path.clone();
     config.project.detected_stack = stacks.clone();
-    write_config_to_disk(&app, &config)?;
+    write_config_to_disk(&config)?;
     core_state.inner().config.set(config);
     Ok(ProjectSetResult {
         path: project_path,

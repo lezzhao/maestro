@@ -33,24 +33,24 @@ struct PendingQuestion {
 }
 
 struct RateLimiter {
-    window_secs: u64,
     max_requests: usize,
-    timestamps: std::sync::Mutex<Vec<Instant>>,
+    window: Duration,
+    timestamps: parking_lot::Mutex<Vec<Instant>>,
 }
 
 impl RateLimiter {
     fn new(window_secs: u64, max_requests: usize) -> Self {
         Self {
-            window_secs,
+            window: Duration::from_secs(window_secs),
             max_requests,
-            timestamps: std::sync::Mutex::new(Vec::new()),
+            timestamps: parking_lot::Mutex::new(Vec::new()),
         }
     }
     
     fn check_and_add(&self) -> bool {
-        let mut times = self.timestamps.lock().unwrap();
+        let mut times = self.timestamps.lock();
         let now = Instant::now();
-        times.retain(|&t| now.duration_since(t) < Duration::from_secs(self.window_secs));
+        times.retain(|&t| now.duration_since(t) < self.window);
         if times.len() >= self.max_requests {
             return false;
         }

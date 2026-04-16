@@ -98,8 +98,63 @@ impl Migration for MigrationV1 {
     }
 }
 
+struct MigrationV2;
+impl Migration for MigrationV2 {
+    fn version(&self) -> i32 { 2 }
+    fn description(&self) -> &str { "Add harness_sessions table" }
+    fn up(&self, conn: &Connection) -> Result<(), CoreError> {
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS harness_sessions (
+                id TEXT PRIMARY KEY,
+                task_id TEXT NOT NULL,
+                current_mode TEXT NOT NULL,
+                strategic_plan TEXT,
+                metadata_json TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_harness_task ON harness_sessions(task_id);
+            "#
+        ).map_err(db_err)
+    }
+}
+
+struct MigrationV3;
+impl Migration for MigrationV3 {
+    fn version(&self) -> i32 { 3 }
+    fn description(&self) -> &str { "Add metadata column to memories table" }
+    fn up(&self, conn: &Connection) -> Result<(), CoreError> {
+        conn.execute_batch(
+            r#"
+            ALTER TABLE memories ADD COLUMN metadata TEXT;
+            CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category);
+            "#
+        ).map_err(db_err)
+    }
+}
+
+struct MigrationV4;
+impl Migration for MigrationV4 {
+    fn version(&self) -> i32 { 4 }
+    fn description(&self) -> &str { "Add usage tracking and embedding columns to memories" }
+    fn up(&self, conn: &Connection) -> Result<(), CoreError> {
+        conn.execute_batch(
+            r#"
+            ALTER TABLE memories ADD COLUMN usage_count INTEGER DEFAULT 0;
+            ALTER TABLE memories ADD COLUMN last_used_at DATETIME;
+            ALTER TABLE memories ADD COLUMN embedding BLOB;
+            "#
+        ).map_err(db_err)
+    }
+}
+
 const MIGRATIONS: &[&dyn Migration] = &[
     &MigrationV1,
+    &MigrationV2,
+    &MigrationV3,
+    &MigrationV4,
 ];
 
 pub fn run_migrations(conn: &Connection) -> Result<(), CoreError> {
