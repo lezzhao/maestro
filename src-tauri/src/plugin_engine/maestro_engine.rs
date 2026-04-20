@@ -25,6 +25,7 @@ pub struct ApiChatRequest {
     pub run_id: Option<String>,
     pub cycle_id: Option<String>,
     pub state_token: Option<String>,
+    pub assistant_message_id: Option<String>,
     #[allow(dead_code)]
     pub attachments: Option<Vec<ChatApiAttachment>>,
 }

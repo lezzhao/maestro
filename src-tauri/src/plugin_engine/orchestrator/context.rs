@@ -205,32 +205,15 @@ impl ContextManager {
     }
 
     async fn load_messages_by_ids(message_ids: &[String]) -> Vec<ChatApiMessage> {
-        if message_ids.is_empty() {
-            return Vec::new();
-        }
-
-        let mut out = Vec::new();
         if let Ok(db_path) = crate::task::state::maestro_db_path_core() {
-            if let Ok(conn) = crate::task::repository::db_connection(&db_path) {
-                let placeholders = message_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-                let query = format!("SELECT role, content FROM conversation_messages WHERE id IN ({}) ORDER BY timestamp ASC", placeholders);
-                
-                if let Ok(mut stmt) = conn.prepare(&query) {
-                    let params = message_ids.iter().map(|s| s.clone());
-                    if let Ok(rows) = stmt.query_map(rusqlite::params_from_iter(params), |row| {
-                        Ok(ChatApiMessage {
-                            role: row.get(0)?,
-                            content: row.get(1)?,
-                            attachments: None,
-                        })
-                    }) {
-                        for row in rows.flatten() {
-                            out.push(row);
-                        }
-                    }
-                }
+            if let Ok(msgs) = crate::storage::conversation::get_messages_by_ids(&db_path, message_ids) {
+                return msgs.into_iter().map(|m| ChatApiMessage {
+                    role: m.role,
+                    content: m.content,
+                    attachments: None, // Attachments handled via separate API flow usually
+                }).collect();
             }
         }
-        out
+        Vec::new()
     }
 }

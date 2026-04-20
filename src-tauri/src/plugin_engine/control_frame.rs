@@ -8,6 +8,18 @@ pub enum AgentPhase {
     Completed,
 }
 
+/// Agent 运行时的生命周期阶段，统一映射为控制帧或系统追踪。
+#[derive(Debug, Clone)]
+pub enum AgentLifecycle {
+    StepStarted { step: usize, cost: f64 },
+    Thinking,
+    ExecutingTools { count: usize },
+    BudgetExceeded { cost: f64 },
+    MaxIterationsReached,
+    Finalizing,
+    Completed,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", content = "payload", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ControlFrame {

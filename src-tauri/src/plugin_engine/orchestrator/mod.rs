@@ -7,7 +7,7 @@ pub mod provider;
 use crate::agent_state::{AppEventHandle, AgentStateUpdate};
 use crate::core::events::StringStream;
 use crate::core::MaestroCore;
-use crate::plugin_engine::control_frame::{AgentPhase, ControlFrame};
+use crate::plugin_engine::control_frame::{AgentPhase, ControlFrame, AgentLifecycle};
 use crate::plugin_engine::maestro_engine::ApiChatRequest;
 use crate::plugin_engine::EngineError;
 use crate::tools::ToolCall;
@@ -19,16 +19,6 @@ use self::context::ContextManager;
 use self::executor::ToolExecutor;
 use self::stream::ToolInterceptStream;
 
-/// Agent 运行时的生命周期阶段
-pub enum AgentLifecycle {
-    StepStarted { step: usize, cost: f64 },
-    Thinking,
-    ExecutingTools { count: usize },
-    BudgetExceeded { cost: f64 },
-    MaxIterationsReached,
-    Finalizing,
-    Completed,
-}
 
 /// 统一事件总线，整合流输出与持久化状态。
 struct AgentEventBus {
@@ -213,7 +203,7 @@ impl AgentOrchestrator {
         if let (Some(conv_id), Ok(db_path)) = (&self.request.conversation_id, crate::task::state::maestro_db_path_core()) {
             if let Some(last_user_msg) = self.request.messages.iter().rev().find(|m| m.role == "user") {
                 let now_ms = chrono::Utc::now().timestamp_millis();
-                let _ = crate::storage::conversation::append_message(
+                let _ = crate::storage::conversation::upsert_message(
                     &db_path,
                     conv_id,
                     &crate::agent_state::PersistedMessagePayload {
@@ -223,6 +213,7 @@ impl AgentOrchestrator {
                         timestamp: Some(now_ms),
                         status: Some("done".into()),
                         attachments: None,
+                        reasoning: None,
                         meta: None,
                     },
                 );
@@ -233,23 +224,34 @@ impl AgentOrchestrator {
     pub async fn run(&mut self) -> Result<String, EngineError> {
         let mut iterations_left = 25;
         let mut final_text = String::new();
+        let mut accumulated_reasoning = String::new();
 
         while iterations_left > 0 {
             let current_step = 26 - iterations_left;
             let cost = *self.cumulative_cost.lock().unwrap();
             self.bus.dispatch_lifecycle(AgentLifecycle::StepStarted { step: current_step, cost });
             
-            if cost > 1.0 {
+            if cost > 2.0 { // Increased budget limit for heavy tasks
                  self.bus.dispatch_lifecycle(AgentLifecycle::BudgetExceeded { cost });
-                 return Err(EngineError::Execution("达到安全预算限额".into()));
+                 return Err(EngineError::Execution("达到安全预算限额 ($2.0)".into()));
             }
 
             iterations_left -= 1;
             
-            let (current_text, tool_calls) = self.generate_completion().await?;
+            let (current_text, tool_calls, reasoning) = self.generate_completion().await?;
+            
+            if let Some(r) = reasoning {
+                accumulated_reasoning.push_str(&r);
+            }
+            final_text.push_str(&current_text);
+
+            // Persist progress after each turn (incremental consistency)
+            self.persist_completion(
+                final_text.clone(), 
+                if accumulated_reasoning.is_empty() { None } else { Some(accumulated_reasoning.clone()) }
+            ).await;
 
             if tool_calls.is_empty() {
-                final_text = current_text;
                 break;
             }
 
@@ -270,7 +272,7 @@ impl AgentOrchestrator {
         Ok(final_text)
     }
 
-    async fn generate_completion(&mut self) -> Result<(String, Vec<ToolCall>), EngineError> {
+    async fn generate_completion(&mut self) -> Result<(String, Vec<ToolCall>, Option<String>), EngineError> {
         self.context.ensure_window_safety(&self.core.config.get());
         self.bus.dispatch_lifecycle(AgentLifecycle::Thinking);
         let interceptor = Arc::new(ToolInterceptStream::new(
@@ -301,7 +303,26 @@ impl AgentOrchestrator {
         )
         .await?;
 
-        Ok((interceptor.take_accumulated_text(), interceptor.take_tool_calls()))
+        Ok((interceptor.take_accumulated_text(), interceptor.take_tool_calls(), interceptor.get_reasoning()))
+    }
+
+    async fn persist_completion(&self, content: String, reasoning: Option<String>) {
+        if let (Some(conv_id), Ok(db_path)) = (&self.request.conversation_id, crate::task::state::maestro_db_path_core()) {
+             let _ = crate::storage::conversation::upsert_message(
+                    &db_path,
+                    conv_id,
+                    &crate::agent_state::PersistedMessagePayload {
+                        id: self.request.assistant_message_id.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                        role: "assistant".to_string(),
+                        content,
+                        timestamp: Some(chrono::Utc::now().timestamp_millis()),
+                        status: Some("done".into()),
+                        attachments: None,
+                        reasoning,
+                        meta: None,
+                    },
+                );
+        }
     }
 
     async fn process_tool_calls(&mut self, assistant_text: String, tool_calls: Vec<ToolCall>) -> Result<(), EngineError> {
@@ -357,22 +378,6 @@ impl AgentOrchestrator {
                 );
             }
 
-            // 2. Persist Assistant Message to Conversation DB
-            if let Some(conv_id) = &self.request.conversation_id {
-                let _ = crate::storage::conversation::append_message(
-                    &db_path,
-                    conv_id,
-                    &crate::agent_state::PersistedMessagePayload {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        role: "assistant".to_string(),
-                        content: last_msg,
-                        timestamp: Some(chrono::Utc::now().timestamp_millis()),
-                        status: Some("done".into()),
-                        attachments: None,
-                        meta: None,
-                    },
-                );
-            }
         }
         self.bus.dispatch_lifecycle(AgentLifecycle::Completed);
     }
