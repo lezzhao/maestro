@@ -42,6 +42,7 @@ export function ChatPanel({
     pendingAttachments,
     removePendingAttachment,
     addPendingAttachments,
+    isLocked,
   } = useChatSession({
     activeTaskId,
     activeEngineId,
@@ -78,9 +79,10 @@ export function ChatPanel({
   // Execution Phase Label is removed as the UI no longer needs it
 
   const isActiveEngineUnavailable = !isReady;
+  const isSendBlocked = isActiveEngineUnavailable || isLocked;
   const sendBlockedReason = isActiveEngineUnavailable
     ? t("event_engine_unavailable", { engine: activeEngine?.display_name || activeEngineId })
-    : "";
+    : isLocked ? "连接中..." : "";
 
   return (
     <div className="flex flex-col h-full bg-transparent overflow-hidden animate-in fade-in duration-200">
@@ -131,7 +133,7 @@ export function ChatPanel({
         handleSend={handleSend}
         handleStop={handleStop}
         placeholder={!isReady ? t("chat_input_placeholder_unavailable") : chatLabels.inputPlaceholder}
-        sendBlocked={isActiveEngineUnavailable}
+        sendBlocked={isSendBlocked}
         sendBlockedReason={sendBlockedReason}
         onRecoveryAction={() => setShowSettings(true)}
         recoveryActionLabel={t("go_setup")}

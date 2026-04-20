@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { toast } from "sonner";
 import { useChatAgent } from "./useChatAgent";
 import { useChatStore } from "../stores/chatStore";
+import { createMessage } from "../components/chat/createMessage";
 import type { ChatChoiceAction, ChatChoiceOption, ChatMessage } from "../types";
 
 interface UseChatPanelActionsParams {
@@ -52,6 +53,7 @@ export function useChatPanelActions({
 }: UseChatPanelActionsParams) {
   const { saveLastConversation, submitChoice } = useChatAgent();
   const resolveChoice = useChatStore((s) => s.resolveChoice);
+  const addMessage = useChatStore((s) => s.addMessage);
   const clearMessages = useChatStore((s) => s.clearMessages);
   const clearTaskRuns = useChatStore((s) => s.clearTaskRuns);
 
@@ -95,6 +97,12 @@ export function useChatPanelActions({
     if (!activeTaskId || isRunning) return;
     clearMessages(activeTaskId);
     clearTaskRuns(activeTaskId);
+    addMessage(
+      activeTaskId,
+      createMessage("system", "--- session_buffer_reset ---", {
+        meta: { eventType: "notice" },
+      }),
+    );
     try {
       await saveLastConversation({
         task_id: activeTaskId,

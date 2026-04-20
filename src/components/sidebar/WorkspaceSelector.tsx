@@ -3,6 +3,8 @@ import { ChevronDown, Plus } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useTranslation } from "../../i18n";
 import { useActiveWorkspace, useWorkspaceStoreState, useAppUiState } from "../../hooks/use-app-store-selectors";
+import { createPortal } from "react-dom";
+import { useRef, useEffect } from "react";
 
 interface WorkspaceSelectorProps {
   onCreateWorkspace: () => void;
@@ -16,11 +18,41 @@ export const WorkspaceSelector = memo(function WorkspaceSelector({
   const { workspaces, setActiveWorkspaceId } = useWorkspaceStoreState();
   const { setShowSettings } = useAppUiState();
   const [isWorkspaceMenuOpen, setIsWorkspaceMenuOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
+
+  const handleOpen = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isWorkspaceMenuOpen && triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setCoords({
+        top: rect.bottom,
+        left: rect.left,
+        width: rect.width
+      });
+    }
+    setIsWorkspaceMenuOpen(!isWorkspaceMenuOpen);
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (isWorkspaceMenuOpen && 
+          triggerRef.current && 
+          !triggerRef.current.contains(target) &&
+          !target.closest('.workspace-portal-content')) {
+        setIsWorkspaceMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isWorkspaceMenuOpen]);
 
   return (
     <div className="relative shrink-0 px-2 py-0 bg-background/5">
       <button 
-        onClick={() => setIsWorkspaceMenuOpen(!isWorkspaceMenuOpen)}
+        ref={triggerRef}
+        onClick={handleOpen}
         className="w-full flex items-center px-2 py-2 rounded-xl bg-transparent transition-all hover:bg-white/[0.03] group active:scale-[0.98]"
       >
         <div className="flex items-center gap-3 w-full">
@@ -42,9 +74,17 @@ export const WorkspaceSelector = memo(function WorkspaceSelector({
         </div>
       </button>
 
-      {/* Workspace Dropdown */}
-      {isWorkspaceMenuOpen && (
-        <div className="absolute top-[calc(100%-8px)] left-4 right-4 bg-popover/95 backdrop-blur-xl border border-border shadow-2xl z-dropdown py-3 rounded-2xl animate-in fade-in zoom-in-95 duration-200 origin-top">
+      {/* Workspace Dropdown - Portaled */}
+      {isWorkspaceMenuOpen && createPortal(
+        <div 
+          style={{ 
+            position: 'fixed', 
+            top: `${coords.top + 6}px`, 
+            left: `${coords.left}px`,
+            width: `${coords.width}px`,
+          }}
+          className="bg-popover/95 backdrop-blur-xl border border-border shadow-2xl z-dropdown py-3 rounded-2xl animate-in fade-in zoom-in-95 duration-200 origin-top workspace-portal-content"
+        >
           <div className="max-h-60 overflow-y-auto px-2 space-y-1 no-scrollbar">
              {workspaces.map((ws) => (
                <button
@@ -84,7 +124,8 @@ export const WorkspaceSelector = memo(function WorkspaceSelector({
               <span>{t("create_workspace") || "New Workspace"}</span>
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -134,9 +134,10 @@ export const MessageList = memo(function MessageList({
           initialTopMostItemIndex={messages.length - 1}
           increaseViewportBy={300}
           itemContent={(index, message) => (
-            <div className={index === 0 ? "pt-2 pb-1" : "py-1"}>
+            <div className={index === 0 ? "pt-2 pb-0.5" : "py-0.5"}>
                 <ChatMessageItem
                   message={message}
+                  taskId={taskId}
                   minimalMode={true}
                   labels={chatLabels}
                   isRunning={isRunning}

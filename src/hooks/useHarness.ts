@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { harnessCommands, HarnessSession } from './commands/harness-commands';
+import { useChatStore } from '../stores/chatStore';
+import { createMessage } from '../components/chat/createMessage';
 
 export function useHarness(taskId?: string) {
+  const addMessage = useChatStore((s) => s.addMessage);
   const [session, setSession] = useState<HarnessSession | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,6 +32,12 @@ export function useHarness(taskId?: string) {
     if (!taskId) return;
     try {
       await harnessCommands.transition(taskId, newMode);
+      addMessage(
+        taskId,
+        createMessage("system", `--- mode_transition: ${newMode} ---`, {
+          meta: { eventType: "notice" },
+        }),
+      );
       await refreshSession();
     } catch (err) {
       console.error('Failed to transition harness mode:', err);

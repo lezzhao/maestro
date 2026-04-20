@@ -32,7 +32,7 @@ export function MainSidebar({
       defaultSize={260}
       minSize={220}
       maxSize={450}
-      className="flex flex-col bg-background/40 backdrop-blur-3xl relative z-sidebar border-r border-white/[0.04] dark:border-white/[0.02]"
+      className="flex flex-col glass-surface-high relative z-sidebar border-r-0"
     >
       <PanelHeader 
         title={

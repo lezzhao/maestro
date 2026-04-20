@@ -8,6 +8,7 @@ import { useAppStore } from "../../stores/appStore";
 import { useChatAgent } from "../useChatAgent";
 import { useExecutionQueue } from "../useExecutionQueue";
 import { useAgentExecutor } from "../useAgentExecutor";
+import { useBatchedAppender } from "../useBatchedAppender";
 import type { ExecutionEvent } from "../../services/ExecutionClient";
 import type { ChatApiMessage, ChatChoicePayload, EngineProfile, RunEvent, ChatAttachment } from "../../types";
 
@@ -54,9 +55,12 @@ export function useChatExecutionOrchestrator({
   const pendingAttachments = useChatStore((s) => s.getTaskPendingAttachments(activeTaskId));
   const addMessage = useChatStore((s) => s.addMessage);
   const updateMessage = useChatStore((s) => s.updateMessage);
+  const appendToMessage = useChatStore((s) => s.appendToMessage);
   const setTaskRunning = useChatStore((s) => s.setTaskRunning);
   const addRunEvent = useChatStore((s) => s.addRunEvent);
   const setRunVerification = useChatStore((s) => s.setRunVerification);
+  const setExecutionLock = useChatStore((s) => s.setExecutionLock);
+  const isLocked = useChatStore((s) => !!s.taskExecutionLock[activeTaskId ?? ""]);
   const clearPendingAttachmentsByTask = useChatStore((s) => s.clearPendingAttachments);
   const removePendingAttachmentByTask = useChatStore((s) => s.removePendingAttachment);
   const addPendingAttachmentsByTask = useChatStore((s) => s.addPendingAttachments);
@@ -76,6 +80,15 @@ export function useChatExecutionOrchestrator({
   const cliContinuationRef = useRef(false);
   const finalizeRoundRef = useRef<(() => void) | null>(null);
   const failRoundRef = useRef<((errText: string) => void) | null>(null);
+  
+  // Industrial locks & mapping (Fix 4: Cross-talk prevention)
+  const cycleAssistantMapRef = useRef<Record<string, string>>({});
+
+  // Performance Optimization: Batched Streaming (Fix 8)
+  const { appendChunk: appendStreamingTextChunk, flushNow: flushStreamingText } = 
+    useBatchedAppender<string, string>((_taskId, msgId, content) => {
+      if (activeTaskId) appendToMessage(activeTaskId, msgId, content);
+    });
 
   const createChoiceSystemMessage = useCallback(
     (content: string, choice: ChatChoicePayload) => {
@@ -110,6 +123,7 @@ export function useChatExecutionOrchestrator({
     [activeRunId, activeTaskId, addRunEvent],
   );
 
+
   const { startExecution, stopExecution } = useAgentExecutor(
     executionMode,
     useCallback(
@@ -124,9 +138,26 @@ export function useChatExecutionOrchestrator({
         }
 
         switch (event.type) {
+          case "runId":
+            setActiveRunId(activeTaskId, event.runId);
+            updateTaskRuntimeBinding(activeTaskId, { activeRunId: event.runId });
+            break;
           case "text":
-            // Optional: handled assistant message appending here if not done elsewhere
-            // For now, most text flow is handled by ChatStore internally or via other events
+            // Use cycle-bound assistant message ID to prevent cross-talk (Fix 5)
+            const boundMsgId = cycleAssistantMapRef.current[event.cycleId];
+            if (boundMsgId) {
+              appendStreamingTextChunk(activeTaskId, boundMsgId, event.text);
+            } else {
+              // Fallback to active ID if not mapped yet (unlikely but safe)
+              const globalMsgId = useChatStore.getState().taskActiveAssistantMsgId[activeTaskId];
+              if (globalMsgId) appendStreamingTextChunk(activeTaskId, globalMsgId, event.text);
+            }
+            break;
+          case "reasoning":
+            const reasoningMsgId = cycleAssistantMapRef.current[event.cycleId] || useChatStore.getState().taskActiveAssistantMsgId[activeTaskId];
+            if (reasoningMsgId) {
+              updateMessage(activeTaskId, reasoningMsgId, { reasoning: event.content });
+            }
             break;
           case "verification":
             if (activeRunId) {
@@ -134,6 +165,7 @@ export function useChatExecutionOrchestrator({
             }
             break;
           case "done":
+            flushStreamingText();
             if (event.exitCode !== undefined && event.exitCode !== 0 && event.exitCode !== null) {
               failRoundRef.current?.(t("execution_failed_code", { code: event.exitCode }));
             } else {
@@ -173,6 +205,7 @@ export function useChatExecutionOrchestrator({
             );
             break;
           case "error":
+            flushStreamingText();
             failRoundRef.current?.(event.message);
             break;
         }
@@ -315,7 +348,9 @@ export function useChatExecutionOrchestrator({
 
   const runExecution = useCallback(
     async (content: string, mode: "api" | "cli") => {
-      if (!activeTaskId) return;
+      if (!activeTaskId || isLocked) return;
+      
+      setExecutionLock(activeTaskId, true);
       setTaskRunning(activeTaskId, true);
       setExecutionPhase(activeTaskId, "connecting");
       updateTaskRecord(activeTaskId, { status: "running" });
@@ -346,6 +381,7 @@ export function useChatExecutionOrchestrator({
               message_ids: buildApiMessageIds(),
               messages: buildApiMessages(),
               pinned_files: pinnedFiles,
+              assistant_message_id: assistantMsg.id,
               max_input_tokens: 12000,
               max_messages: 48,
             }
@@ -357,18 +393,26 @@ export function useChatExecutionOrchestrator({
               is_continuation: cliContinuationRef.current,
             };
 
-        const result = await startExecution(activeTaskId, request);
+        const cycleId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+        setTaskStateToken(activeTaskId, cycleId);
+        
+        // Bind this assistant message to this specific cycle (Fix 6)
+        cycleAssistantMapRef.current[cycleId] = assistantMsg.id;
+
+        const result = await startExecution(activeTaskId, request, cycleId);
         const runId = result.run_id || `run-pending-${Date.now()}`;
         
-        // Set state token to match the new execution cycle (Fix 3)
-        setTaskStateToken(activeTaskId, result.cycleId);
-        
-        setActiveRunId(activeTaskId, runId);
-        updateTaskRuntimeBinding(activeTaskId, { activeExecId: result.exec_id, activeRunId: runId });
+        // Initial binding if not already handled by events
+        if (!useChatStore.getState().taskActiveRunId[activeTaskId]) {
+          setActiveRunId(activeTaskId, runId);
+          updateTaskRuntimeBinding(activeTaskId, { activeExecId: result.exec_id, activeRunId: runId });
+        }
       } catch (error) {
         const errText = String(error);
         failRound(errText);
         recoverExecutionLocally(assistantMsg.id, errText);
+      } finally {
+        setExecutionLock(activeTaskId, false);
       }
     },
     [
@@ -410,10 +454,19 @@ export function useChatExecutionOrchestrator({
         }
       }
 
-      const timer = setTimeout(() => setExecutionPhase(activeTaskId, "idle"), 600);
+      // Clear token after graceful completion or switch (Fix 7: Longer grace period)
+      const timer = setTimeout(() => {
+        setExecutionPhase(activeTaskId, "idle");
+        setTaskStateToken(activeTaskId, "");
+        // Clean up map for this cycle to save memory
+        const currentToken = useChatStore.getState().taskStateToken[activeTaskId];
+        if (!currentToken) {
+           cycleAssistantMapRef.current = {};
+        }
+      }, 5000); // 5 seconds grace period
       return () => clearTimeout(timer);
     }
-  }, [activeTaskId, executionPhase, setExecutionPhase, activeConversationId, t]);
+  }, [activeTaskId, executionPhase, setExecutionPhase, activeConversationId, t, setTaskStateToken]);
 
   useEffect(() => {
     if (activeTaskId && executionPhase === "idle" && !isRunning && queue.length > 0) {
@@ -429,7 +482,14 @@ export function useChatExecutionOrchestrator({
 
   useEffect(() => {
     cliContinuationRef.current = false;
-  }, [activeEngineId, activeTaskId, executionMode]);
+    
+    // Mount-time zombie cleanup (Fix 2 for false "Queued" hint)
+    if (activeTaskId && isRunning && !activeRunId) {
+      console.warn(`[Orchestrator] Cleaning up zombie state on mount for task ${activeTaskId}`);
+      setTaskRunning(activeTaskId, false);
+      setExecutionPhase(activeTaskId, "idle");
+    }
+  }, [activeEngineId, activeTaskId, executionMode, isRunning, activeRunId, setTaskRunning, setExecutionPhase]);
 
   const handleSend = useCallback(async () => {
     if (!activeTaskId) return;
@@ -448,7 +508,13 @@ export function useChatExecutionOrchestrator({
     clearPendingAttachmentsByTask(activeTaskId);
     addMessage(activeTaskId, createMessage("user", trimmedInput, { attachments: currentAttachments }));
 
-    if (isRunning) {
+    // Zombie execution state cleanup (Fix for false "Queued" hint)
+    if (isRunning && !activeRunId && executionPhase !== "connecting" && executionPhase !== "sending") {
+      console.warn(`[Orchestrator] Detected zombie running state for task ${activeTaskId}. Resetting...`);
+      setTaskRunning(activeTaskId, false);
+      setExecutionPhase(activeTaskId, "idle");
+      // Continue with execution instead of queuing
+    } else if (isRunning) {
       pushQueue({ content: finalContent, mode: executionMode });
       addMessage(
         activeTaskId,
@@ -571,7 +637,23 @@ export function useChatExecutionOrchestrator({
       if (activeTask?.sessionId) {
         await stopSession({ session_id: activeTask.sessionId });
       }
-      toast.success(t("execution_stopped"));
+      addMessage(
+        activeTaskId,
+        createMessage("system", "--- execution_interrupted ---", {
+          meta: { eventType: "notice" },
+        }),
+      );
+      setTaskRunning(activeTaskId, false);
+      setExecutionPhase(activeTaskId, "idle");
+      updateTaskRecord(activeTaskId, { status: "completed" });
+      
+      const sessionState = useChatStore.getState();
+      const currentAssistantMsgId = sessionState.taskActiveAssistantMsgId[activeTaskId];
+      if (currentAssistantMsgId) {
+        updateMessage(activeTaskId, currentAssistantMsgId, { status: "completed" });
+        setActiveAssistantMsgId(activeTaskId, null);
+      }
+      setActiveRunId(activeTaskId, null);
     } catch (error) {
       console.error("Error stopping execution:", error);
       toast.error(`${t("stop_failed")}: ${String(error)}`);

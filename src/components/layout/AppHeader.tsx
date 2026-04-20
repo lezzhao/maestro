@@ -11,8 +11,10 @@ import { cn } from "../../lib/utils";
 import { useEngine } from "../../hooks/useEngine";
 import { useTaskRuntimeContext } from "../../hooks/useTaskRuntimeContext";
 import { useActiveTask } from "../../hooks/useActiveTask";
+import { useTaskActions } from "../../hooks/useTaskActions";
 import { useTaskAssistantTokenTotals } from "../../hooks/use-task-chat-state";
 import { Select } from "../ui/select";
+import { Button } from "../ui/button";
 import { PanelHeader } from "../ui/PanelHeader";
 import { useTranslation } from "../../i18n";
 import type { EngineModelListState } from "../../types";
@@ -27,7 +29,7 @@ export function AppHeader() {
     listModels,
     updateProfileModel 
   } = useEngine();
-  const { activeTaskId } = useActiveTask();
+  const { activeTaskId, activeTask } = useActiveTask();
   const { 
     engineId: activeEngineId, 
     profileId: activeProfileId, 
@@ -62,6 +64,8 @@ export function AppHeader() {
     () => models.map((m: string) => ({ value: m, label: m })),
     [models]
   );
+
+  const { handleAddTask } = useTaskActions();
 
   const totalTokens = useTaskAssistantTokenTotals(activeTaskId);
 
@@ -100,66 +104,69 @@ export function AppHeader() {
         </div>
       }
       actions={
-        <div className="flex items-center gap-3 h-full">
-          {activeTaskId && (
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 px-3 py-1 bg-muted/30 border border-border/10 rounded-full transition-all group hover:bg-muted/50">
-                <span className="text-[9px] font-bold text-muted-foreground/50 uppercase tracking-widest">In</span>
-                <span className="text-[11px] font-medium text-foreground/80 tracking-tight">{totalTokens.input.toLocaleString()}</span>
-              </div>
-              <div className="flex items-center gap-2 px-3 py-1 bg-muted/30 border border-border/10 rounded-full transition-all group hover:bg-muted/50">
-                <span className="text-[9px] font-bold text-muted-foreground/50 uppercase tracking-widest">Out</span>
-                <span className="text-[11px] font-medium text-foreground/80 tracking-tight">{totalTokens.output.toLocaleString()}</span>
-              </div>
+        <div className="flex items-center gap-3 h-full pr-1">
+          {/* Status Group */}
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-xl bg-secondary/20 border border-border/5">
+            {activeTask && (
+              <>
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-background/40 shadow-sm border border-border/5">
+                  {activeTask.status === "running" ? (
+                    <div className="status-dot status-dot-pulse [--status-color:theme(colors.primary)]" />
+                  ) : activeTask.status === "error" ? (
+                    <div className="status-dot [--status-color:theme(colors.destructive)]" />
+                  ) : (
+                    <div className="status-dot [--status-color:theme(colors.emerald.500)]" />
+                  )}
+                  <span className="text-[9px] font-black uppercase tracking-widest opacity-60">
+                    {activeTask.status === "running" ? "Live" : "Ready"}
+                  </span>
+                </div>
+
+                <div className="h-3 w-[1px] bg-border/20 mx-0.5" />
+              </>
+            )}
+            
+            <div className="flex items-center gap-1.5 px-1.5 text-muted-foreground/60">
+              <span className="text-[9px] font-black uppercase tracking-widest">Usage</span>
+              <span className="text-[11px] font-bold text-foreground/70 tabular-nums">
+                {((totalTokens.input + totalTokens.output) / 1000).toFixed(1)}k
+              </span>
             </div>
-          )}
+          </div>
 
-          <div className="h-4 w-[1px] bg-border/20 mx-1" />
+          <div className="h-4 w-[1px] bg-border/40" />
 
-          <button
-            onClick={() => invoke("task_create", { 
-              request: { 
-                title: "", 
-                description: "", 
-                engineId: activeEngineId, 
-                workspaceBoundary: "{}" 
-              } 
-            })}
-            className="h-8 px-4 rounded-xl bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 hover:border-primary/40 transition-all duration-300 flex items-center gap-2 group active:scale-95 shadow-lg shadow-primary/5"
-            title="Create New Parallel Task"
+          <Button
+            size="sm"
+            onClick={() => handleAddTask("")}
+            className="h-8 rounded-lg font-semibold flex items-center gap-2 px-4 shadow-sm"
           >
-            <Plus size={14} className="group-hover:rotate-90 transition-transform duration-500" />
-            <span className="text-[10px] font-black tracking-[0.2em] uppercase">{t("new_flow")}</span>
-          </button>
+            <Plus size={14} strokeWidth={2.5} />
+            <span>{t("new_flow")}</span>
+          </Button>
 
-          <div className="h-4 w-[1px] bg-border/20 mx-1" />
-
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => {
               void invoke("toggle_jiavis");
               setIsJiavisActive(!isJiavisActive);
             }}
             className={cn(
-              "group relative p-2 rounded-lg transition-all duration-300 border border-transparent hover:border-border/10",
-              isJiavisActive && "bg-primary/10 border-primary/20 shadow-[0_0_15px_rgba(59,130,246,0.15)]"
+              "p-2 rounded-md transition-all active:scale-90",
+              isJiavisActive && "bg-primary/10 text-primary hover:bg-primary/15"
             )}
             title="Toggle Jiavis HUD (Ctrl+Shift+Space)"
           >
             <Sparkles size={18} className={cn(
-              "relative z-10 transition-all duration-500",
-              isJiavisActive ? "text-primary scale-110 rotate-[15deg] drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]" : "text-muted-foreground/40 group-hover:text-primary group-hover:scale-110"
+              "transition-transform",
+              isJiavisActive && "scale-110 rotate-[15deg]"
             )} />
             
-            {/* Subtle active dot */}
             {isJiavisActive && (
-              <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-primary rounded-full animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
+              <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-primary rounded-full" />
             )}
-            {/* Tooltip hint */}
-            <div className="absolute top-full right-0 mt-2 px-2 py-1 bg-popover border border-border shadow-md opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity scale-95 group-hover:scale-100 whitespace-nowrap z-50 rounded-md">
-              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-tight">Jiavis HUD</span>
-              <span className="ml-2 text-[9px] font-mono text-primary/80 tracking-widest">⌃⇧SPACE</span>
-            </div>
-          </button>
+          </Button>
         </div>
       }
     />

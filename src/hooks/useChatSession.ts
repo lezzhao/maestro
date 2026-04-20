@@ -43,9 +43,12 @@ export function useChatSession({
     setInput,
   });
 
+  const isLocked = useChatStore((s) => !!s.taskExecutionLock[activeTaskId ?? ""]);
+
   return {
     input,
     setInput,
+    isLocked,
     executionPhase,
     handleSend,
     handleStop,

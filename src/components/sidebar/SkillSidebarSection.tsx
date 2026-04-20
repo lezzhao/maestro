@@ -31,6 +31,10 @@ export function SkillSidebarSection({ onOpenGallery }: Props) {
     // For now just on mount.
   }, []);
 
+  if (!isLoading && skills.length === 0) {
+    return null;
+  }
+
   return (
     <div className="space-y-4 px-4">
       <div className="flex items-center justify-between group/title">
@@ -49,10 +53,6 @@ export function SkillSidebarSection({ onOpenGallery }: Props) {
         {isLoading ? (
           <div className="h-20 flex items-center justify-center opacity-20">
             <Zap size={14} className="animate-pulse" />
-          </div>
-        ) : skills.length === 0 ? (
-          <div className="p-4 rounded-2xl bg-white/[0.01] border border-white/[0.03] text-center">
-            <p className="text-[9px] font-bold text-muted-foreground/20 uppercase tracking-widest leading-relaxed"> No skills learned yet </p>
           </div>
         ) : (
           <div className="space-y-1">

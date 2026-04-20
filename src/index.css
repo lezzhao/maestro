@@ -1,104 +1,101 @@
 @import "tailwindcss";
 
 :root {
-  /* Accomplish Alignment: Light Mode HSL Tokens */
-  --background: 60 15% 96.3%; /* #F7F7F4 */
-  --foreground: 0 0% 12.5%; /* #202020 */
+  /* Maestro Studio Pro: Light Mode (Pro Neutral) */
+  --background: 0 0% 100%;
+  --foreground: 240 10% 3.9%;
   
-  --card: 0 0% 98.8%;
-  --card-foreground: 0 0% 12.5%;
+  --card: 0 0% 100%;
+  --card-foreground: 240 10% 3.9%;
   
-  --popover: 0 0% 98.8%;
-  --popover-foreground: 0 0% 12.5%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 10% 3.9%;
   
-  --primary: 123 30% 20%; /* Nature Green */
+  --primary: 250 84% 54%;
   --primary-foreground: 0 0% 100%;
-  --primary-rgb: 33, 60, 32;
 
-  --secondary: 120 14% 85%;
-  --secondary-foreground: 100 20% 18%;
+  --secondary: 240 4.8% 95.9%;
+  --secondary-foreground: 240 5.9% 10%;
   
-  --muted: 0 0% 93.7%;
-  --muted-foreground: 0 0% 39.2%;
+  --muted: 240 4.8% 95.9%;
+  --muted-foreground: 240 3.8% 46.1%;
   
-  --accent: 60 15% 95%;
-  --accent-foreground: 0 0% 12.5%;
+  --accent: 240 4.8% 95.9%;
+  --accent-foreground: 240 5.9% 10%;
   
-  --destructive: 8 78% 54%;
-  --destructive-foreground: 0 0% 100%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 0 0% 98%;
   
-  --border: 12 8% 90%;
-  --border-muted: 12 8% 94%;
-  --border-strong: 12 8% 85%;
+  --border: 240 5.9% 90%;
+  --border-muted: 240 5.9% 95%;
+  --border-strong: 240 5.9% 80%;
   
-  --input: 0 0% 84.7%;
-  --ring: 20 25% 33%;
+  --input: 240 5.9% 90%;
+  --ring: 250 84% 54%;
 
-  --radius-xs: 2px;
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 10px;
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
   --radius-full: 9999px;
   
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.03);
-  --shadow-md: 0 12px 24px -10px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 20px 40px -15px rgba(0, 0, 0, 0.1);
-  --shadow-vibe: 0 8px 32px 0 rgba(0, 0, 0, 0.04);
-  --shadow-glow: 0 0 15px hsla(123, 30%, 20%, 0.1);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 12px 24px -6px rgba(0, 0, 0, 0.12);
+  --shadow-vibe: 0 20px 48px -12px rgba(0, 0, 0, 0.18);
+  --shadow-glow: 0 0 20px hsla(250, 84%, 54%, 0.15);
+  --shadow-studio: 0 8px 32px -4px rgba(0, 0, 0, 0.1), 0 4px 8px -2px rgba(0, 0, 0, 0.06);
 
   --header-height: 3.5rem;
   
-  /* HUD / Cyber Design Tokens */
-  --hud-primary: 217 91% 60%;
-  --hud-accent: 188 86% 53%;
-  --hud-error: 0 84% 60%;
+  /* Alias mappings for legacy components */
+  --bg-base: var(--background);
+  --bg-subtle: var(--muted);
+  --bg-elevated: var(--card);
+  --text-main: var(--foreground);
+  --text-muted: var(--muted-foreground);
+  --text-dim: 240 5% 64.9%;
 }
 
-/* Dark Mode Alignment */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --background: 0 0% 9%;
-    --foreground: 0 0% 95%;
-    
-    --card: 0 0% 11%;
-    --card-foreground: 0 0% 95%;
-    
-    --popover: 0 0% 11%;
-    --popover-foreground: 0 0% 95%;
-    
-    --primary: 123 30% 45%;
-    --primary-foreground: 0 0% 9%;
-    --primary-rgb: 80, 148, 79;
-    
-    --secondary: 120 10% 20%;
-    --secondary-foreground: 120 14% 85%;
-    
-    --muted: 0 0% 15%;
-    --muted-foreground: 0 0% 64%;
-    
-    --accent: 0 0% 18%;
-    --accent-foreground: 0 0% 95%;
-    
-    --border: 0 0% 20%;
-    --border-muted: 0 0% 16%;
-    --border-strong: 0 0% 25%;
-    
-    --input: 0 0% 25%;
-    --ring: 20 25% 55%;
-    
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
-    --shadow-md: 0 20px 40px -15px rgba(0, 0, 0, 0.6);
-  }
-}
-
-[data-theme='light'] {
-  --background: 60 15% 96.3%;
-  --primary: 123 30% 20%;
-}
-
-[data-theme='dark'] {
-  --background: 0 0% 9%;
-  --primary: 123 30% 45%;
+/* Explicit Dark Theme (The "Studio" Look) */
+.dark, [data-theme='dark'] {
+  --background: 240 10% 2.5%;
+  --foreground: 0 0% 98%;
+  
+  --card: 240 10% 4.5%;
+  --card-foreground: 0 0% 98%;
+  
+  --popover: 240 10% 5%;
+  --popover-foreground: 0 0% 98%;
+  
+  --primary: 250 84% 64%;
+  --primary-foreground: 0 0% 100%;
+  
+  --secondary: 240 5% 10%;
+  --secondary-foreground: 0 0% 98%;
+  
+  --muted: 240 5% 8%;
+  --muted-foreground: 240 4% 60%;
+  
+  --accent: 240 5% 12%;
+  --accent-foreground: 0 0% 98%;
+  
+  --border: 240 5% 12%;
+  --border-muted: 240 5% 8%;
+  --border-strong: 240 5% 20%;
+  
+  --input: 240 5% 12%;
+  --ring: 250 84% 64%;
+  
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  
+  /* Alias mappings */
+  --bg-base: var(--background);
+  --bg-subtle: var(--muted);
+  --bg-elevated: var(--card);
+  --text-main: var(--foreground);
+  --text-muted: var(--muted-foreground);
 }
 
 @theme {
@@ -122,16 +119,24 @@
   --color-border-strong: hsl(var(--border-strong));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
+
+  /* Legacy utility mappings */
+  --color-bg-base: hsl(var(--bg-base));
+  --color-bg-subtle: hsl(var(--bg-subtle));
+  --color-bg-elevated: hsl(var(--bg-elevated));
+  --color-text-main: hsl(var(--text-main));
+  --color-text-muted: hsl(var(--text-muted));
+  --color-text-dim: hsl(var(--text-dim));
   
   --radius-xs: var(--radius-xs);
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius-md);
   --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
   
   --shadow-vibe: var(--shadow-vibe);
   --shadow-glow: var(--shadow-glow);
 
-  /* Centralized Z-Index Matrix */
   --z-base: 0;
   --z-main-content: 10;
   --z-sidebar: 20;
@@ -142,30 +147,26 @@
   --z-toast: 999;
 
   --header-height: var(--header-height);
-  
-  --color-hud-primary: hsl(var(--hud-primary));
-  --color-hud-accent: hsl(var(--hud-accent));
-  --color-hud-error: hsl(var(--hud-error));
 }
 
 @utility glass-surface {
-  @apply bg-card/40 backdrop-blur-3xl border border-white/[0.04] dark:border-white/[0.02] shadow-[0_8px_32px_rgb(0,0,0,0.12)];
+  @apply bg-card/80 backdrop-blur-xl border border-border/20 shadow-sm;
 }
 
 @utility glass-surface-high {
-  @apply bg-background/60 backdrop-blur-[40px] border border-white/[0.1] dark:border-white/[0.05] shadow-[0_20px_60px_rgb(0,0,0,0.3)] inner-border;
+  @apply bg-background/90 backdrop-blur-2xl border border-border/40 shadow-md;
 }
 
 @utility glass-surface-low {
-  @apply bg-white/[0.02] backdrop-blur-2xl border border-white/[0.04] dark:border-white/[0.02] hover:bg-white/[0.04] transition-all;
+  @apply bg-white/[0.01] dark:bg-black/[0.1] backdrop-blur-lg border border-border/10 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors;
 }
 
 @utility glass-surface-strong {
-  @apply bg-background/70 backdrop-blur-3xl border border-white/[0.08] dark:border-white/[0.04] shadow-[0_12px_48px_rgb(0,0,0,0.2)];
+  @apply bg-card/95 backdrop-blur-3xl border border-border shadow-lg;
 }
 
 @utility inner-border {
-  @apply relative after:absolute after:inset-0 after:rounded-[inherit] after:border after:border-white/[0.05] after:pointer-events-none;
+  @apply relative after:absolute after:inset-0 after:rounded-[inherit] after:border after:border-white/[0.02] dark:after:border-white/[0.01] after:pointer-events-none;
 }
 
 @utility status-dot {
@@ -199,67 +200,71 @@ body,
   font-family: 'Geist Mono', 'JetBrains Mono', 'IBM Plex Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
 }
 
-/* Chat Markdown Styling */
+/* Terminal-Inspired Chat Styling */
+.terminal-flow {
+  @apply font-mono text-[13px] leading-[1.6] text-foreground/90 antialiased;
+}
+
 .chat-markdown {
-  @apply text-[15px] leading-relaxed text-foreground/90 font-sans;
+  @apply text-[13px] leading-[1.5] text-foreground/90 font-mono tracking-tight;
 }
 
 .chat-markdown p {
-  @apply mb-4 last:mb-0;
+  @apply mb-0.5 last:mb-0;
 }
 
 .chat-markdown h1, 
 .chat-markdown h2, 
 .chat-markdown h3 {
-  @apply font-bold text-foreground mt-6 mb-3 tracking-tight;
+  @apply font-bold text-foreground mt-3 mb-1.5 tracking-normal normal-case;
 }
 
-.chat-markdown h1 { @apply text-2xl; }
-.chat-markdown h2 { @apply text-xl; }
-.chat-markdown h3 { @apply text-lg; }
+.chat-markdown h1 { @apply text-xl; }
+.chat-markdown h2 { @apply text-lg; }
+.chat-markdown h3 { @apply text-base; }
 
 .chat-markdown ul, 
 .chat-markdown ol {
-  @apply mb-4 pl-6 space-y-2;
+  @apply mb-2 pl-6 space-y-1;
 }
 
-.chat-markdown ul { @apply list-disc; }
-.chat-markdown ol { @apply list-decimal; }
+.chat-markdown ul { @apply list-disc marker:text-primary/40; }
+.chat-markdown ol { @apply list-decimal marker:text-primary/40; }
 
 .chat-markdown li {
   @apply pl-1;
 }
 
 .chat-markdown blockquote {
-  @apply border-l-4 border-primary/20 bg-muted/30 px-5 py-3 rounded-r-xl my-5 italic text-muted-foreground;
+  @apply border-l-2 border-primary/20 bg-primary/[0.02] px-4 py-2 rounded-r my-2 italic text-muted-foreground font-medium;
 }
 
-.chat-markdown code {
-  @apply bg-muted/60 text-primary font-mono text-[13px] px-1.5 py-0.5 rounded-md border border-border/40;
+.chat-markdown code:not(pre code) {
+  @apply bg-primary/[0.04] text-primary/80 font-mono text-[12px] px-1.5 py-0.5 rounded-md border border-primary/20;
 }
 
 .chat-markdown pre {
-  @apply my-5 transition-all duration-300;
+  @apply my-2 transition-all duration-300 rounded overflow-hidden;
 }
 
 .chat-markdown hr {
-  @apply my-8 border-border/40;
+  @apply my-8 border-border/20;
 }
 
 .chat-markdown a {
-  @apply text-primary hover:underline underline-offset-4 decoration-primary/40 font-medium;
+  @apply text-primary hover:text-primary/80 transition-colors underline underline-offset-4 decoration-primary/20 hover:decoration-primary/40 font-bold;
 }
 
 .chat-markdown table {
-  @apply w-full mb-6 border-collapse text-[13px];
+  @apply w-full mb-6 border-collapse text-[12px] rounded-xl overflow-hidden border border-border/20;
 }
 
 .chat-markdown th {
-  @apply bg-muted/50 border border-border/60 px-3 py-2 text-left font-bold text-foreground;
+  @apply bg-muted/30 border-b border-border/20 px-3 py-2 text-left font-black uppercase tracking-wider text-muted-foreground/60;
 }
 
 .chat-markdown td {
-  @apply border border-border/40 px-3 py-2 text-muted-foreground;
+  @apply border-b border-border/10 px-3 py-2 text-foreground/80;
 }
 
 /* Scrollbar - Minimalist & Subtle */
@@ -281,70 +286,16 @@ body,
   background: hsl(var(--primary));
 }
 
-/* Animations - Gentle Springs */
-@keyframes fade-up {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+/* Global Shadows Utility */
+@utility shadow-vibe { box-shadow: var(--shadow-vibe); }
+@utility shadow-glow { box-shadow: var(--shadow-glow); }
+@utility shadow-studio { box-shadow: var(--shadow-studio); }
+
+.terminal-prefix {
+  @apply font-mono font-black select-none mr-3 px-1.5 py-0.5 rounded text-[11px] uppercase tracking-wider;
 }
 
-.animate-fade-up {
-  animation: fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-/* Glow Effect - Unified with Primary HSL */
-.glow-primary {
-  box-shadow: 0 0 15px hsla(var(--primary), 0.15);
-}
-
-/* Immersive Utility */
-.utility-panel {
-  background: hsl(var(--card));
-  border: 1px solid hsl(var(--border-muted));
-}
-
-/* Chat Markdown Contrast & Typography */
-.chat-markdown {
-  color: hsl(var(--foreground));
-  line-height: 1.6;
-  font-size: 14px;
-}
-
-.chat-markdown p {
-  margin-bottom: 0.75rem;
-}
-
-.chat-markdown p:last-child {
-  margin-bottom: 0;
-}
-
-.chat-markdown h1, .chat-markdown h2, .chat-markdown h3 {
-  font-weight: 700;
-  margin-top: 1.25rem;
-  margin-bottom: 0.5rem;
-  color: hsl(var(--foreground));
-}
-
-.chat-markdown ul, .chat-markdown ol {
-  margin-left: 1.25rem;
-  margin-bottom: 0.75rem;
-}
-
-.chat-markdown li {
-  margin-bottom: 0.25rem;
-}
-
-.chat-markdown blockquote {
-  border-left: 3px solid hsl(var(--border-muted));
-  padding-left: 1rem;
-  font-style: italic;
-  color: hsl(var(--muted-foreground));
-}
-
-.chat-markdown code:not(pre code) {
-  font-family: 'Geist Mono', monospace;
-  background-color: hsl(var(--muted));
-  color: hsl(var(--foreground));
-  padding: 0.1rem 0.3rem;
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-}
+.terminal-user { @apply bg-primary/10 text-primary border border-primary/20; }
+.terminal-ai { @apply bg-muted text-muted-foreground border border-border; }
+.terminal-system { @apply bg-amber-500/10 text-amber-500 border border-amber-500/20; }
+.terminal-tool { @apply bg-emerald-500/10 text-emerald-500 border border-emerald-500/20; }

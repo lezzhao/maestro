@@ -157,8 +157,7 @@ export function WorkspaceLayout() {
 
   // 工作区列表已在 useAgentStateSync bootstrap 中加载，此处仅订阅 store
   return (
-    <div className="flex-1 h-full min-h-0 overflow-hidden relative flex bg-background/95 text-foreground font-sans">
-
+    <div className="flex-1 h-full min-h-0 overflow-hidden relative flex bg-background text-foreground font-sans">
       <div className="flex-1 h-full min-w-0 relative">
         {showSettings ? (
           <Suspense fallback={null}>
@@ -179,6 +178,7 @@ export function WorkspaceLayout() {
               onThemeChange={setTheme}
               lang={lang}
               onLangChange={setLang}
+              onClose={() => setShowSettings(false)}
             />
           </Suspense>
         ) : showSkillGallery ? (
@@ -186,33 +186,28 @@ export function WorkspaceLayout() {
             <SkillGallery />
           </Suspense>
         ) : !activeWorkspaceId ? (
-          <div className="h-full flex flex-col items-center justify-center p-8 bg-background relative overflow-hidden animate-in fade-in duration-1000">
-            {/* Ambient Background Glow */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/5 blur-[120px] rounded-full pointer-events-none" />
-            
-            <div className="w-[480px] space-y-12 flex flex-col items-center text-center relative z-10">
+          <div className="h-full flex flex-col items-center justify-center p-8 bg-muted/30 relative overflow-hidden animate-in fade-in duration-700">
+            <div className="w-full max-w-md space-y-10 flex flex-col items-center text-center">
               <div className="relative group">
-                <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full group-hover:bg-primary/40 transition-all duration-1000 opacity-50" />
-                <div className="relative w-32 h-32 rounded-[2.5rem] bg-glass-surface-strong border border-white/[0.05] shadow-2xl flex items-center justify-center text-primary transform group-hover:scale-110 group-hover:rotate-3 transition-all duration-700 inner-border">
-                  <Plus size={48} strokeWidth={1.5} className="group-hover:rotate-90 transition-transform duration-500" />
+                <div className="relative w-24 h-24 rounded-3xl bg-background border border-border shadow-sm flex items-center justify-center text-primary transition-all duration-500 group-hover:border-primary/50 group-hover:shadow-md">
+                  <Plus size={40} strokeWidth={1.5} className="group-hover:rotate-90 transition-transform duration-500" />
                 </div>
               </div>
               
-              <div className="space-y-4">
-                <h2 className="text-4xl font-black text-foreground tracking-tighter uppercase">Initiate Workspace</h2>
-                <p className="text-[14px] font-bold text-muted-foreground/40 max-w-[340px] leading-relaxed mx-auto tracking-tight uppercase">
-                  Encapsulate your logic.
-                  <br />
-                  Define your boundary.
+              <div className="space-y-3">
+                <h2 className="text-2xl font-bold text-foreground tracking-tight">Initiate Workspace</h2>
+                <p className="text-sm text-muted-foreground max-w-[280px] leading-relaxed mx-auto">
+                  Select a project directory or define a new boundary for your agent.
                 </p>
               </div>
 
-              <button 
+              <Button 
+                size="lg"
                 onClick={() => setShowCreateWorkspace(true)}
-                className="h-14 px-12 rounded-2xl bg-primary text-primary-foreground font-black uppercase tracking-[0.2em] text-[11px] shadow-2xl shadow-primary/20 hover:scale-[1.05] active:scale-[0.95] transition-all duration-500 inner-border"
+                className="h-12 px-8 rounded-xl font-semibold shadow-lg shadow-primary/10 transition-all hover:scale-[1.02]"
               >
                 Create First Workspace
-              </button>
+              </Button>
             </div>
           </div>
         ) : (
@@ -229,11 +224,11 @@ export function WorkspaceLayout() {
             />
 
             <Separator
-              className="w-px bg-white/[0.04] dark:bg-white/[0.02] hover:bg-primary/40 transition-colors cursor-col-resize z-sidebar -mx-[0.5px]"
+              className="w-px bg-border/40 hover:bg-primary/30 transition-colors cursor-col-resize z-sidebar"
             />
 
             <Panel id="panel-main" defaultSize={800} minSize={400} className="flex flex-col min-h-0 bg-background relative z-main-content overflow-visible">
-              <div className="h-full flex flex-col min-h-0 relative">
+              <div className="h-full flex flex-col min-h-0 relative overflow-visible">
                 <AppHeader />
 
                 <div className="flex-1 min-h-0">

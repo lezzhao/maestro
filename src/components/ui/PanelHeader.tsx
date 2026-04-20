@@ -25,7 +25,7 @@ export function PanelHeader({
       showBorder && "border-b border-border/40",
       className
     )}>
-      <div className="flex items-center gap-3 overflow-hidden flex-1 mr-4">
+      <div className="flex items-center gap-3 flex-1 mr-4 min-w-0">
         {title}
       </div>
       <div className="flex items-center gap-2 shrink-0">

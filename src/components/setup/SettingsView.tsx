@@ -4,7 +4,8 @@ import {
   Activity, 
   LayoutGrid,
   ShieldCheck,
-  Globe
+  Globe,
+  X
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { ChoiceDialog } from "../ui/choice-dialog";
@@ -49,6 +50,7 @@ interface SettingsViewProps {
   onThemeChange: (theme: "light" | "dark" | "system") => void;
   lang: "zh" | "en";
   onLangChange: (lang: "zh" | "en") => void;
+  onClose: () => void;
 }
 
 type TabType = "marketplace" | "connected" | "general";
@@ -71,6 +73,7 @@ export function SettingsView(props: SettingsViewProps) {
     onThemeChange,
     lang,
     onLangChange,
+    onClose,
   } = props;
 
   const [activeTab, setActiveTab] = useState<TabType>("marketplace");
@@ -98,9 +101,21 @@ export function SettingsView(props: SettingsViewProps) {
         <header className="flex flex-col gap-8 pt-12">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-black tracking-tighter text-text-main uppercase">Engine Center</h2>
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 animate-pulse">
-                <ShieldCheck size={14} />
-                <span className="text-[10px] font-black uppercase tracking-wider">Local & Secure</span>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 animate-pulse">
+                  <ShieldCheck size={14} />
+                  <span className="text-[10px] font-black uppercase tracking-wider">Local & Secure</span>
+              </div>
+              <button
+                onClick={onClose}
+                className="flex items-center gap-2 pl-2 pr-4 h-10 rounded-xl bg-white/[0.03] border border-white/[0.05] text-muted-foreground hover:text-foreground hover:bg-white/[0.08] transition-all group active:scale-95"
+                title="ESC to close"
+              >
+                <div className="w-6 h-6 rounded-lg bg-white/[0.05] flex items-center justify-center group-hover:bg-primary/20 group-hover:text-primary transition-colors">
+                  <X size={14} />
+                </div>
+                <span className="text-[11px] font-black uppercase tracking-widest">Done</span>
+              </button>
             </div>
           </div>
 

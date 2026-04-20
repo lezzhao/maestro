@@ -131,9 +131,9 @@ function App() {
         multiple: false,
         title: t("select_project_title"),
       });
-      if (typeof selected === "string") {
-        await handleImport(selected);
-      }
+      const newPath = Array.isArray(selected) ? selected[0] : (selected as string);
+      if (!newPath) return;
+      await handleImport(newPath);
     } catch (e) {
       const msg = String(e);
       if (!/user cancelled|canceled|aborted/i.test(msg)) {
@@ -143,6 +143,13 @@ function App() {
   }, [handleImport, t]);
 
   useAppDragDrop({ onDropProject: handleImport });
+  
+  useEffect(() => {
+    const handlePickerEvent = () => void handleOpenProjectPicker();
+    window.addEventListener("maestro:open-project-picker", handlePickerEvent);
+    return () => window.removeEventListener("maestro:open-project-picker", handlePickerEvent);
+  }, [handleOpenProjectPicker]);
+
   useAppShortcuts(commandOpen, setCommandOpen, showSettings, setShowSettings);
   useAgentStateSync();
 

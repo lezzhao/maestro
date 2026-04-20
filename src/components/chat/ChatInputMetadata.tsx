@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useState, useEffect } from "react";
 import { Target, Zap, ShieldCheck, AlertCircle } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useHarness } from "../../hooks/useHarness";
@@ -14,7 +14,21 @@ export const ChatInputMetadata = memo(function ChatInputMetadata({
   sendBlocked,
   sendBlockedReason,
 }: ChatInputMetadataProps) {
-  const { currentMode } = useHarness(taskId || undefined);
+  const { currentMode, transitionTo, isLoading } = useHarness(taskId || undefined);
+  const [optimisticMode, setOptimisticMode] = useState<string | null>(null);
+
+  // Reset optimistic state once the real state syncs
+  useEffect(() => {
+    setOptimisticMode(null);
+  }, [currentMode]);
+
+  const activeMode = optimisticMode || currentMode;
+
+  const handleModeClick = (mode: "strategic" | "action" | "review") => {
+    if (mode === activeMode) return;
+    setOptimisticMode(mode);
+    transitionTo(mode);
+  };
 
   return (
     <div className="flex items-center gap-4">
@@ -33,25 +47,48 @@ export const ChatInputMetadata = memo(function ChatInputMetadata({
 
       {/* Harness Mode Badge */}
       {taskId && (
-        <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-accent/5 border border-accent/20 shadow-sm transition-all hover:bg-accent/10 hover:border-accent/40 group/harness cursor-pointer">
-           {currentMode === 'strategic' && (
-             <>
-               <Target size={12} className="text-blue-400 group-hover/harness:rotate-12 transition-transform" />
-               <span className="text-[10px] font-bold tracking-tight text-blue-400/90">Strategic</span>
-             </>
-           )}
-           {currentMode === 'action' && (
-             <>
-               <Zap size={12} className="text-amber-400 group-hover/harness:scale-125 transition-transform" />
-               <span className="text-[10px] font-bold tracking-tight text-amber-400/90">Action</span>
-             </>
-           )}
-           {currentMode === 'review' && (
-             <>
-               <ShieldCheck size={12} className="text-emerald-400 group-hover/harness:translate-y-[-1px] transition-transform" />
-               <span className="text-[10px] font-bold tracking-tight text-emerald-400/90">Review</span>
-             </>
-           )}
+        <div className="flex items-center gap-2">
+           <button 
+             onClick={() => handleModeClick("strategic")}
+             className={cn(
+               "flex items-center gap-2 px-3 py-1 rounded-full border shadow-sm transition-all group/harness relative overflow-hidden",
+               activeMode === 'strategic' 
+                 ? "bg-blue-400/10 border-blue-400/30" 
+                 : "bg-background/40 border-border/20 opacity-40 hover:opacity-100"
+             )}
+           >
+             <Target size={12} className={cn("transition-transform group-hover/harness:rotate-12", activeMode === 'strategic' ? "text-blue-400" : "text-muted-foreground")} />
+             <span className={cn("text-[10px] font-bold tracking-tight", activeMode === 'strategic' ? "text-blue-400/90" : "text-muted-foreground")}>Strategic</span>
+             {isLoading && optimisticMode === 'strategic' && <div className="absolute inset-0 bg-blue-400/5 animate-pulse" />}
+           </button>
+
+           <button 
+             onClick={() => handleModeClick("action")}
+             className={cn(
+               "flex items-center gap-2 px-3 py-1 rounded-full border shadow-sm transition-all group/harness relative overflow-hidden",
+               activeMode === 'action' 
+                 ? "bg-amber-400/10 border-amber-400/30" 
+                 : "bg-background/40 border-border/20 opacity-40 hover:opacity-100"
+             )}
+           >
+             <Zap size={12} className={cn("transition-transform group-hover/harness:scale-125", activeMode === 'action' ? "text-amber-400" : "text-muted-foreground")} />
+             <span className={cn("text-[10px] font-bold tracking-tight", activeMode === 'action' ? "text-amber-400/90" : "text-muted-foreground")}>Action</span>
+             {isLoading && optimisticMode === 'action' && <div className="absolute inset-0 bg-amber-400/5 animate-pulse" />}
+           </button>
+
+           <button 
+             onClick={() => handleModeClick("review")}
+             className={cn(
+               "flex items-center gap-2 px-3 py-1 rounded-full border shadow-sm transition-all group/harness relative overflow-hidden",
+               activeMode === 'review' 
+                 ? "bg-emerald-400/10 border-emerald-400/30" 
+                 : "bg-background/40 border-border/20 opacity-40 hover:opacity-100"
+             )}
+           >
+             <ShieldCheck size={12} className={cn("transition-transform group-hover/harness:translate-y-[-1px]", activeMode === 'review' ? "text-emerald-400" : "text-muted-foreground")} />
+             <span className={cn("text-[10px] font-bold tracking-tight", activeMode === 'review' ? "text-emerald-400/90" : "text-muted-foreground")}>Review</span>
+             {isLoading && optimisticMode === 'review' && <div className="absolute inset-0 bg-emerald-400/5 animate-pulse" />}
+           </button>
         </div>
       )}
     </div>
