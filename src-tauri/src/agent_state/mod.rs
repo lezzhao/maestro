@@ -186,6 +186,7 @@ pub fn append_system_message_payload(
             timestamp: None,
             status: None,
             attachments: None,
+            reasoning: None,
             meta,
         },
     }

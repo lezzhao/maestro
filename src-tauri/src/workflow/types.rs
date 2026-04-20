@@ -280,6 +280,7 @@ pub struct ChatApiRequest {
     pub max_messages: Option<usize>,
     pub attachments: Option<Vec<ChatApiAttachment>>,
     pub state_token: Option<String>,
+    pub assistant_message_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

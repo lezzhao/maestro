@@ -125,6 +125,7 @@ pub async fn chat_execute_api_core(
                     cycle_id: Some(cycle_id),
                     state_token: request.state_token.clone(),
                     attachments: request.attachments,
+                    assistant_message_id: request.assistant_message_id,
                 },
                 cancel_token,
                 on_data_with_state,

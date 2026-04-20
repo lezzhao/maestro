@@ -80,6 +80,8 @@ pub struct PersistedMessagePayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attachments: Option<Vec<PersistedAttachmentPayload>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub meta: Option<serde_json::Value>,
 }
 
