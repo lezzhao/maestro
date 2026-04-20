@@ -122,6 +122,7 @@ export type ChatApiRequest = {
   pinned_files?: string[];
   max_input_tokens?: number;
   max_messages?: number;
+  assistant_message_id?: string;
 };
 
 export type ChatExecuteApiResult = {

@@ -102,13 +102,17 @@ function toTaskRecordPatch(task: TaskRecord): Partial<import("../types").TaskVie
 export function applyAgentStateUpdate(event: AgentStateEvent, deps: AgentReducerDeps) {
   const { payload, state_token } = event;
 
-  // 1. Stale state guard: Check state_token for task-scoped events
-  if (state_token && "task_id" in payload) {
+  // 1. Stale state guard: Check state_token for execution-scoped events
+  const EXECUTION_SCOPED_EVENTS = ["execution_output_chunk", "run_finished", "execution_cancelled", "execution_token_usage", "reasoning"];
+  if (state_token && EXECUTION_SCOPED_EVENTS.includes(payload.type) && "task_id" in payload) {
     const taskId = (payload as { task_id: string }).task_id;
     const currentToken = deps.getTaskStateToken(taskId);
+    
+    // ALLOW events if currentToken is empty (may happen during transition)
+    // but strictly match if a token is present.
     if (currentToken && state_token !== currentToken) {
       console.warn(
-        `[AgentStateSync] Ignoring stale event ${payload.type} for task ${taskId}. Expected ${currentToken}, got ${state_token}`
+        `[AgentStateSync] Ignoring stale execution event ${payload.type} for task ${taskId}. Expected ${currentToken}, got ${state_token}`
       );
       return;
     }
@@ -145,11 +149,9 @@ export function applyAgentStateUpdate(event: AgentStateEvent, deps: AgentReducer
       break;
     }
     case "execution_output_chunk": {
+      // Global sync only updates the run transcript (logs).
+      // Chat message content is handled by the high-performance local channel in the orchestrator.
       deps.appendRunTranscript(payload.run_id, payload.chunk);
-      const activeMsgId = deps.getChatState().taskActiveAssistantMsgId[payload.task_id];
-      if (activeMsgId) {
-        deps.appendToMessage(payload.task_id, activeMsgId, payload.chunk);
-      }
       break;
     }
     case "messages_updated":

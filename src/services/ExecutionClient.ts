@@ -21,6 +21,7 @@ export type ExecutionEvent =
   | { type: "tokenUsage"; usage: { approx_input_tokens: number; approx_output_tokens: number }; cycleId: string }
   | { type: "done"; exitCode?: number | null; cycleId: string }
   | { type: "toolApprovalRequest"; request: { requestId: string; toolName: string; arguments: string }; cycleId: string }
+  | { type: "reasoning"; content: string; cycleId: string }
   | { type: "error"; message: string; cycleId: string };
 
 export class ExecutionClient {
@@ -55,16 +56,18 @@ export class ExecutionClient {
   }
 
   private handleChunk(chunk: string) {
-    if (this.isStopped) return;
+    if (this.isStopped) {
+      return;
+    }
 
     if (isControlChunk(chunk)) {
       const frame: StreamFrame | null = parseStreamFrame(chunk);
       if (!frame) return;
 
-      // Internal state tracking for the current run (Fix 3)
+      // Internal state tracking for the current run
       if (frame.type === "run_id") {
         this.currentRunId = frame.payload;
-        console.debug(`[ExecutionClient] Starting run: ${this.currentRunId} for task: ${this.taskId}`);
+        console.debug(`[ExecutionClient] Starting run: ${this.currentRunId} for task: ${this.taskId} cycle: ${this.cycleId}`);
       }
 
       switch (frame.type) {
@@ -98,6 +101,9 @@ export class ExecutionClient {
           break;
         case "tool_approval_request":
           this.onEvent({ type: "toolApprovalRequest", request: frame.payload, cycleId: this.cycleId });
+          break;
+        case "reasoning":
+          this.onEvent({ type: "reasoning", content: frame.payload, cycleId: this.cycleId });
           break;
       }
       return;

@@ -80,7 +80,20 @@ export const createMessageActions = (
       if (idx === -1) return state;
       const next = list.slice();
       const target = next[idx];
-      next[idx] = { ...target, content: `${target.content}${chunk}` };
+      const current = target.content;
+
+      // Smart Deduplication: Find maximum overlap between end of current and start of chunk
+      let overlap = 0;
+      const maxPossibleOverlap = Math.min(current.length, chunk.length);
+      for (let i = maxPossibleOverlap; i > 0; i--) {
+        if (current.endsWith(chunk.slice(0, i))) {
+          overlap = i;
+          break;
+        }
+      }
+
+      const newContent = current + chunk.slice(overlap);
+      next[idx] = { ...target, content: newContent };
       return {
         messages: { ...state.messages, [taskId]: next },
       };

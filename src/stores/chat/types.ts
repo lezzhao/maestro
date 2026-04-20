@@ -36,6 +36,9 @@ export type ChatState = {
 
   // Pending permission (New)
   pendingPermissionRequest: PermissionRequest | null;
+
+  // Global Execution Lock (Industrial hardening)
+  taskExecutionLock: Record<string, boolean>;
 };
 
 export type PermissionRequest = {
@@ -59,6 +62,7 @@ export type ChatActions = {
   setActiveAssistantMsgId: (taskId: string, messageId: string | null) => void;
   setExecutionPhase: (taskId: string, phase: "idle" | "connecting" | "sending" | "streaming" | "completed" | "error") => void;
   setTaskStateToken: (taskId: string, token: string) => void;
+  setExecutionLock: (taskId: string, locked: boolean) => void;
 
   addMessage: (taskId: string, message: ChatMessage) => void;
   setMessages: (taskId: string, messages: ChatMessage[]) => void;

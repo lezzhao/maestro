@@ -35,6 +35,7 @@ export const useChatStore = create<ChatStore>()(
       
       taskStateToken: {},
       pendingPermissionRequest: null,
+      taskExecutionLock: {},
 
       // --- Actions ---
       ...createConversationActions(set, get),
@@ -62,6 +63,9 @@ export const useChatStore = create<ChatStore>()(
       },
       setTaskStateToken: (taskId: string, token: string) => set((state) => ({
         taskStateToken: { ...state.taskStateToken, [taskId]: token }
+      })),
+      setExecutionLock: (taskId: string, locked: boolean) => set((state) => ({
+        taskExecutionLock: { ...state.taskExecutionLock, [taskId]: locked }
       })),
 
       // --- Getters ---

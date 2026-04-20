@@ -31,6 +31,7 @@ export type PersistedMessagePayload = {
   timestamp?: number;
   status?: ChatMessage["status"];
   attachments?: ChatAttachment[];
+  reasoning?: string;
   meta?: ChatMessage["meta"];
 };
 
@@ -109,6 +110,7 @@ export function toMessages(messages: PersistedMessagePayload[]): ChatMessage[] {
       timestamp: m.timestamp ?? Date.now(),
       attachments: m.attachments ?? ([] as ChatAttachment[]),
       status: m.status && VALID_MESSAGE_STATUSES.has(m.status) ? m.status : "done",
+      reasoning: m.reasoning,
       meta: m.meta,
     };
   });
