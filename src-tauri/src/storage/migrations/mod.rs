@@ -150,11 +150,25 @@ impl Migration for MigrationV4 {
     }
 }
 
+struct MigrationV5;
+impl Migration for MigrationV5 {
+    fn version(&self) -> i32 { 5 }
+    fn description(&self) -> &str { "Add reasoning column to conversation_messages" }
+    fn up(&self, conn: &Connection) -> Result<(), CoreError> {
+        conn.execute_batch(
+            r#"
+            ALTER TABLE conversation_messages ADD COLUMN reasoning TEXT;
+            "#
+        ).map_err(db_err)
+    }
+}
+
 const MIGRATIONS: &[&dyn Migration] = &[
     &MigrationV1,
     &MigrationV2,
     &MigrationV3,
     &MigrationV4,
+    &MigrationV5,
 ];
 
 pub fn run_migrations(conn: &Connection) -> Result<(), CoreError> {

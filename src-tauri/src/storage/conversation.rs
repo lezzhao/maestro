@@ -92,7 +92,7 @@ pub fn list_conversations(
     Ok(results)
 }
 
-pub fn append_message(
+pub fn upsert_message(
     db_path: &Path,
     conversation_id: &str,
     msg: &PersistedMessagePayload,
@@ -102,18 +102,34 @@ pub fn append_message(
     let meta_json = msg.meta.as_ref().map(|v| v.to_string());
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
-    conn.execute(
-        "INSERT INTO conversation_messages (id, conversation_id, role, content, timestamp, status, meta) 
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params![msg.id, conversation_id, msg.role, msg.content, now, msg.status, meta_json],
+    // 1. Check if ID already exists to manage message_count correctly
+    let exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM conversation_messages WHERE id = ?1)",
+        rusqlite::params![msg.id],
+        |row| row.get(0),
     ).map_err(db_err)?;
 
-    // Update conversation metadata
+    // 2. Perform UPSERT
     conn.execute(
-        "UPDATE conversations SET message_count = message_count + 1, updated_at = ?1 WHERE id = ?2",
-        rusqlite::params![now, conversation_id],
-    )
-    .map_err(db_err)?;
+        "INSERT OR REPLACE INTO conversation_messages (id, conversation_id, role, content, timestamp, status, reasoning, meta) 
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        rusqlite::params![msg.id, conversation_id, msg.role, msg.content, now, msg.status, msg.reasoning, meta_json],
+    ).map_err(db_err)?;
+
+    // 3. Update conversation metadata only if it's a NEW message
+    if !exists {
+        conn.execute(
+            "UPDATE conversations SET message_count = message_count + 1, updated_at = ?1 WHERE id = ?2",
+            rusqlite::params![now, conversation_id],
+        )
+        .map_err(db_err)?;
+    } else {
+        conn.execute(
+            "UPDATE conversations SET updated_at = ?1 WHERE id = ?2",
+            rusqlite::params![now, conversation_id],
+        )
+        .map_err(db_err)?;
+    }
 
     Ok(())
 }
@@ -130,6 +146,7 @@ fn row_to_message_payload(row: &rusqlite::Row<'_>) -> rusqlite::Result<Persisted
         timestamp: Some(sqlite_datetime_to_ms(&ts_str)),
         status: row.get(4)?,
         attachments: None,
+        reasoning: row.get(5)?,
         meta,
     })
 }
@@ -142,7 +159,7 @@ pub fn load_conversation_messages(
 
     let mut stmt = conn
         .prepare(
-            "SELECT id, role, content, timestamp, status, meta 
+            "SELECT id, role, content, timestamp, status, meta, reasoning 
          FROM conversation_messages WHERE conversation_id = ?1 ORDER BY timestamp ASC",
         )
         .map_err(db_err)?;
@@ -280,4 +297,32 @@ pub async fn conversation_derive_title_heuristic(
 
     update_conversation_title(&db_path, &conversation_id, &title)?;
     Ok(title)
+}
+
+pub fn get_messages_by_ids(
+    db_path: &Path,
+    message_ids: &[String],
+) -> Result<Vec<PersistedMessagePayload>, CoreError> {
+    if message_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let conn = crate::task::repository::db_connection(db_path)?;
+    let placeholders = message_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let query = format!(
+        "SELECT id, role, content, timestamp, status, meta, reasoning 
+         FROM conversation_messages WHERE id IN ({}) ORDER BY timestamp ASC",
+        placeholders
+    );
+
+    let mut stmt = conn.prepare(&query).map_err(db_err)?;
+    let params = message_ids.iter().map(|s| s as &dyn rusqlite::ToSql).collect::<Vec<_>>();
+    
+    let rows = stmt.query_map(rusqlite::params_from_iter(params), row_to_message_payload).map_err(db_err)?;
+
+    let mut messages = Vec::new();
+    for row in rows {
+        messages.push(row.map_err(db_err)?);
+    }
+    Ok(messages)
 }

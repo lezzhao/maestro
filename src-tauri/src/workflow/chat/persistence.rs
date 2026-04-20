@@ -52,6 +52,7 @@ pub async fn chat_save_last_conversation_core(
                             .collect::<Vec<_>>()
                     })
                     .filter(|items| !items.is_empty());
+                let reasoning = m.get("reasoning").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let meta = m.get("meta").cloned().filter(|value| value.is_object());
                 Some(PersistedMessagePayload {
                     id,
@@ -60,6 +61,7 @@ pub async fn chat_save_last_conversation_core(
                     timestamp,
                     status,
                     attachments,
+                    reasoning,
                     meta,
                 })
             })
