@@ -34,11 +34,11 @@ export const JiavisHUD: React.FC = () => {
       recorder.start();
       setMediaRecorder(recorder);
       setIsListening(true);
-      setStatus("LISTENING...");
+      setStatus(t("hud_listening"));
       setTranscription("");
     } catch (err) {
       console.error("Failed to start recording:", err);
-      setStatus("ERROR: MIC ACCESS DENIED");
+      setStatus(t("hud_mic_denied"));
     }
   };
 
@@ -47,7 +47,7 @@ export const JiavisHUD: React.FC = () => {
       mediaRecorder.stop();
       setMediaRecorder(null);
       setIsListening(false);
-      setStatus("PROCESSING...");
+      setStatus(t("hud_thinking"));
     }
   };
 
@@ -61,7 +61,7 @@ export const JiavisHUD: React.FC = () => {
         const base64data = (reader.result as string).split(',')[1];
         
         // 2. Transcribe
-        setStatus("TRANSCRIBING...");
+        setStatus(t("hud_transcribing"));
         const text: string = await invoke("voice_transcribe", {
           engineId: activeEngineId,
           audioBase64: base64data
@@ -69,7 +69,7 @@ export const JiavisHUD: React.FC = () => {
         setTranscription(text);
         
         // 3. Execute Real Agent Command
-        setStatus("EXECUTING...");
+        setStatus(t("hud_executing"));
         
         const attachments = pendingVision ? [{
           name: "screenshot.png",
@@ -96,10 +96,10 @@ export const JiavisHUD: React.FC = () => {
         });
 
         // 4. TTS (Confirming Action)
-        setStatus("COMMAND DISPATCHED");
+        setStatus(t("hud_dispatching"));
         const speechBase64: string = await invoke("voice_speech", {
           engineId: activeEngineId,
-          text: `Acknowledged. Task initiated in current workspace.`,
+          text: t("hud_acknowledged"),
           voice: "alloy"
         });
         
@@ -120,20 +120,20 @@ export const JiavisHUD: React.FC = () => {
       };
     } catch (err) {
       console.error("Voice process error:", err);
-      setStatus("SYSTEM ERROR");
+      setStatus(t("hud_system_error"));
       setIsProcessing(false);
     }
   };
 
   const captureVision = async () => {
-    setStatus("CAPTURING SCREEN...");
+    setStatus(t("hud_capturing"));
     try {
       const b64 = await invoke("vision_capture_screen");
       setPendingVision(b64 as string);
-      setStatus("EYES ON TARGET");
-      setTimeout(() => setStatus("SYSTEM NOMINAL"), 1500);
+      setStatus(t("hud_vision_active"));
+      setTimeout(() => setStatus(t("hud_system_nominal")), 1500);
     } catch (e) {
-      setStatus("VISION ERROR");
+      setStatus(t("hud_vision_error"));
     }
   };
 
